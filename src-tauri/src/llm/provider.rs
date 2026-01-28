@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -36,8 +37,74 @@ impl TokenMetrics {
 
 pub type ChunkCallback = Box<dyn Fn(&str) + Send + Sync>;
 
+/// Represents a tool result to be sent back to the LLM
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolResult {
+    /// The ID of the tool_use block this result corresponds to
+    pub tool_use_id: String,
+    /// Whether this result represents an error
+    pub is_error: bool,
+    /// The content/output of the tool execution
+    pub content: String,
+}
+
+impl ToolResult {
+    /// Create a successful tool result
+    pub fn success(tool_use_id: String, content: String) -> Self {
+        Self {
+            tool_use_id,
+            is_error: false,
+            content,
+        }
+    }
+
+    /// Create an error tool result
+    pub fn error(tool_use_id: String, error_message: String) -> Self {
+        Self {
+            tool_use_id,
+            is_error: true,
+            content: error_message,
+        }
+    }
+
+    /// Convert to JSON format for API
+    pub fn to_json(&self) -> serde_json::Value {
+        json!({
+            "type": "tool_result",
+            "tool_use_id": self.tool_use_id,
+            "is_error": self.is_error,
+            "content": self.content,
+        })
+    }
+}
+
+/// Represents a tool use request from the LLM
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolUse {
+    /// Unique identifier for this tool use
+    pub id: String,
+    /// Name of the tool being called
+    pub name: String,
+    /// Input parameters for the tool (as JSON value)
+    pub input: serde_json::Value,
+}
+
+/// Response from the LLM that may contain text and/or tool use requests
+#[derive(Debug, Clone)]
+pub struct LlmResponse {
+    /// Text content from the response (if any)
+    pub text: Option<String>,
+    /// Tool use requests from the response (if any)
+    pub tool_uses: Vec<ToolUse>,
+    /// Token metrics for this response
+    pub metrics: TokenMetrics,
+    /// The stop reason for this response
+    pub stop_reason: Option<String>,
+}
+
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
+    /// Send a message with an image and get a response (legacy text-based)
     async fn send_with_image(
         &self,
         instruction: &str,
@@ -46,6 +113,23 @@ pub trait LlmProvider: Send + Sync {
         screen_height: u32,
         on_chunk: ChunkCallback,
     ) -> Result<(String, TokenMetrics), LlmError>;
+
+    /// Send a message with tools enabled and get a structured response
+    /// Returns the response with potential tool_use blocks
+    async fn send_with_tools(
+        &self,
+        instruction: &str,
+        image_base64: &str,
+        screen_width: u32,
+        screen_height: u32,
+        tool_results: Option<Vec<ToolResult>>,
+        on_chunk: ChunkCallback,
+    ) -> Result<LlmResponse, LlmError>;
+
+    /// Check if this provider supports native tool use
+    fn supports_tools(&self) -> bool {
+        false
+    }
 
     fn name(&self) -> &str;
 }

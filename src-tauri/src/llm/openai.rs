@@ -1,4 +1,7 @@
-use super::provider::{build_system_prompt, ChunkCallback, LlmError, LlmProvider, TokenMetrics};
+use super::provider::{
+    build_system_prompt, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics,
+    ToolResult,
+};
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
@@ -179,6 +182,28 @@ impl LlmProvider for OpenAIProvider {
         };
 
         Ok((full_response, metrics))
+    }
+
+    async fn send_with_tools(
+        &self,
+        instruction: &str,
+        image_base64: &str,
+        screen_width: u32,
+        screen_height: u32,
+        _tool_results: Option<Vec<ToolResult>>,
+        on_chunk: ChunkCallback,
+    ) -> Result<LlmResponse, LlmError> {
+        // OpenAI doesn't support native computer use tools, fall back to text-based parsing
+        let (text, metrics) = self
+            .send_with_image(instruction, image_base64, screen_width, screen_height, on_chunk)
+            .await?;
+
+        Ok(LlmResponse {
+            text: Some(text),
+            tool_uses: Vec::new(),
+            metrics,
+            stop_reason: Some("stop".to_string()),
+        })
     }
 
     fn name(&self) -> &str {
