@@ -8,6 +8,7 @@ pub enum AgentStatus {
     Idle,
     Running,
     Paused,
+    Retrying,
     Completed,
     Error,
 }
@@ -23,6 +24,8 @@ pub struct AgentState {
     pub tokens_per_second: f64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
+    pub retry_count: u32,
+    pub consecutive_errors: u32,
 }
 
 impl Default for AgentState {
@@ -37,6 +40,8 @@ impl Default for AgentState {
             tokens_per_second: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            retry_count: 0,
+            consecutive_errors: 0,
         }
     }
 }
@@ -83,6 +88,8 @@ impl AgentStateManager {
         state.tokens_per_second = 0.0;
         state.total_input_tokens = 0;
         state.total_output_tokens = 0;
+        state.retry_count = 0;
+        state.consecutive_errors = 0;
         self.should_stop.store(false, Ordering::SeqCst);
     }
 
@@ -130,5 +137,32 @@ impl AgentStateManager {
         let mut state = self.state.write().await;
         *state = AgentState::default();
         self.should_stop.store(false, Ordering::SeqCst);
+    }
+
+    pub async fn increment_retry(&self) -> u32 {
+        let mut state = self.state.write().await;
+        state.retry_count += 1;
+        state.retry_count
+    }
+
+    pub async fn reset_retry_count(&self) {
+        let mut state = self.state.write().await;
+        state.retry_count = 0;
+    }
+
+    pub async fn increment_consecutive_errors(&self) -> u32 {
+        let mut state = self.state.write().await;
+        state.consecutive_errors += 1;
+        state.consecutive_errors
+    }
+
+    pub async fn reset_consecutive_errors(&self) {
+        let mut state = self.state.write().await;
+        state.consecutive_errors = 0;
+    }
+
+    pub async fn get_consecutive_errors(&self) -> u32 {
+        let state = self.state.read().await;
+        state.consecutive_errors
     }
 }

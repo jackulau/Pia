@@ -1,8 +1,15 @@
 use super::action::{execute_action, parse_action, ActionError};
+use super::recovery::{
+    classify_capture_error, classify_llm_error, retry_with_policy, ErrorClassification,
+    RetryPolicy,
+};
 use super::state::{AgentStateManager, AgentStatus};
-use crate::capture::capture_primary_screen;
+use crate::capture::{capture_primary_screen, CaptureError, Screenshot};
 use crate::config::Config;
-use crate::llm::{AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider};
+use crate::llm::{
+    AnthropicProvider, LlmError, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider,
+    TokenMetrics,
+};
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
 use tokio::time::{sleep, Duration};
@@ -21,7 +28,11 @@ pub enum LoopError {
     Stopped,
     #[error("Max iterations reached")]
     MaxIterations,
+    #[error("Too many consecutive errors: {0}")]
+    TooManyErrors(u32),
 }
+
+const MAX_CONSECUTIVE_ERRORS: u32 = 3;
 
 pub struct AgentLoop {
     state: AgentStateManager,
@@ -110,6 +121,19 @@ impl AgentLoop {
                 return Err(LoopError::Stopped);
             }
 
+            // Check consecutive error limit
+            let consecutive_errors = self.state.get_consecutive_errors().await;
+            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                self.state
+                    .set_error(format!(
+                        "Too many consecutive errors ({})",
+                        consecutive_errors
+                    ))
+                    .await;
+                self.emit_state_update().await;
+                return Err(LoopError::TooManyErrors(consecutive_errors));
+            }
+
             // Check iteration limit
             let iteration = self.state.increment_iteration().await;
             if iteration > max_iterations {
@@ -120,25 +144,44 @@ impl AgentLoop {
                 return Err(LoopError::MaxIterations);
             }
 
-            // Capture screenshot
-            let screenshot = capture_primary_screen()?;
+            // Capture screenshot with retry
+            let screenshot = match self.capture_with_retry().await {
+                Ok(s) => s,
+                Err(e) => {
+                    self.state.increment_consecutive_errors().await;
+                    self.state.set_error(e.to_string()).await;
+                    self.emit_state_update().await;
+                    return Err(e.into());
+                }
+            };
 
-            // Create callback for chunk streaming
-            let app_handle = self.app_handle.clone();
-            let on_chunk: Box<dyn Fn(&str) + Send + Sync> = Box::new(move |chunk: &str| {
-                let _ = app_handle.emit("llm-chunk", chunk.to_string());
-            });
+            // Send to LLM with retry
+            let llm_result = self
+                .send_to_llm_with_retry(&provider, &instruction, &screenshot)
+                .await;
 
-            // Send to LLM
-            let (response, metrics) = provider
-                .send_with_image(
-                    &instruction,
-                    &screenshot.base64,
-                    screenshot.width,
-                    screenshot.height,
-                    on_chunk,
-                )
-                .await?;
+            let (response, metrics) = match llm_result {
+                Ok((resp, met)) => {
+                    // Reset consecutive errors on success
+                    self.state.reset_consecutive_errors().await;
+                    (resp, met)
+                }
+                Err(e) => {
+                    self.state.increment_consecutive_errors().await;
+                    self.state.set_error(e.to_string()).await;
+                    self.emit_state_update().await;
+
+                    // Check if we should continue or bail
+                    let classification = classify_llm_error(&e);
+                    if matches!(classification, ErrorClassification::Fatal) {
+                        return Err(e.into());
+                    }
+
+                    // Non-fatal error, continue to next iteration
+                    sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            };
 
             // Update metrics
             self.state
@@ -150,8 +193,25 @@ impl AgentLoop {
                 .await;
             self.emit_state_update().await;
 
-            // Parse and execute action
-            let action = parse_action(&response)?;
+            // Parse action - on parse error, send feedback to LLM
+            let action = match parse_action(&response) {
+                Ok(a) => a,
+                Err(parse_err) => {
+                    self.state.increment_consecutive_errors().await;
+
+                    // Emit parse error feedback
+                    let _ = self.app_handle.emit(
+                        "parse-error",
+                        format!("Failed to parse LLM response: {}", parse_err),
+                    );
+
+                    // Continue to next iteration - the LLM will see the error
+                    // in subsequent iterations via conversation context (when available)
+                    sleep(Duration::from_millis(500)).await;
+                    continue;
+                }
+            };
+
             self.state
                 .set_last_action(serde_json::to_string(&action).unwrap_or_default())
                 .await;
@@ -159,6 +219,9 @@ impl AgentLoop {
 
             match execute_action(&action, confirm_dangerous) {
                 Ok(result) => {
+                    // Reset consecutive errors on successful action
+                    self.state.reset_consecutive_errors().await;
+
                     if result.completed {
                         self.state.complete(result.message).await;
                         self.emit_state_update().await;
@@ -184,14 +247,132 @@ impl AgentLoop {
                     self.state.set_status(AgentStatus::Running).await;
                 }
                 Err(e) => {
+                    self.state.increment_consecutive_errors().await;
                     self.state.set_error(e.to_string()).await;
                     self.emit_state_update().await;
+
+                    // Action errors are generally not retryable
                     return Err(e.into());
                 }
             }
 
             // Small delay between iterations
             sleep(Duration::from_millis(500)).await;
+        }
+    }
+
+    /// Capture screenshot with retry logic
+    async fn capture_with_retry(&self) -> Result<Screenshot, CaptureError> {
+        let policy = RetryPolicy::for_screenshots();
+
+        let result = retry_with_policy(&policy, classify_capture_error, || async {
+            capture_primary_screen()
+        })
+        .await;
+
+        if result.attempts > 1 {
+            self.state.increment_retry().await;
+            let _ = self
+                .app_handle
+                .emit("retry-info", format!("Screenshot captured after {} attempts", result.attempts));
+        }
+
+        result.result
+    }
+
+    /// Send to LLM with retry logic
+    async fn send_to_llm_with_retry(
+        &self,
+        provider: &Box<dyn LlmProvider>,
+        instruction: &str,
+        screenshot: &Screenshot,
+    ) -> Result<(String, TokenMetrics), LlmError> {
+        let policy = RetryPolicy::for_llm_calls();
+        let mut attempts = 0;
+
+        loop {
+            attempts += 1;
+
+            // Check if should stop before each attempt
+            if self.state.should_stop() {
+                return Err(LlmError::ApiError("Agent stopped".to_string()));
+            }
+
+            // Create callback for chunk streaming
+            let app_handle = self.app_handle.clone();
+            let on_chunk: Box<dyn Fn(&str) + Send + Sync> = Box::new(move |chunk: &str| {
+                let _ = app_handle.emit("llm-chunk", chunk.to_string());
+            });
+
+            let result = provider
+                .send_with_image(
+                    instruction,
+                    &screenshot.base64,
+                    screenshot.width,
+                    screenshot.height,
+                    on_chunk,
+                )
+                .await;
+
+            match result {
+                Ok((response, metrics)) => {
+                    if attempts > 1 {
+                        self.state.increment_retry().await;
+                        let _ = self.app_handle.emit(
+                            "retry-info",
+                            format!("LLM call succeeded after {} attempts", attempts),
+                        );
+                    }
+                    return Ok((response, metrics));
+                }
+                Err(error) => {
+                    let classification = classify_llm_error(&error);
+
+                    // Check if we should retry
+                    let should_retry = match classification {
+                        ErrorClassification::Fatal => false,
+                        ErrorClassification::Retryable | ErrorClassification::RateLimited { .. } => {
+                            attempts <= policy.max_retries
+                        }
+                    };
+
+                    if !should_retry {
+                        return Err(error);
+                    }
+
+                    // Update state to show we're retrying
+                    self.state.set_status(AgentStatus::Retrying).await;
+                    self.emit_state_update().await;
+
+                    // Calculate delay
+                    let delay = match classification {
+                        ErrorClassification::RateLimited { wait_seconds } => {
+                            let _ = self.app_handle.emit(
+                                "retry-info",
+                                format!("Rate limited, waiting {} seconds", wait_seconds),
+                            );
+                            Duration::from_secs(wait_seconds)
+                        }
+                        _ => {
+                            let delay = policy.delay_for_attempt(attempts);
+                            let _ = self.app_handle.emit(
+                                "retry-info",
+                                format!(
+                                    "LLM error (attempt {}), retrying in {:?}",
+                                    attempts, delay
+                                ),
+                            );
+                            delay
+                        }
+                    };
+
+                    sleep(delay).await;
+
+                    // Restore running status
+                    self.state.set_status(AgentStatus::Running).await;
+                    self.emit_state_update().await;
+                }
+            }
         }
     }
 
