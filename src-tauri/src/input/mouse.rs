@@ -101,4 +101,29 @@ impl MouseController {
         std::thread::sleep(std::time::Duration::from_millis(50));
         self.click(button)
     }
+
+    pub fn triple_click(&mut self, button: MouseButton) -> Result<(), MouseError> {
+        self.click(button)?;
+        self.click(button)?;
+        self.click(button)?;
+        Ok(())
+    }
+
+    pub fn drag(
+        &mut self,
+        from_x: i32,
+        from_y: i32,
+        to_x: i32,
+        to_y: i32,
+        button: MouseButton,
+    ) -> Result<(), MouseError> {
+        self.move_to(from_x, from_y)?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        self.mouse_down(button)?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        self.move_to(to_x, to_y)?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        self.mouse_up(button)?;
+        Ok(())
+    }
 }

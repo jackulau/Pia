@@ -81,11 +81,26 @@ You must respond with a single JSON action. Available actions:
 6. Move mouse (without clicking):
    {{"action": "move", "x": 100, "y": 200}}
 
-7. Complete the task:
-   {{"action": "complete", "message": "Task completed successfully"}}
+7. Drag from one position to another:
+   {{"action": "drag", "from_x": 100, "from_y": 200, "to_x": 300, "to_y": 400}}
+   Useful for drag-and-drop operations or selecting text
 
-8. Report an error or inability to proceed:
-   {{"action": "error", "message": "Cannot find the required element"}}
+8. Triple click (select entire line):
+   {{"action": "triple_click", "x": 100, "y": 200}}
+   Useful for selecting entire lines of text
+
+9. Right click (context menu):
+   {{"action": "right_click", "x": 100, "y": 200}}
+
+10. Wait/pause execution:
+    {{"action": "wait", "duration_ms": 1000}}
+    Useful when waiting for UI elements to load or animations to complete
+
+11. Complete the task:
+    {{"action": "complete", "message": "Task completed successfully"}}
+
+12. Report an error or inability to proceed:
+    {{"action": "error", "message": "Cannot find the required element"}}
 
 Guidelines:
 - Analyze the screenshot carefully before acting

@@ -51,6 +51,24 @@ pub enum Action {
         #[serde(default = "default_scroll_amount")]
         amount: i32,
     },
+    Drag {
+        from_x: i32,
+        from_y: i32,
+        to_x: i32,
+        to_y: i32,
+    },
+    TripleClick {
+        x: i32,
+        y: i32,
+    },
+    RightClick {
+        x: i32,
+        y: i32,
+    },
+    Wait {
+        #[serde(default = "default_wait_duration")]
+        duration_ms: u64,
+    },
     Complete {
         message: String,
     },
@@ -65,6 +83,10 @@ fn default_button() -> String {
 
 fn default_scroll_amount() -> i32 {
     3
+}
+
+fn default_wait_duration() -> u64 {
+    1000
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,6 +244,58 @@ pub fn execute_action(
                 success: true,
                 completed: false,
                 message: Some(format!("Scrolled {} {} times at ({}, {})", direction, amount, x, y)),
+            })
+        }
+
+        Action::Drag {
+            from_x,
+            from_y,
+            to_x,
+            to_y,
+        } => {
+            let mut mouse = MouseController::new()?;
+            mouse.drag(*from_x, *from_y, *to_x, *to_y, MouseButton::Left)?;
+
+            Ok(ActionResult {
+                success: true,
+                completed: false,
+                message: Some(format!(
+                    "Dragged from ({}, {}) to ({}, {})",
+                    from_x, from_y, to_x, to_y
+                )),
+            })
+        }
+
+        Action::TripleClick { x, y } => {
+            let mut mouse = MouseController::new()?;
+            mouse.move_to(*x, *y)?;
+            mouse.triple_click(MouseButton::Left)?;
+
+            Ok(ActionResult {
+                success: true,
+                completed: false,
+                message: Some(format!("Triple-clicked at ({}, {})", x, y)),
+            })
+        }
+
+        Action::RightClick { x, y } => {
+            let mut mouse = MouseController::new()?;
+            mouse.click_at(*x, *y, MouseButton::Right)?;
+
+            Ok(ActionResult {
+                success: true,
+                completed: false,
+                message: Some(format!("Right-clicked at ({}, {})", x, y)),
+            })
+        }
+
+        Action::Wait { duration_ms } => {
+            std::thread::sleep(std::time::Duration::from_millis(*duration_ms));
+
+            Ok(ActionResult {
+                success: true,
+                completed: false,
+                message: Some(format!("Waited {} ms", duration_ms)),
             })
         }
 
