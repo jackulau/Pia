@@ -66,6 +66,11 @@
       padding: 4px 12px 8px;
     }
     .status-indicator { display: flex; align-items: center; gap: 6px; }
+    .pia-logo {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+    }
     .status-dot {
       width: 8px;
       height: 8px;
@@ -264,6 +269,27 @@
       <div class="drag-handle" data-tauri-drag-region></div>
       <div class="modal-header">
         <div class="status-indicator">
+          <svg class="pia-logo" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <rect x="0" y="0" width="512" height="512" rx="90" ry="90" fill="#e0e7ff"/>
+            <rect x="86" y="100" width="340" height="312" rx="60" ry="60" fill="#818cf8"/>
+            <ellipse cx="180" cy="180" rx="80" ry="50" fill="#a5b4fc" opacity="0.5"/>
+            <ellipse cx="175" cy="260" rx="42" ry="50" fill="white"/>
+            <ellipse cx="337" cy="260" rx="42" ry="50" fill="white"/>
+            <circle cx="185" cy="252" r="24" fill="#1e1b4b"/>
+            <circle cx="347" cy="252" r="24" fill="#1e1b4b"/>
+            <circle cx="195" cy="242" r="8" fill="white"/>
+            <circle cx="357" cy="242" r="8" fill="white"/>
+            <ellipse cx="105" cy="320" rx="30" ry="22" fill="#f9a8d4" opacity="0.7"/>
+            <ellipse cx="407" cy="320" rx="30" ry="22" fill="#f9a8d4" opacity="0.7"/>
+            <path d="M200 355 Q256 420 312 355" stroke="#1e1b4b" stroke-width="10" fill="none" stroke-linecap="round"/>
+            <line x1="256" y1="100" x2="256" y2="40" stroke="#818cf8" stroke-width="10" stroke-linecap="round"/>
+            <circle cx="256" cy="28" r="28" fill="#f472b6"/>
+            <circle cx="256" cy="28" r="14" fill="#fbcfe8"/>
+            <circle cx="55" cy="180" r="35" fill="#818cf8"/>
+            <circle cx="55" cy="180" r="18" fill="#c7d2fe"/>
+            <circle cx="457" cy="180" r="35" fill="#818cf8"/>
+            <circle cx="457" cy="180" r="18" fill="#c7d2fe"/>
+          </svg>
           <span class="status-dot"></span>
           <span class="status-text">Ready</span>
         </div>
