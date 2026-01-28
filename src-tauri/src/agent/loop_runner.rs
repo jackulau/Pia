@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::llm::{AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider};
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration, Instant};
 
 #[derive(Error, Debug)]
 pub enum LoopError {
@@ -99,6 +99,9 @@ impl AgentLoop {
         let max_iterations = self.config.general.max_iterations;
         let confirm_dangerous = self.config.general.confirm_dangerous_actions;
 
+        // Target delay between iterations (can be made configurable via Config)
+        let target_iteration_delay = Duration::from_millis(500);
+
         self.state.start(instruction.clone(), max_iterations).await;
         self.emit_state_update().await;
 
@@ -110,8 +113,8 @@ impl AgentLoop {
                 return Err(LoopError::Stopped);
             }
 
-            // Check iteration limit
-            let iteration = self.state.increment_iteration().await;
+            // Check iteration limit (now uses atomic, no await needed)
+            let iteration = self.state.increment_iteration();
             if iteration > max_iterations {
                 self.state
                     .set_error("Max iterations reached".to_string())
@@ -129,6 +132,9 @@ impl AgentLoop {
                 let _ = app_handle.emit("llm-chunk", chunk.to_string());
             });
 
+            // Track LLM response time for adaptive delay
+            let llm_start = Instant::now();
+
             // Send to LLM
             let (response, metrics) = provider
                 .send_with_image(
@@ -140,21 +146,22 @@ impl AgentLoop {
                 )
                 .await?;
 
-            // Update metrics
-            self.state
-                .update_metrics(
-                    metrics.tokens_per_second(),
-                    metrics.input_tokens,
-                    metrics.output_tokens,
-                )
-                .await;
-            self.emit_state_update().await;
+            let llm_elapsed = llm_start.elapsed();
+
+            // Update metrics atomically (no await needed)
+            self.state.update_metrics(
+                metrics.tokens_per_second(),
+                metrics.input_tokens,
+                metrics.output_tokens,
+            );
 
             // Parse and execute action
             let action = parse_action(&response)?;
             self.state
                 .set_last_action(serde_json::to_string(&action).unwrap_or_default())
                 .await;
+
+            // Emit state once after LLM + action parsing (batched update)
             self.emit_state_update().await;
 
             match execute_action(&action, confirm_dangerous) {
@@ -182,6 +189,7 @@ impl AgentLoop {
                     }
 
                     self.state.set_status(AgentStatus::Running).await;
+                    self.emit_state_update().await;
                 }
                 Err(e) => {
                     self.state.set_error(e.to_string()).await;
@@ -190,8 +198,12 @@ impl AgentLoop {
                 }
             }
 
-            // Small delay between iterations
-            sleep(Duration::from_millis(500)).await;
+            // Adaptive delay: if LLM took >= target, skip delay; otherwise sleep remaining
+            if llm_elapsed < target_iteration_delay {
+                let remaining = target_iteration_delay - llm_elapsed;
+                sleep(remaining).await;
+            }
+            // If LLM took longer than target, no delay needed
         }
     }
 
