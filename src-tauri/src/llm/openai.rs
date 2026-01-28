@@ -17,6 +17,12 @@ struct OpenAIRequest {
     max_tokens: u32,
     messages: Vec<OpenAIMessage>,
     stream: bool,
+    stream_options: StreamOptions,
+}
+
+#[derive(Serialize)]
+struct StreamOptions {
+    include_usage: bool,
 }
 
 #[derive(Serialize)]
@@ -118,6 +124,9 @@ impl LlmProvider for OpenAIProvider {
                 },
             ],
             stream: true,
+            stream_options: StreamOptions {
+                include_usage: true,
+            },
         };
 
         let response = self
