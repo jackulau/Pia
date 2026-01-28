@@ -2,7 +2,9 @@ use crate::input::{
     is_dangerous_key_combination, parse_key, parse_modifier, KeyboardController, Modifier,
     MouseButton, MouseController, ScrollDirection,
 };
+use crate::llm::provider::{LlmResponse, ToolUse};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -74,6 +76,114 @@ pub struct ActionResult {
     pub message: Option<String>,
 }
 
+/// Parse an action from an LLM response (either tool_use or text)
+pub fn parse_llm_response(response: &LlmResponse) -> Result<Action, ActionError> {
+    match response {
+        LlmResponse::ToolUse(tool_use) => from_tool_use(tool_use),
+        LlmResponse::Text(text) => parse_action(text),
+    }
+}
+
+/// Parse an action from a native tool_use response
+pub fn from_tool_use(tool_use: &ToolUse) -> Result<Action, ActionError> {
+    let input = &tool_use.input;
+
+    match tool_use.name.as_str() {
+        "click" => {
+            let x = get_i32(input, "x")?;
+            let y = get_i32(input, "y")?;
+            let button = get_string_or_default(input, "button", "left");
+            Ok(Action::Click { x, y, button })
+        }
+        "double_click" => {
+            let x = get_i32(input, "x")?;
+            let y = get_i32(input, "y")?;
+            Ok(Action::DoubleClick { x, y })
+        }
+        "move" => {
+            let x = get_i32(input, "x")?;
+            let y = get_i32(input, "y")?;
+            Ok(Action::Move { x, y })
+        }
+        "type" => {
+            let text = get_string(input, "text")?;
+            Ok(Action::Type { text })
+        }
+        "key" => {
+            let key = get_string(input, "key")?;
+            let modifiers = get_string_array_or_default(input, "modifiers");
+            Ok(Action::Key { key, modifiers })
+        }
+        "scroll" => {
+            let x = get_i32(input, "x")?;
+            let y = get_i32(input, "y")?;
+            let direction = get_string(input, "direction")?;
+            let amount = get_i32_or_default(input, "amount", 3);
+            Ok(Action::Scroll {
+                x,
+                y,
+                direction,
+                amount,
+            })
+        }
+        "complete" => {
+            let message = get_string(input, "message")?;
+            Ok(Action::Complete { message })
+        }
+        "error" => {
+            let message = get_string(input, "message")?;
+            Ok(Action::Error { message })
+        }
+        _ => Err(ActionError::UnknownAction(tool_use.name.clone())),
+    }
+}
+
+// Helper functions for extracting values from JSON
+fn get_i32(value: &Value, key: &str) -> Result<i32, ActionError> {
+    value
+        .get(key)
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32)
+        .ok_or_else(|| ActionError::ParseError(format!("Missing or invalid field: {}", key)))
+}
+
+fn get_i32_or_default(value: &Value, key: &str, default: i32) -> i32 {
+    value
+        .get(key)
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32)
+        .unwrap_or(default)
+}
+
+fn get_string(value: &Value, key: &str) -> Result<String, ActionError> {
+    value
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| ActionError::ParseError(format!("Missing or invalid field: {}", key)))
+}
+
+fn get_string_or_default(value: &Value, key: &str, default: &str) -> String {
+    value
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| default.to_string())
+}
+
+fn get_string_array_or_default(value: &Value, key: &str) -> Vec<String> {
+    value
+        .get(key)
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Parse an action from raw JSON text (fallback for non-tool providers)
 pub fn parse_action(response: &str) -> Result<Action, ActionError> {
     // Try to find JSON in the response
     let json_str = extract_json(response)?;

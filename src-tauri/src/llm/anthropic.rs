@@ -1,4 +1,7 @@
-use super::provider::{build_system_prompt, ChunkCallback, LlmError, LlmProvider, TokenMetrics};
+use super::provider::{
+    build_system_prompt_for_tools, build_tools, ChunkCallback, LlmError, LlmProvider, LlmResponse,
+    Tool, TokenMetrics, ToolUse,
+};
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
@@ -17,6 +20,7 @@ struct AnthropicRequest {
     max_tokens: u32,
     system: String,
     messages: Vec<AnthropicMessage>,
+    tools: Vec<Tool>,
     stream: bool,
 }
 
@@ -43,10 +47,14 @@ struct ImageSource {
     data: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct StreamEvent {
     #[serde(rename = "type")]
     event_type: String,
+    #[serde(default)]
+    index: Option<usize>,
+    #[serde(default)]
+    content_block: Option<ContentBlock>,
     #[serde(default)]
     delta: Option<ContentDelta>,
     #[serde(default)]
@@ -55,19 +63,31 @@ struct StreamEvent {
     usage: Option<UsageInfo>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type")]
+enum ContentBlock {
+    #[serde(rename = "tool_use")]
+    ToolUse { id: String, name: String },
+    #[serde(rename = "text")]
+    Text { text: String },
+}
+
+#[derive(Deserialize, Debug)]
 struct ContentDelta {
     #[serde(rename = "type")]
     delta_type: Option<String>,
+    #[serde(default)]
     text: Option<String>,
+    #[serde(default)]
+    partial_json: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct MessageInfo {
     usage: Option<UsageInfo>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct UsageInfo {
     input_tokens: Option<u64>,
     output_tokens: Option<u64>,
@@ -92,9 +112,10 @@ impl LlmProvider for AnthropicProvider {
         screen_width: u32,
         screen_height: u32,
         on_chunk: ChunkCallback,
-    ) -> Result<(String, TokenMetrics), LlmError> {
+    ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt(screen_width, screen_height);
+        let system_prompt = build_system_prompt_for_tools(screen_width, screen_height);
+        let tools = build_tools();
 
         let request = AnthropicRequest {
             model: self.model.clone(),
@@ -112,12 +133,13 @@ impl LlmProvider for AnthropicProvider {
                     },
                     AnthropicContent::Text {
                         text: format!(
-                            "User instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.",
+                            "User instruction: {}\n\nAnalyze the screenshot and use the appropriate tool.",
                             instruction
                         ),
                     },
                 ],
             }],
+            tools,
             stream: true,
         };
 
@@ -137,10 +159,15 @@ impl LlmProvider for AnthropicProvider {
         }
 
         let mut stream = response.bytes_stream();
-        let mut full_response = String::new();
         let mut input_tokens = 0u64;
         let mut output_tokens = 0u64;
         let mut buffer = String::new();
+
+        // Track tool_use blocks as they stream
+        let mut current_tool_id: Option<String> = None;
+        let mut current_tool_name: Option<String> = None;
+        let mut current_tool_input = String::new();
+        let mut text_response = String::new();
 
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result?;
@@ -162,11 +189,32 @@ impl LlmProvider for AnthropicProvider {
                                         }
                                     }
                                 }
+                                "content_block_start" => {
+                                    if let Some(content_block) = event.content_block {
+                                        match content_block {
+                                            ContentBlock::ToolUse { id, name } => {
+                                                current_tool_id = Some(id);
+                                                current_tool_name = Some(name.clone());
+                                                current_tool_input.clear();
+                                                on_chunk(&format!("[Using tool: {}]", name));
+                                            }
+                                            ContentBlock::Text { text } => {
+                                                text_response.push_str(&text);
+                                                on_chunk(&text);
+                                            }
+                                        }
+                                    }
+                                }
                                 "content_block_delta" => {
                                     if let Some(delta) = event.delta {
+                                        // Handle text delta
                                         if let Some(text) = delta.text {
-                                            full_response.push_str(&text);
+                                            text_response.push_str(&text);
                                             on_chunk(&text);
+                                        }
+                                        // Handle tool input JSON delta
+                                        if let Some(partial_json) = delta.partial_json {
+                                            current_tool_input.push_str(&partial_json);
                                         }
                                     }
                                 }
@@ -189,7 +237,18 @@ impl LlmProvider for AnthropicProvider {
             total_duration: start.elapsed(),
         };
 
-        Ok((full_response, metrics))
+        // Return tool_use if we received one, otherwise return text
+        if let (Some(id), Some(name)) = (current_tool_id, current_tool_name) {
+            let input: serde_json::Value = serde_json::from_str(&current_tool_input)
+                .unwrap_or_else(|_| serde_json::json!({}));
+
+            Ok((
+                LlmResponse::ToolUse(ToolUse { id, name, input }),
+                metrics,
+            ))
+        } else {
+            Ok((LlmResponse::Text(text_response), metrics))
+        }
     }
 
     fn name(&self) -> &str {

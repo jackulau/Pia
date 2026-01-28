@@ -1,4 +1,4 @@
-use super::action::{execute_action, parse_action, ActionError};
+use super::action::{execute_action, parse_llm_response, ActionError};
 use super::state::{AgentStateManager, AgentStatus};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
@@ -151,7 +151,7 @@ impl AgentLoop {
             self.emit_state_update().await;
 
             // Parse and execute action
-            let action = parse_action(&response)?;
+            let action = parse_llm_response(&response)?;
             self.state
                 .set_last_action(serde_json::to_string(&action).unwrap_or_default())
                 .await;
