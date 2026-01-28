@@ -1,4 +1,5 @@
-use super::provider::{build_system_prompt, ChunkCallback, LlmError, LlmProvider, TokenMetrics};
+use super::provider::{build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, TokenMetrics};
+use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
@@ -81,10 +82,9 @@ impl OpenRouterProvider {
 
 #[async_trait]
 impl LlmProvider for OpenRouterProvider {
-    async fn send_with_image(
+    async fn send_with_history(
         &self,
-        instruction: &str,
-        image_base64: &str,
+        history: &ConversationHistory,
         screen_width: u32,
         screen_height: u32,
         on_chunk: ChunkCallback,
@@ -92,31 +92,38 @@ impl LlmProvider for OpenRouterProvider {
         let start = Instant::now();
         let system_prompt = build_system_prompt(screen_width, screen_height);
 
+        // Build messages from conversation history
+        let mut messages = vec![OpenRouterMessage {
+            role: "system".to_string(),
+            content: OpenRouterContent::Text(system_prompt),
+        }];
+
+        for (role, text, image_base64) in history_to_messages(history) {
+            let content = if let Some(img_data) = image_base64 {
+                OpenRouterContent::Parts(vec![
+                    OpenRouterPart::ImageUrl {
+                        image_url: ImageUrl {
+                            url: format!("data:image/png;base64,{}", img_data),
+                        },
+                    },
+                    OpenRouterPart::Text {
+                        text: format!(
+                            "User instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.",
+                            text
+                        ),
+                    },
+                ])
+            } else {
+                OpenRouterContent::Text(text)
+            };
+
+            messages.push(OpenRouterMessage { role, content });
+        }
+
         let request = OpenRouterRequest {
             model: self.model.clone(),
             max_tokens: 1024,
-            messages: vec![
-                OpenRouterMessage {
-                    role: "system".to_string(),
-                    content: OpenRouterContent::Text(system_prompt),
-                },
-                OpenRouterMessage {
-                    role: "user".to_string(),
-                    content: OpenRouterContent::Parts(vec![
-                        OpenRouterPart::ImageUrl {
-                            image_url: ImageUrl {
-                                url: format!("data:image/png;base64,{}", image_base64),
-                            },
-                        },
-                        OpenRouterPart::Text {
-                            text: format!(
-                                "User instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.",
-                                instruction
-                            ),
-                        },
-                    ]),
-                },
-            ],
+            messages,
             stream: true,
         };
 

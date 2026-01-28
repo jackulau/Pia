@@ -1,4 +1,5 @@
 use super::action::{execute_action, parse_action, ActionError};
+use super::conversation::ConversationHistory;
 use super::state::{AgentStateManager, AgentStatus};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
@@ -99,6 +100,10 @@ impl AgentLoop {
         let max_iterations = self.config.general.max_iterations;
         let confirm_dangerous = self.config.general.confirm_dangerous_actions;
 
+        // Initialize conversation history for this task
+        let mut conversation = ConversationHistory::new();
+        conversation.set_original_instruction(instruction.clone());
+
         self.state.start(instruction.clone(), max_iterations).await;
         self.emit_state_update().await;
 
@@ -123,22 +128,32 @@ impl AgentLoop {
             // Capture screenshot
             let screenshot = capture_primary_screen()?;
 
+            // Add user message with current screenshot to conversation
+            conversation.add_user_message(
+                &instruction,
+                Some(screenshot.base64.clone()),
+                Some(screenshot.width),
+                Some(screenshot.height),
+            );
+
             // Create callback for chunk streaming
             let app_handle = self.app_handle.clone();
             let on_chunk: Box<dyn Fn(&str) + Send + Sync> = Box::new(move |chunk: &str| {
                 let _ = app_handle.emit("llm-chunk", chunk.to_string());
             });
 
-            // Send to LLM
+            // Send conversation history to LLM
             let (response, metrics) = provider
-                .send_with_image(
-                    &instruction,
-                    &screenshot.base64,
+                .send_with_history(
+                    &conversation,
                     screenshot.width,
                     screenshot.height,
                     on_chunk,
                 )
                 .await?;
+
+            // Add assistant response to conversation
+            conversation.add_assistant_message(&response);
 
             // Update metrics
             self.state
@@ -159,6 +174,9 @@ impl AgentLoop {
 
             match execute_action(&action, confirm_dangerous) {
                 Ok(result) => {
+                    // Add successful tool result to conversation
+                    conversation.add_tool_result(true, result.message.clone(), None);
+
                     if result.completed {
                         self.state.complete(result.message).await;
                         self.emit_state_update().await;
@@ -166,6 +184,13 @@ impl AgentLoop {
                     }
                 }
                 Err(ActionError::RequiresConfirmation(msg)) => {
+                    // Add pending confirmation to conversation
+                    conversation.add_tool_result(
+                        false,
+                        None,
+                        Some(format!("Action requires confirmation: {}", msg)),
+                    );
+
                     // Emit confirmation request to frontend
                     let _ = self.app_handle.emit("confirmation-required", msg);
                     self.state.set_status(AgentStatus::Paused).await;
@@ -184,6 +209,9 @@ impl AgentLoop {
                     self.state.set_status(AgentStatus::Running).await;
                 }
                 Err(e) => {
+                    // Add error to conversation before returning
+                    conversation.add_tool_result(false, None, Some(e.to_string()));
+
                     self.state.set_error(e.to_string()).await;
                     self.emit_state_update().await;
                     return Err(e.into());

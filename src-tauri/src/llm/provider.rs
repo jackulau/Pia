@@ -1,3 +1,4 @@
+use crate::agent::conversation::{ConversationHistory, Message};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -38,6 +39,18 @@ pub type ChunkCallback = Box<dyn Fn(&str) + Send + Sync>;
 
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
+    /// Sends a message with conversation history to the LLM.
+    /// This is the preferred method that includes context from previous iterations.
+    async fn send_with_history(
+        &self,
+        history: &ConversationHistory,
+        screen_width: u32,
+        screen_height: u32,
+        on_chunk: ChunkCallback,
+    ) -> Result<(String, TokenMetrics), LlmError>;
+
+    /// Legacy method for sending a single image with instruction.
+    /// Kept for backwards compatibility but delegates to send_with_history.
     async fn send_with_image(
         &self,
         instruction: &str,
@@ -45,9 +58,59 @@ pub trait LlmProvider: Send + Sync {
         screen_width: u32,
         screen_height: u32,
         on_chunk: ChunkCallback,
-    ) -> Result<(String, TokenMetrics), LlmError>;
+    ) -> Result<(String, TokenMetrics), LlmError> {
+        // Create a temporary conversation history with just this message
+        let mut history = ConversationHistory::new();
+        history.add_user_message(
+            instruction,
+            Some(image_base64.to_string()),
+            Some(screen_width),
+            Some(screen_height),
+        );
+        self.send_with_history(&history, screen_width, screen_height, on_chunk)
+            .await
+    }
 
     fn name(&self) -> &str;
+}
+
+/// Helper to convert conversation history to provider-specific message format.
+/// Returns a Vec of tuples: (role, text_content, optional_image_base64)
+pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String, Option<String>)> {
+    history
+        .get_messages()
+        .iter()
+        .map(|msg| match msg {
+            Message::User {
+                instruction,
+                screenshot_base64,
+                ..
+            } => (
+                "user".to_string(),
+                instruction.clone(),
+                screenshot_base64.clone(),
+            ),
+            Message::Assistant { content } => ("assistant".to_string(), content.clone(), None),
+            Message::ToolResult {
+                success,
+                message,
+                error,
+            } => {
+                let text = if *success {
+                    format!(
+                        "Action executed successfully. {}",
+                        message.as_deref().unwrap_or("")
+                    )
+                } else {
+                    format!(
+                        "Action failed. {}",
+                        error.as_deref().unwrap_or("Unknown error")
+                    )
+                };
+                ("user".to_string(), text, None)
+            }
+        })
+        .collect()
 }
 
 pub fn build_system_prompt(screen_width: u32, screen_height: u32) -> String {
