@@ -42,6 +42,9 @@ const confirmActionBtn = document.getElementById('confirm-action-btn');
 // State
 let isRunning = false;
 let currentConfig = null;
+let lastIteration = 0;
+let lastTokens = 0;
+let lastAction = null;
 
 // Initialize
 async function init() {
@@ -224,29 +227,47 @@ function updateAgentState(state) {
       statusText.textContent = 'Ready';
   }
 
-  // Update metrics
-  iterationValue.textContent = `${state.iteration}/${state.max_iterations}`;
+  // Update metrics with animation
+  const newIteration = state.iteration;
+  const newTokens = state.total_input_tokens + state.total_output_tokens;
+
+  if (newIteration !== lastIteration) {
+    iterationValue.textContent = `${newIteration}/${state.max_iterations}`;
+    triggerPulse(iterationValue);
+    lastIteration = newIteration;
+  }
+
   speedValue.textContent = state.tokens_per_second > 0
     ? `${state.tokens_per_second.toFixed(1)} tok/s`
     : '-- tok/s';
-  tokensValue.textContent = (state.total_input_tokens + state.total_output_tokens).toLocaleString();
 
-  // Update action display
-  if (state.last_error) {
-    actionContent.textContent = `Error: ${state.last_error}`;
-    actionContent.style.color = 'var(--error)';
-  } else if (state.last_action) {
-    try {
-      const action = JSON.parse(state.last_action);
-      actionContent.textContent = formatAction(action);
-      actionContent.style.color = '';
-    } catch {
-      actionContent.textContent = state.last_action;
+  if (newTokens !== lastTokens) {
+    tokensValue.textContent = newTokens.toLocaleString();
+    triggerPulse(tokensValue);
+    lastTokens = newTokens;
+  }
+
+  // Update action display with animation
+  const currentActionText = state.last_error || state.last_action || state.instruction;
+  if (currentActionText !== lastAction) {
+    if (state.last_error) {
+      actionContent.textContent = `Error: ${state.last_error}`;
+      actionContent.style.color = '#ff453a';
+    } else if (state.last_action) {
+      try {
+        const action = JSON.parse(state.last_action);
+        actionContent.textContent = formatAction(action);
+        actionContent.style.color = '';
+      } catch {
+        actionContent.textContent = state.last_action;
+        actionContent.style.color = '';
+      }
+    } else if (state.instruction) {
+      actionContent.textContent = `Task: ${state.instruction}`;
       actionContent.style.color = '';
     }
-  } else if (state.instruction) {
-    actionContent.textContent = `Task: ${state.instruction}`;
-    actionContent.style.color = '';
+    triggerSlideIn(actionContent);
+    lastAction = currentActionText;
   }
 
   // Show/hide stop button
@@ -326,7 +347,7 @@ async function saveSettings() {
   }
 }
 
-// Show toast notification
+// Show toast notification with animation
 function showToast(message, type = 'info') {
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
@@ -334,8 +355,30 @@ function showToast(message, type = 'info') {
   document.body.appendChild(toast);
 
   setTimeout(() => {
-    toast.remove();
-  }, 3000);
+    toast.classList.add('hiding');
+    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+  }, 2700);
+}
+
+// Animation helper: trigger pulse on metric value
+function triggerPulse(element) {
+  element.classList.remove('updated');
+  void element.offsetWidth; // Force reflow
+  element.classList.add('updated');
+}
+
+// Animation helper: trigger slide-in on action content
+function triggerSlideIn(element) {
+  element.classList.remove('slide-in');
+  void element.offsetWidth; // Force reflow
+  element.classList.add('slide-in');
+}
+
+// Animation helper: trigger shake on input (for validation errors)
+function triggerShake(element) {
+  element.classList.remove('shake');
+  void element.offsetWidth; // Force reflow
+  element.classList.add('shake');
 }
 
 // Initialize the app
