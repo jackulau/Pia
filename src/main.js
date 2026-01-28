@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 // CSS is inlined in index.html for transparent window support
 
 // DOM Elements
@@ -42,12 +43,15 @@ const confirmActionBtn = document.getElementById('confirm-action-btn');
 // State
 let isRunning = false;
 let currentConfig = null;
+let resizeDebounceTimer = null;
 
 // Initialize
 async function init() {
   await loadConfig();
+  await restoreWindowSize();
   setupEventListeners();
   setupTauriListeners();
+  setupResizeListener();
 }
 
 // Load configuration from backend
@@ -336,6 +340,41 @@ function showToast(message, type = 'info') {
   setTimeout(() => {
     toast.remove();
   }, 3000);
+}
+
+// Window size persistence
+const WINDOW_SIZE_KEY = 'pia-window-size';
+
+async function restoreWindowSize() {
+  try {
+    const saved = localStorage.getItem(WINDOW_SIZE_KEY);
+    if (saved) {
+      const { width, height } = JSON.parse(saved);
+      const window = getCurrentWindow();
+      await window.setSize({ width: Math.round(width), height: Math.round(height), type: 'Logical' });
+    }
+  } catch (error) {
+    console.error('Failed to restore window size:', error);
+  }
+}
+
+function saveWindowSize(width, height) {
+  try {
+    localStorage.setItem(WINDOW_SIZE_KEY, JSON.stringify({ width, height }));
+  } catch (error) {
+    console.error('Failed to save window size:', error);
+  }
+}
+
+function setupResizeListener() {
+  const window = getCurrentWindow();
+  window.onResized(({ payload: size }) => {
+    // Debounce to avoid excessive saves during drag
+    clearTimeout(resizeDebounceTimer);
+    resizeDebounceTimer = setTimeout(() => {
+      saveWindowSize(size.width, size.height);
+    }, 300);
+  });
 }
 
 // Initialize the app
