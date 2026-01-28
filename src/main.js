@@ -42,12 +42,17 @@ const confirmActionBtn = document.getElementById('confirm-action-btn');
 // State
 let isRunning = false;
 let currentConfig = null;
+let previousFocusElement = null;
 
 // Initialize
 async function init() {
   await loadConfig();
   setupEventListeners();
   setupTauriListeners();
+  setupKeyboardNavigation();
+
+  // Auto-focus input on app start
+  instructionInput.focus();
 }
 
 // Load configuration from backend
@@ -122,13 +127,11 @@ function setupEventListeners() {
 
   // Settings
   settingsBtn.addEventListener('click', () => {
-    mainModal.classList.add('hidden');
-    settingsPanel.classList.remove('hidden');
+    openSettings();
   });
 
   settingsCloseBtn.addEventListener('click', () => {
-    settingsPanel.classList.add('hidden');
-    mainModal.classList.remove('hidden');
+    closeSettings();
   });
 
   // Provider selection
@@ -148,10 +151,12 @@ function setupEventListeners() {
   cancelActionBtn.addEventListener('click', () => {
     confirmationDialog.classList.add('hidden');
     stopAgent();
+    restoreFocus();
   });
 
   confirmActionBtn.addEventListener('click', () => {
     confirmationDialog.classList.add('hidden');
+    restoreFocus();
     // Continue execution - the backend will handle this
   });
 }
@@ -170,8 +175,11 @@ async function setupTauriListeners() {
 
   // Confirmation required
   await listen('confirmation-required', (event) => {
+    previousFocusElement = document.activeElement;
     confirmationMessage.textContent = event.payload;
     confirmationDialog.classList.remove('hidden');
+    // Focus cancel button (safer default)
+    cancelActionBtn.focus();
   });
 }
 
@@ -318,8 +326,7 @@ async function saveSettings() {
     showToast('Settings saved', 'success');
 
     // Return to main view
-    settingsPanel.classList.add('hidden');
-    mainModal.classList.remove('hidden');
+    closeSettings();
   } catch (error) {
     console.error('Failed to save settings:', error);
     showToast('Failed to save settings', 'error');
@@ -336,6 +343,137 @@ function showToast(message, type = 'info') {
   setTimeout(() => {
     toast.remove();
   }, 3000);
+}
+
+// Setup keyboard navigation
+function setupKeyboardNavigation() {
+  // Global keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    const isMod = e.metaKey || e.ctrlKey;
+
+    // Escape key handling
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      // Close confirmation dialog first
+      if (!confirmationDialog.classList.contains('hidden')) {
+        confirmationDialog.classList.add('hidden');
+        stopAgent();
+        restoreFocus();
+        return;
+      }
+      // Close settings panel
+      if (!settingsPanel.classList.contains('hidden')) {
+        closeSettings();
+        return;
+      }
+    }
+
+    // Cmd/Ctrl + , - Open settings
+    if (isMod && e.key === ',') {
+      e.preventDefault();
+      if (settingsPanel.classList.contains('hidden')) {
+        openSettings();
+      }
+      return;
+    }
+
+    // Cmd/Ctrl + . - Stop agent
+    if (isMod && e.key === '.') {
+      e.preventDefault();
+      if (isRunning) {
+        stopAgent();
+      }
+      return;
+    }
+
+    // Cmd/Ctrl + Enter - Force submit
+    if (isMod && e.key === 'Enter') {
+      e.preventDefault();
+      const instruction = instructionInput.value.trim();
+      if (instruction) {
+        forceSubmitInstruction();
+      }
+      return;
+    }
+  });
+
+  // Focus trap for confirmation dialog
+  confirmationDialog.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') {
+      handleDialogFocusTrap(e);
+    }
+  });
+
+  // Arrow key navigation for provider select
+  providerSelect.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      // Browser handles select navigation natively
+      return;
+    }
+  });
+}
+
+// Open settings panel
+function openSettings() {
+  previousFocusElement = document.activeElement;
+  mainModal.classList.add('hidden');
+  settingsPanel.classList.remove('hidden');
+  // Focus the first focusable element in settings
+  providerSelect.focus();
+}
+
+// Close settings panel
+function closeSettings() {
+  settingsPanel.classList.add('hidden');
+  mainModal.classList.remove('hidden');
+  restoreFocus();
+}
+
+// Restore focus to previous element
+function restoreFocus() {
+  if (previousFocusElement && document.body.contains(previousFocusElement)) {
+    previousFocusElement.focus();
+    previousFocusElement = null;
+  } else {
+    instructionInput.focus();
+  }
+}
+
+// Handle focus trap within confirmation dialog
+function handleDialogFocusTrap(e) {
+  const focusableElements = confirmationDialog.querySelectorAll(
+    'button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  );
+  const firstElement = focusableElements[0];
+  const lastElement = focusableElements[focusableElements.length - 1];
+
+  if (e.shiftKey) {
+    // Shift+Tab: go to last element if on first
+    if (document.activeElement === firstElement) {
+      e.preventDefault();
+      lastElement.focus();
+    }
+  } else {
+    // Tab: go to first element if on last
+    if (document.activeElement === lastElement) {
+      e.preventDefault();
+      firstElement.focus();
+    }
+  }
+}
+
+// Force submit instruction (bypasses disabled state)
+async function forceSubmitInstruction() {
+  const instruction = instructionInput.value.trim();
+  if (!instruction) return;
+
+  try {
+    await invoke('start_agent', { instruction });
+    instructionInput.value = '';
+  } catch (error) {
+    console.error('Failed to start agent:', error);
+    showToast(error, 'error');
+  }
 }
 
 // Initialize the app
