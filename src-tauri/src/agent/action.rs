@@ -112,7 +112,7 @@ fn extract_json(text: &str) -> Result<String, ActionError> {
     Ok(text[start..end].to_string())
 }
 
-pub fn execute_action(
+pub async fn execute_action(
     action: &Action,
     confirm_dangerous: bool,
 ) -> Result<ActionResult, ActionError> {
@@ -125,13 +125,21 @@ pub fn execute_action(
                 _ => MouseButton::Left,
             };
 
-            let mut mouse = MouseController::new()?;
-            mouse.click_at(*x, *y, btn)?;
+            let x = *x;
+            let y = *y;
+            let button_str = button.clone();
+
+            tokio::task::spawn_blocking(move || {
+                let mut mouse = MouseController::new()?;
+                mouse.click_at(x, y, btn)
+            })
+            .await
+            .map_err(|e| ActionError::MouseError(crate::input::MouseError::ActionError(e.to_string())))??;
 
             Ok(ActionResult {
                 success: true,
                 completed: false,
-                message: Some(format!("Clicked {} at ({}, {})", button, x, y)),
+                message: Some(format!("Clicked {} at ({}, {})", button_str, x, y)),
             })
         }
 
@@ -213,15 +221,24 @@ pub fn execute_action(
                 _ => ScrollDirection::Down,
             };
 
-            let mut mouse = MouseController::new()?;
-            mouse.move_to(*x, *y)?;
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            mouse.scroll(dir, *amount)?;
+            let x = *x;
+            let y = *y;
+            let amount = *amount;
+            let direction_str = direction.clone();
+
+            tokio::task::spawn_blocking(move || {
+                let mut mouse = MouseController::new()?;
+                mouse.move_to(x, y)?;
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                mouse.scroll(dir, amount)
+            })
+            .await
+            .map_err(|e| ActionError::MouseError(crate::input::MouseError::ActionError(e.to_string())))??;
 
             Ok(ActionResult {
                 success: true,
                 completed: false,
-                message: Some(format!("Scrolled {} {} times at ({}, {})", direction, amount, x, y)),
+                message: Some(format!("Scrolled {} {} times at ({}, {})", direction_str, amount, x, y)),
             })
         }
 

@@ -157,7 +157,7 @@ impl AgentLoop {
                 .await;
             self.emit_state_update().await;
 
-            match execute_action(&action, confirm_dangerous) {
+            match execute_action(&action, confirm_dangerous).await {
                 Ok(result) => {
                     if result.completed {
                         self.state.complete(result.message).await;
