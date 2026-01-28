@@ -4,7 +4,7 @@ mod config;
 mod input;
 mod llm;
 
-use agent::{AgentLoop, AgentStateManager, AgentStatus};
+use agent::{AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse};
 use config::Config;
 use serde::Serialize;
 use std::sync::Arc;
@@ -25,6 +25,7 @@ struct AgentStatePayload {
     max_iterations: u32,
     last_action: Option<String>,
     last_error: Option<String>,
+    pending_action: Option<String>,
     tokens_per_second: f64,
     total_input_tokens: u64,
     total_output_tokens: u64,
@@ -71,10 +72,27 @@ async fn get_agent_state(state: State<'_, AppState>) -> Result<AgentStatePayload
         max_iterations: s.max_iterations,
         last_action: s.last_action,
         last_error: s.last_error,
+        pending_action: s.pending_action,
         tokens_per_second: s.tokens_per_second,
         total_input_tokens: s.total_input_tokens,
         total_output_tokens: s.total_output_tokens,
     })
+}
+
+#[tauri::command]
+async fn confirm_action(state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .agent_state
+        .send_confirmation(ConfirmationResponse::Confirmed)
+        .await
+}
+
+#[tauri::command]
+async fn deny_action(state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .agent_state
+        .send_confirmation(ConfirmationResponse::Denied)
+        .await
 }
 
 #[tauri::command]
@@ -143,6 +161,8 @@ pub fn run() {
             save_config,
             hide_window,
             show_window,
+            confirm_action,
+            deny_action,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
