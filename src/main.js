@@ -19,7 +19,8 @@ const statusText = document.querySelector('.status-text');
 const iterationValue = document.getElementById('iteration-value');
 const speedValue = document.getElementById('speed-value');
 const tokensValue = document.getElementById('tokens-value');
-const actionContent = document.getElementById('action-content');
+const timelineList = document.getElementById('timeline-list');
+const actionCount = document.getElementById('action-count');
 
 // Settings elements
 const providerSelect = document.getElementById('provider-select');
@@ -231,22 +232,43 @@ function updateAgentState(state) {
     : '-- tok/s';
   tokensValue.textContent = (state.total_input_tokens + state.total_output_tokens).toLocaleString();
 
-  // Update action display
-  if (state.last_error) {
-    actionContent.textContent = `Error: ${state.last_error}`;
-    actionContent.style.color = 'var(--error)';
-  } else if (state.last_action) {
-    try {
-      const action = JSON.parse(state.last_action);
-      actionContent.textContent = formatAction(action);
-      actionContent.style.color = '';
-    } catch {
-      actionContent.textContent = state.last_action;
-      actionContent.style.color = '';
+  // Update action timeline
+  if (state.action_history && state.action_history.length > 0) {
+    actionCount.textContent = `${state.action_history.length} action${state.action_history.length === 1 ? '' : 's'}`;
+
+    // Clear and rebuild timeline
+    timelineList.innerHTML = '';
+
+    // Show most recent first (reverse order)
+    const recentActions = [...state.action_history].reverse();
+
+    for (const entry of recentActions) {
+      const item = document.createElement('div');
+      item.className = `timeline-item${entry.is_error ? ' error' : ''}`;
+
+      const time = document.createElement('span');
+      time.className = 'timeline-time';
+      time.textContent = formatTimestamp(entry.timestamp);
+
+      const action = document.createElement('span');
+      action.className = 'timeline-action';
+      try {
+        const parsed = JSON.parse(entry.action);
+        action.textContent = formatAction(parsed);
+      } catch {
+        action.textContent = entry.action;
+      }
+
+      item.appendChild(time);
+      item.appendChild(action);
+      timelineList.appendChild(item);
     }
-  } else if (state.instruction) {
-    actionContent.textContent = `Task: ${state.instruction}`;
-    actionContent.style.color = '';
+
+    // Auto-scroll to show newest (at top)
+    timelineList.scrollTop = 0;
+  } else {
+    timelineList.innerHTML = '<div class="timeline-empty">Waiting for instruction...</div>';
+    actionCount.textContent = '0 actions';
   }
 
   // Show/hide stop button
@@ -281,6 +303,17 @@ function formatAction(action) {
     default:
       return JSON.stringify(action);
   }
+}
+
+// Format timestamp for timeline display
+function formatTimestamp(isoString) {
+  const date = new Date(isoString);
+  return date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
 }
 
 // Save settings to backend

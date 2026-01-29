@@ -139,9 +139,61 @@
     .metric-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; }
     .metric-value { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.8); font-variant-numeric: tabular-nums; }
 
-    .action-display { padding: 10px 12px; }
-    .action-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
-    .action-content { font-size: 11px; color: rgba(255, 255, 255, 0.6); line-height: 1.4; max-height: 40px; overflow-y: auto; }
+    .action-timeline {
+      padding: 10px 12px;
+      max-height: 120px;
+      display: flex;
+      flex-direction: column;
+    }
+    .timeline-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .action-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; }
+    .action-count {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.4);
+    }
+    .timeline-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .timeline-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 11px;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .timeline-item:last-child {
+      border-bottom: none;
+    }
+    .timeline-time {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.4);
+      white-space: nowrap;
+      min-width: 45px;
+    }
+    .timeline-action {
+      color: rgba(255, 255, 255, 0.6);
+      line-height: 1.3;
+      flex: 1;
+    }
+    .timeline-item.error .timeline-action {
+      color: #ff453a;
+    }
+    .timeline-empty {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+      text-align: center;
+      padding: 8px 0;
+    }
 
     .stop-btn {
       display: flex;
@@ -305,9 +357,14 @@
           <span class="metric-value" id="tokens-value">0</span>
         </div>
       </div>
-      <div class="action-display">
-        <div class="action-label">Last Action</div>
-        <div class="action-content" id="action-content">Waiting for instruction...</div>
+      <div class="action-timeline">
+        <div class="timeline-header">
+          <span class="action-label">Action History</span>
+          <span class="action-count" id="action-count">0 actions</span>
+        </div>
+        <div class="timeline-list" id="timeline-list">
+          <div class="timeline-empty">Waiting for instruction...</div>
+        </div>
       </div>
       <button class="stop-btn hidden" id="stop-btn">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>
