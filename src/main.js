@@ -152,14 +152,22 @@ function setupEventListeners() {
   });
 
   // Confirmation dialog
-  cancelActionBtn.addEventListener('click', () => {
+  cancelActionBtn.addEventListener('click', async () => {
     confirmationDialog.classList.add('hidden');
-    stopAgent();
+    try {
+      await invoke('deny_action');
+    } catch (error) {
+      console.error('Failed to deny action:', error);
+    }
   });
 
-  confirmActionBtn.addEventListener('click', () => {
+  confirmActionBtn.addEventListener('click', async () => {
     confirmationDialog.classList.add('hidden');
-    // Continue execution - the backend will handle this
+    try {
+      await invoke('confirm_action');
+    } catch (error) {
+      console.error('Failed to confirm action:', error);
+    }
   });
 }
 
@@ -226,6 +234,10 @@ function updateAgentState(state) {
       break;
     case 'Paused':
       statusText.textContent = 'Paused';
+      break;
+    case 'AwaitingConfirmation':
+      statusDot.classList.add('running');
+      statusText.textContent = 'Awaiting Confirmation';
       break;
     default:
       statusText.textContent = 'Ready';

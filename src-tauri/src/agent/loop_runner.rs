@@ -1,11 +1,11 @@
 use super::action::{execute_action, parse_action, ActionError};
-use super::state::{AgentStateManager, AgentStatus};
+use super::state::{AgentStateManager, AgentStatus, ConfirmationResponse};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
 use crate::llm::{AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider};
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, timeout, Duration};
 
 #[derive(Error, Debug)]
 pub enum LoopError {
@@ -21,6 +21,8 @@ pub enum LoopError {
     Stopped,
     #[error("Max iterations reached")]
     MaxIterations,
+    #[error("Action denied by user")]
+    ActionDenied,
 }
 
 pub struct AgentLoop {
@@ -166,22 +168,44 @@ impl AgentLoop {
                     }
                 }
                 Err(ActionError::RequiresConfirmation(msg)) => {
-                    // Emit confirmation request to frontend
-                    let _ = self.app_handle.emit("confirmation-required", msg);
-                    self.state.set_status(AgentStatus::Paused).await;
+                    // Reset confirmation channel for fresh state
+                    self.state.reset_confirmation_channel().await;
+
+                    // Set pending action and status
+                    self.state.set_pending_action(Some(msg.clone())).await;
+                    self.state.set_status(AgentStatus::AwaitingConfirmation).await;
                     self.emit_state_update().await;
 
-                    // Wait for user response (handled externally)
-                    // For now, just continue after a delay
-                    sleep(Duration::from_secs(5)).await;
+                    // Emit confirmation request to frontend
+                    let _ = self.app_handle.emit("confirmation-required", msg);
+
+                    // Wait for user response with 30 second timeout
+                    let confirmation_timeout = Duration::from_secs(30);
+                    let response = timeout(confirmation_timeout, self.state.await_confirmation()).await;
+
+                    // Clear pending action
+                    self.state.set_pending_action(None).await;
+
+                    match response {
+                        Ok(Some(ConfirmationResponse::Confirmed)) => {
+                            // User confirmed, continue execution
+                            self.state.set_status(AgentStatus::Running).await;
+                            self.emit_state_update().await;
+                        }
+                        Ok(Some(ConfirmationResponse::Denied)) | Ok(None) | Err(_) => {
+                            // User denied, no response, or timeout - abort
+                            self.state.set_status(AgentStatus::Idle).await;
+                            self.state.set_error("Action denied or timed out".to_string()).await;
+                            self.emit_state_update().await;
+                            return Err(LoopError::ActionDenied);
+                        }
+                    }
 
                     if self.state.should_stop() {
                         self.state.set_status(AgentStatus::Idle).await;
                         self.emit_state_update().await;
                         return Err(LoopError::Stopped);
                     }
-
-                    self.state.set_status(AgentStatus::Running).await;
                 }
                 Err(e) => {
                     self.state.set_error(e.to_string()).await;

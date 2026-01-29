@@ -2,13 +2,20 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmationResponse {
+    Confirmed,
+    Denied,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentStatus {
     Idle,
     Running,
     Paused,
+    AwaitingConfirmation,
     Completed,
     Error,
 }
@@ -28,6 +35,7 @@ pub struct AgentState {
     pub max_iterations: u32,
     pub last_action: Option<String>,
     pub last_error: Option<String>,
+    pub pending_action: Option<String>,
     pub tokens_per_second: f64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
@@ -43,6 +51,7 @@ impl Default for AgentState {
             max_iterations: 50,
             last_action: None,
             last_error: None,
+            pending_action: None,
             tokens_per_second: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
@@ -54,6 +63,8 @@ impl Default for AgentState {
 pub struct AgentStateManager {
     state: Arc<RwLock<AgentState>>,
     should_stop: Arc<AtomicBool>,
+    confirmation_tx: Arc<RwLock<Option<mpsc::Sender<ConfirmationResponse>>>>,
+    confirmation_rx: Arc<RwLock<Option<mpsc::Receiver<ConfirmationResponse>>>>,
 }
 
 impl Clone for AgentStateManager {
@@ -61,15 +72,20 @@ impl Clone for AgentStateManager {
         Self {
             state: Arc::clone(&self.state),
             should_stop: Arc::clone(&self.should_stop),
+            confirmation_tx: Arc::clone(&self.confirmation_tx),
+            confirmation_rx: Arc::clone(&self.confirmation_rx),
         }
     }
 }
 
 impl AgentStateManager {
     pub fn new() -> Self {
+        let (tx, rx) = mpsc::channel(1);
         Self {
             state: Arc::new(RwLock::new(AgentState::default())),
             should_stop: Arc::new(AtomicBool::new(false)),
+            confirmation_tx: Arc::new(RwLock::new(Some(tx))),
+            confirmation_rx: Arc::new(RwLock::new(Some(rx))),
         }
     }
 
@@ -151,5 +167,36 @@ impl AgentStateManager {
         let mut state = self.state.write().await;
         *state = AgentState::default();
         self.should_stop.store(false, Ordering::SeqCst);
+    }
+
+    pub async fn set_pending_action(&self, action: Option<String>) {
+        let mut state = self.state.write().await;
+        state.pending_action = action;
+    }
+
+    pub async fn send_confirmation(&self, response: ConfirmationResponse) -> Result<(), String> {
+        let tx_guard = self.confirmation_tx.read().await;
+        if let Some(tx) = tx_guard.as_ref() {
+            tx.send(response)
+                .await
+                .map_err(|_| "Failed to send confirmation response".to_string())
+        } else {
+            Err("No confirmation channel available".to_string())
+        }
+    }
+
+    pub async fn await_confirmation(&self) -> Option<ConfirmationResponse> {
+        let mut rx_guard = self.confirmation_rx.write().await;
+        if let Some(rx) = rx_guard.as_mut() {
+            rx.recv().await
+        } else {
+            None
+        }
+    }
+
+    pub async fn reset_confirmation_channel(&self) {
+        let (tx, rx) = mpsc::channel(1);
+        *self.confirmation_tx.write().await = Some(tx);
+        *self.confirmation_rx.write().await = Some(rx);
     }
 }
