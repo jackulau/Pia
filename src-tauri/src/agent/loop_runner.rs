@@ -2,7 +2,9 @@ use super::action::{execute_action, parse_action, ActionError};
 use super::state::{AgentStateManager, AgentStatus};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
-use crate::llm::{AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider};
+use crate::llm::{
+    AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider,
+};
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
 use tokio::time::{sleep, Duration};
@@ -122,6 +124,12 @@ impl AgentLoop {
 
             // Capture screenshot
             let screenshot = capture_primary_screen()?;
+
+            // Store screenshot in state for frontend preview
+            self.state
+                .set_last_screenshot(screenshot.base64.clone())
+                .await;
+            self.emit_state_update().await;
 
             // Create callback for chunk streaming
             let app_handle = self.app_handle.clone();

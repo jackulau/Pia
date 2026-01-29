@@ -139,6 +139,66 @@
     .metric-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; }
     .metric-value { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.8); font-variant-numeric: tabular-nums; }
 
+    /* Screenshot Preview */
+    .screenshot-preview {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .preview-label {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.4);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .preview-container {
+      position: relative;
+      width: 100px;
+      height: 60px;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .preview-container:hover {
+      transform: scale(2.5);
+      transform-origin: left top;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      z-index: 100;
+    }
+    .preview-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+    .preview-image.visible {
+      display: block;
+    }
+    .preview-placeholder {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      color: rgba(255, 255, 255, 0.3);
+    }
+    .preview-placeholder span {
+      font-size: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .preview-placeholder.hidden {
+      display: none;
+    }
+
     .action-display { padding: 10px 12px; }
     .action-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
     .action-content { font-size: 11px; color: rgba(255, 255, 255, 0.6); line-height: 1.4; max-height: 40px; overflow-y: auto; }
@@ -303,6 +363,20 @@
         <div class="metric">
           <span class="metric-label">Tokens</span>
           <span class="metric-value" id="tokens-value">0</span>
+        </div>
+      </div>
+      <div class="screenshot-preview">
+        <div class="preview-label">Agent View</div>
+        <div class="preview-container">
+          <img id="screenshot-thumbnail" class="preview-image" alt="Screenshot" />
+          <div class="preview-placeholder" id="preview-placeholder">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+            <span>No screenshot</span>
+          </div>
         </div>
       </div>
       <div class="action-display">

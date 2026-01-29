@@ -23,6 +23,7 @@ pub struct AgentState {
     pub tokens_per_second: f64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
+    pub last_screenshot: Option<String>,
 }
 
 impl Default for AgentState {
@@ -37,6 +38,7 @@ impl Default for AgentState {
             tokens_per_second: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            last_screenshot: None,
         }
     }
 }
@@ -101,6 +103,11 @@ impl AgentStateManager {
         let mut state = self.state.write().await;
         state.status = AgentStatus::Error;
         state.last_error = Some(error);
+    }
+
+    pub async fn set_last_screenshot(&self, screenshot: String) {
+        let mut state = self.state.write().await;
+        state.last_screenshot = Some(screenshot);
     }
 
     pub async fn update_metrics(&self, tokens_per_sec: f64, input_tokens: u64, output_tokens: u64) {
