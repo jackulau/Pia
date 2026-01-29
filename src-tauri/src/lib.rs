@@ -1,11 +1,13 @@
 mod agent;
 mod capture;
 mod config;
+mod history;
 mod input;
 mod llm;
 
 use agent::{AgentLoop, AgentStateManager, AgentStatus};
 use config::Config;
+use history::{HistoryEntry, InstructionHistory};
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
@@ -15,6 +17,7 @@ use tokio::sync::RwLock;
 struct AppState {
     agent_state: AgentStateManager,
     config: Arc<RwLock<Config>>,
+    history: Arc<RwLock<InstructionHistory>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -100,16 +103,54 @@ async fn show_window(window: WebviewWindow) -> Result<(), String> {
     window.set_focus().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn get_instruction_history(state: State<'_, AppState>) -> Result<Vec<HistoryEntry>, String> {
+    let history = state.history.read().await;
+    Ok(history.get_all().to_vec())
+}
+
+#[tauri::command]
+async fn add_to_history(
+    instruction: String,
+    success: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut history = state.history.write().await;
+    history.add(instruction, success);
+    history.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn clear_history(state: State<'_, AppState>) -> Result<(), String> {
+    let mut history = state.history.write().await;
+    history.clear();
+    history.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn remove_from_history(index: usize, state: State<'_, AppState>) -> Result<(), String> {
+    let mut history = state.history.write().await;
+    if history.remove(index) {
+        history.save().map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        Err("Invalid history index".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = Config::load().unwrap_or_default();
+    let history = InstructionHistory::load().unwrap_or_default();
 
     tauri::Builder::default()
         // Temporarily disable global shortcuts to test
         // .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             println!("Pia starting up...");
-            
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -121,6 +162,7 @@ pub fn run() {
             let state = AppState {
                 agent_state: AgentStateManager::new(),
                 config: Arc::new(RwLock::new(config)),
+                history: Arc::new(RwLock::new(history)),
             };
             app.manage(state);
 
@@ -143,6 +185,10 @@ pub fn run() {
             save_config,
             hide_window,
             show_window,
+            get_instruction_history,
+            add_to_history,
+            clear_history,
+            remove_from_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

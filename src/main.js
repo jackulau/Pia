@@ -39,13 +39,21 @@ const confirmationMessage = document.getElementById('confirmation-message');
 const cancelActionBtn = document.getElementById('cancel-action-btn');
 const confirmActionBtn = document.getElementById('confirm-action-btn');
 
+// History elements
+const historyBtn = document.getElementById('history-btn');
+const historyDropdown = document.getElementById('history-dropdown');
+const historyList = document.getElementById('history-list');
+const historyClearBtn = document.getElementById('history-clear-btn');
+
 // State
 let isRunning = false;
 let currentConfig = null;
+let historyEntries = [];
 
 // Initialize
 async function init() {
   await loadConfig();
+  await loadHistory();
   setupEventListeners();
   setupTauriListeners();
 }
@@ -59,6 +67,57 @@ async function loadConfig() {
     console.error('Failed to load config:', error);
     showToast('Failed to load settings', 'error');
   }
+}
+
+// Load history from backend
+async function loadHistory() {
+  try {
+    historyEntries = await invoke('get_instruction_history');
+    renderHistoryList();
+  } catch (error) {
+    console.error('Failed to load history:', error);
+  }
+}
+
+// Render history dropdown list
+function renderHistoryList() {
+  if (historyEntries.length === 0) {
+    historyList.innerHTML = '<div class="history-empty">No history yet</div>';
+    return;
+  }
+
+  historyList.innerHTML = historyEntries.map((entry, index) => `
+    <div class="history-item" data-index="${index}" data-instruction="${escapeHtml(entry.instruction)}">
+      <div class="history-status ${entry.success ? 'success' : 'failure'}"></div>
+      <div class="history-content">
+        <div class="history-text">${escapeHtml(entry.instruction)}</div>
+        <div class="history-time">${formatTimestamp(entry.timestamp)}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// Format timestamp for display
+function formatTimestamp(timestamp) {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 // Update settings UI with current config
@@ -154,6 +213,60 @@ function setupEventListeners() {
     confirmationDialog.classList.add('hidden');
     // Continue execution - the backend will handle this
   });
+
+  // History dropdown toggle
+  historyBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isVisible = !historyDropdown.classList.contains('hidden');
+    historyDropdown.classList.toggle('hidden', isVisible);
+    historyBtn.classList.toggle('active', !isVisible);
+  });
+
+  // Close history dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!historyDropdown.contains(e.target) && e.target !== historyBtn) {
+      historyDropdown.classList.add('hidden');
+      historyBtn.classList.remove('active');
+    }
+  });
+
+  // History item click handlers
+  historyList.addEventListener('click', (e) => {
+    const item = e.target.closest('.history-item');
+    if (item) {
+      const instruction = item.dataset.instruction;
+      instructionInput.value = instruction;
+      historyDropdown.classList.add('hidden');
+      historyBtn.classList.remove('active');
+      instructionInput.focus();
+    }
+  });
+
+  // History item double-click to run immediately
+  historyList.addEventListener('dblclick', (e) => {
+    const item = e.target.closest('.history-item');
+    if (item && !isRunning) {
+      const instruction = item.dataset.instruction;
+      instructionInput.value = instruction;
+      historyDropdown.classList.add('hidden');
+      historyBtn.classList.remove('active');
+      submitInstruction();
+    }
+  });
+
+  // Clear history button
+  historyClearBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try {
+      await invoke('clear_history');
+      historyEntries = [];
+      renderHistoryList();
+      showToast('History cleared', 'success');
+    } catch (error) {
+      console.error('Failed to clear history:', error);
+      showToast('Failed to clear history', 'error');
+    }
+  });
 }
 
 // Setup Tauri event listeners
@@ -172,6 +285,17 @@ async function setupTauriListeners() {
   await listen('confirmation-required', (event) => {
     confirmationMessage.textContent = event.payload;
     confirmationDialog.classList.remove('hidden');
+  });
+
+  // Instruction completed - save to history
+  await listen('instruction-completed', async (event) => {
+    const { instruction, success } = event.payload;
+    try {
+      await invoke('add_to_history', { instruction, success });
+      await loadHistory();
+    } catch (error) {
+      console.error('Failed to save to history:', error);
+    }
   });
 }
 
