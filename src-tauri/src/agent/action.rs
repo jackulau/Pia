@@ -346,7 +346,7 @@ pub async fn execute_action(
                     });
                 }
 
-                let result = execute_action(sub_action, confirm_dangerous)?;
+                let result = Box::pin(execute_action(sub_action, confirm_dangerous)).await?;
 
                 if !result.success {
                     return Ok(ActionResult {
