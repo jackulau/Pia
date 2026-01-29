@@ -1,3 +1,4 @@
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -13,6 +14,13 @@ pub enum AgentStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActionHistoryEntry {
+    pub action: String,
+    pub timestamp: String,
+    pub is_error: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentState {
     pub status: AgentStatus,
     pub instruction: Option<String>,
@@ -23,6 +31,7 @@ pub struct AgentState {
     pub tokens_per_second: f64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
+    pub action_history: Vec<ActionHistoryEntry>,
 }
 
 impl Default for AgentState {
@@ -37,6 +46,7 @@ impl Default for AgentState {
             tokens_per_second: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            action_history: Vec::new(),
         }
     }
 }
@@ -83,6 +93,7 @@ impl AgentStateManager {
         state.tokens_per_second = 0.0;
         state.total_input_tokens = 0;
         state.total_output_tokens = 0;
+        state.action_history.clear();
         self.should_stop.store(false, Ordering::SeqCst);
     }
 
@@ -94,13 +105,23 @@ impl AgentStateManager {
 
     pub async fn set_last_action(&self, action: String) {
         let mut state = self.state.write().await;
-        state.last_action = Some(action);
+        state.last_action = Some(action.clone());
+        state.action_history.push(ActionHistoryEntry {
+            action,
+            timestamp: Utc::now().to_rfc3339(),
+            is_error: false,
+        });
     }
 
     pub async fn set_error(&self, error: String) {
         let mut state = self.state.write().await;
         state.status = AgentStatus::Error;
-        state.last_error = Some(error);
+        state.last_error = Some(error.clone());
+        state.action_history.push(ActionHistoryEntry {
+            action: error,
+            timestamp: Utc::now().to_rfc3339(),
+            is_error: true,
+        });
     }
 
     pub async fn update_metrics(&self, tokens_per_sec: f64, input_tokens: u64, output_tokens: u64) {
