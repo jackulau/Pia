@@ -8,7 +8,7 @@ use agent::{AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse};
 use config::Config;
 use serde::Serialize;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri::State;
 use tokio::sync::RwLock;
 
@@ -101,9 +101,20 @@ async fn get_config(state: State<'_, AppState>) -> Result<Config, String> {
 }
 
 #[tauri::command]
-async fn save_config(config: Config, state: State<'_, AppState>) -> Result<(), String> {
+async fn save_config(config: Config, app_handle: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let show_overlay = config.general.show_coordinate_overlay;
     config.save().map_err(|e| e.to_string())?;
     *state.config.write().await = config;
+
+    // Update overlay window visibility based on setting
+    if let Some(overlay) = app_handle.get_webview_window("overlay") {
+        if show_overlay {
+            let _ = overlay.show();
+        } else {
+            let _ = overlay.hide();
+        }
+    }
+
     Ok(())
 }
 
@@ -121,13 +132,14 @@ async fn show_window(window: WebviewWindow) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = Config::load().unwrap_or_default();
+    let show_overlay_at_startup = config.general.show_coordinate_overlay;
 
     tauri::Builder::default()
         // Temporarily disable global shortcuts to test
         // .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .setup(|app| {
+        .setup(move |app| {
             println!("Pia starting up...");
-            
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -142,13 +154,20 @@ pub fn run() {
             };
             app.manage(state);
 
-            // Show window on startup
+            // Show main window on startup
             if let Some(window) = app.get_webview_window("main") {
                 println!("Window found, showing...");
                 let _ = window.show();
                 let _ = window.set_focus();
             } else {
                 println!("ERROR: No window found!");
+            }
+
+            // Show overlay window if enabled in config
+            if show_overlay_at_startup {
+                if let Some(overlay) = app.get_webview_window("overlay") {
+                    let _ = overlay.show();
+                }
             }
 
             Ok(())
