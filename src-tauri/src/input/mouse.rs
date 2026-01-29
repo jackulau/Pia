@@ -101,4 +101,43 @@ impl MouseController {
         std::thread::sleep(std::time::Duration::from_millis(50));
         self.click(button)
     }
+
+    pub fn drag(
+        &mut self,
+        start_x: i32,
+        start_y: i32,
+        end_x: i32,
+        end_y: i32,
+        button: MouseButton,
+        duration_ms: u32,
+    ) -> Result<(), MouseError> {
+        // Move to start position
+        self.move_to(start_x, start_y)?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Press button
+        self.mouse_down(button)?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Smooth movement to end position (~60fps)
+        let steps = (duration_ms / 16).max(5);
+        let dx = (end_x - start_x) as f32 / steps as f32;
+        let dy = (end_y - start_y) as f32 / steps as f32;
+
+        for i in 1..=steps {
+            let x = start_x + (dx * i as f32) as i32;
+            let y = start_y + (dy * i as f32) as i32;
+            self.move_to(x, y)?;
+            std::thread::sleep(std::time::Duration::from_millis(16));
+        }
+
+        // Ensure we're at exact end position
+        self.move_to(end_x, end_y)?;
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Release button
+        self.mouse_up(button)?;
+
+        Ok(())
+    }
 }

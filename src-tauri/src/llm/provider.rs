@@ -81,10 +81,16 @@ You must respond with a single JSON action. Available actions:
 6. Move mouse (without clicking):
    {{"action": "move", "x": 100, "y": 200}}
 
-7. Complete the task:
+7. Drag from one point to another:
+   {{"action": "drag", "start_x": 100, "start_y": 200, "end_x": 300, "end_y": 200}}
+   Click and drag from start position to end position.
+   Optional: "button" (default "left"), "duration_ms" (default 500, max 5000)
+   Use for: moving files, resizing windows, adjusting sliders, selecting text
+
+8. Complete the task:
    {{"action": "complete", "message": "Task completed successfully"}}
 
-8. Report an error or inability to proceed:
+9. Report an error or inability to proceed:
    {{"action": "error", "message": "Cannot find the required element"}}
 
 Guidelines:

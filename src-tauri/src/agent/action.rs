@@ -51,6 +51,16 @@ pub enum Action {
         #[serde(default = "default_scroll_amount")]
         amount: i32,
     },
+    Drag {
+        start_x: i32,
+        start_y: i32,
+        end_x: i32,
+        end_y: i32,
+        #[serde(default = "default_button")]
+        button: String,
+        #[serde(default = "default_drag_duration")]
+        duration_ms: u32,
+    },
     Complete {
         message: String,
     },
@@ -65,6 +75,10 @@ fn default_button() -> String {
 
 fn default_scroll_amount() -> i32 {
     3
+}
+
+fn default_drag_duration() -> u32 {
+    500
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,6 +236,47 @@ pub fn execute_action(
                 success: true,
                 completed: false,
                 message: Some(format!("Scrolled {} {} times at ({}, {})", direction, amount, x, y)),
+            })
+        }
+
+        Action::Drag {
+            start_x,
+            start_y,
+            end_x,
+            end_y,
+            button,
+            duration_ms,
+        } => {
+            let btn = match button.to_lowercase().as_str() {
+                "left" => MouseButton::Left,
+                "right" => MouseButton::Right,
+                "middle" => MouseButton::Middle,
+                _ => MouseButton::Left,
+            };
+
+            // Cap duration at 5 seconds
+            let duration = (*duration_ms).min(5000);
+
+            log::info!(
+                "Drag {} from ({}, {}) to ({}, {}) over {}ms",
+                button,
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration
+            );
+
+            let mut mouse = MouseController::new()?;
+            mouse.drag(*start_x, *start_y, *end_x, *end_y, btn, duration)?;
+
+            Ok(ActionResult {
+                success: true,
+                completed: false,
+                message: Some(format!(
+                    "Dragged from ({}, {}) to ({}, {})",
+                    start_x, start_y, end_x, end_y
+                )),
             })
         }
 

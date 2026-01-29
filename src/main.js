@@ -274,6 +274,8 @@ function formatAction(action) {
       return `Key: ${mods ? mods + '+' : ''}${action.key}`;
     case 'scroll':
       return `Scroll ${action.direction} at (${action.x}, ${action.y})`;
+    case 'drag':
+      return `Drag: (${action.start_x}, ${action.start_y}) → (${action.end_x}, ${action.end_y})`;
     case 'complete':
       return `Completed: ${action.message}`;
     case 'error':
