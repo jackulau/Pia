@@ -152,7 +152,8 @@ impl LlmProvider for AnthropicProvider {
         }
 
         let mut stream = response.bytes_stream();
-        let mut full_response = String::new();
+        // Pre-allocate response buffer with typical response size (~4KB)
+        let mut full_response = String::with_capacity(4096);
         let mut input_tokens = 0u64;
         let mut output_tokens = 0u64;
         let mut buffer = String::new();
@@ -161,12 +162,10 @@ impl LlmProvider for AnthropicProvider {
             let chunk = chunk_result?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-            // Process complete SSE events
+            // Process complete SSE events using zero-allocation slicing
             while let Some(pos) = buffer.find("\n\n") {
-                let event_str = buffer[..pos].to_string();
-                buffer = buffer[pos + 2..].to_string();
-
-                for line in event_str.lines() {
+                // Process event in-place before draining
+                for line in buffer[..pos].lines() {
                     if let Some(data) = line.strip_prefix("data: ") {
                         if let Ok(event) = serde_json::from_str::<StreamEvent>(data) {
                             match event.event_type.as_str() {
@@ -195,6 +194,8 @@ impl LlmProvider for AnthropicProvider {
                         }
                     }
                 }
+                // Drain processed event from buffer (zero-allocation)
+                buffer.drain(..pos + 2);
             }
         }
 
