@@ -8,8 +8,9 @@ use agent::{AgentLoop, AgentStateManager, AgentStatus};
 use config::Config;
 use serde::Serialize;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use tauri::State;
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tokio::sync::RwLock;
 
 struct AppState {
@@ -28,6 +29,7 @@ struct AgentStatePayload {
     tokens_per_second: f64,
     total_input_tokens: u64,
     total_output_tokens: u64,
+    kill_switch_triggered: bool,
 }
 
 #[tauri::command]
@@ -74,6 +76,7 @@ async fn get_agent_state(state: State<'_, AppState>) -> Result<AgentStatePayload
         tokens_per_second: s.tokens_per_second,
         total_input_tokens: s.total_input_tokens,
         total_output_tokens: s.total_output_tokens,
+        kill_switch_triggered: s.kill_switch_triggered,
     })
 }
 
@@ -105,11 +108,10 @@ pub fn run() {
     let config = Config::load().unwrap_or_default();
 
     tauri::Builder::default()
-        // Temporarily disable global shortcuts to test
-        // .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             println!("Pia starting up...");
-            
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -123,6 +125,29 @@ pub fn run() {
                 config: Arc::new(RwLock::new(config)),
             };
             app.manage(state);
+
+            // Register kill switch global shortcut
+            // Cmd+Shift+Escape on macOS, Ctrl+Shift+Escape on Windows/Linux
+            let kill_switch_shortcut = if cfg!(target_os = "macos") {
+                Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Escape)
+            } else {
+                Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Escape)
+            };
+
+            let app_handle = app.handle().clone();
+            app.global_shortcut().on_shortcut(kill_switch_shortcut, move |_app, shortcut, event| {
+                if event.state == ShortcutState::Pressed {
+                    println!("Kill switch triggered! Shortcut: {:?}", shortcut);
+
+                    // Get the agent state and trigger the kill switch
+                    if let Some(app_state) = app_handle.try_state::<AppState>() {
+                        app_state.agent_state.trigger_kill_switch();
+
+                        // Emit event to frontend for visual feedback
+                        let _ = app_handle.emit("kill-switch-triggered", ());
+                    }
+                }
+            })?;
 
             // Show window on startup
             if let Some(window) = app.get_webview_window("main") {

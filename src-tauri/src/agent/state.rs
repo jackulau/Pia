@@ -23,6 +23,7 @@ pub struct AgentState {
     pub tokens_per_second: f64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
+    pub kill_switch_triggered: bool,
 }
 
 impl Default for AgentState {
@@ -37,6 +38,7 @@ impl Default for AgentState {
             tokens_per_second: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            kill_switch_triggered: false,
         }
     }
 }
@@ -44,6 +46,7 @@ impl Default for AgentState {
 pub struct AgentStateManager {
     state: Arc<RwLock<AgentState>>,
     should_stop: Arc<AtomicBool>,
+    kill_switch_triggered: Arc<AtomicBool>,
 }
 
 impl Clone for AgentStateManager {
@@ -51,6 +54,7 @@ impl Clone for AgentStateManager {
         Self {
             state: Arc::clone(&self.state),
             should_stop: Arc::clone(&self.should_stop),
+            kill_switch_triggered: Arc::clone(&self.kill_switch_triggered),
         }
     }
 }
@@ -60,11 +64,14 @@ impl AgentStateManager {
         Self {
             state: Arc::new(RwLock::new(AgentState::default())),
             should_stop: Arc::new(AtomicBool::new(false)),
+            kill_switch_triggered: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub async fn get_state(&self) -> AgentState {
-        self.state.read().await.clone()
+        let mut state = self.state.read().await.clone();
+        state.kill_switch_triggered = self.kill_switch_triggered.load(Ordering::SeqCst);
+        state
     }
 
     pub async fn set_status(&self, status: AgentStatus) {
@@ -84,6 +91,7 @@ impl AgentStateManager {
         state.total_input_tokens = 0;
         state.total_output_tokens = 0;
         self.should_stop.store(false, Ordering::SeqCst);
+        self.kill_switch_triggered.store(false, Ordering::SeqCst);
     }
 
     pub async fn increment_iteration(&self) -> u32 {
@@ -122,6 +130,19 @@ impl AgentStateManager {
         self.should_stop.store(true, Ordering::SeqCst);
     }
 
+    pub fn trigger_kill_switch(&self) {
+        self.kill_switch_triggered.store(true, Ordering::SeqCst);
+        self.should_stop.store(true, Ordering::SeqCst);
+    }
+
+    pub fn clear_kill_switch(&self) {
+        self.kill_switch_triggered.store(false, Ordering::SeqCst);
+    }
+
+    pub fn is_kill_switch_triggered(&self) -> bool {
+        self.kill_switch_triggered.load(Ordering::SeqCst)
+    }
+
     pub fn should_stop(&self) -> bool {
         self.should_stop.load(Ordering::SeqCst)
     }
@@ -130,5 +151,6 @@ impl AgentStateManager {
         let mut state = self.state.write().await;
         *state = AgentState::default();
         self.should_stop.store(false, Ordering::SeqCst);
+        self.kill_switch_triggered.store(false, Ordering::SeqCst);
     }
 }

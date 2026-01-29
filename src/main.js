@@ -39,15 +39,26 @@ const confirmationMessage = document.getElementById('confirmation-message');
 const cancelActionBtn = document.getElementById('cancel-action-btn');
 const confirmActionBtn = document.getElementById('confirm-action-btn');
 
+// Kill switch elements
+const killSwitch = document.getElementById('kill-switch');
+const killSwitchShortcut = document.getElementById('kill-switch-shortcut');
+const killSwitchTooltip = document.getElementById('kill-switch-tooltip');
+
 // State
 let isRunning = false;
 let currentConfig = null;
+let killSwitchTriggered = false;
+
+// Platform detection
+const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0 ||
+              navigator.userAgent.toUpperCase().indexOf('MAC') >= 0;
 
 // Initialize
 async function init() {
   await loadConfig();
   setupEventListeners();
   setupTauriListeners();
+  setupKillSwitchDisplay();
 }
 
 // Load configuration from backend
@@ -173,6 +184,47 @@ async function setupTauriListeners() {
     confirmationMessage.textContent = event.payload;
     confirmationDialog.classList.remove('hidden');
   });
+
+  // Kill switch triggered
+  await listen('kill-switch-triggered', () => {
+    handleKillSwitchTriggered();
+  });
+}
+
+// Setup kill switch display based on platform
+function setupKillSwitchDisplay() {
+  if (isMac) {
+    killSwitchShortcut.textContent = '⌘⇧⎋';
+    killSwitchTooltip.textContent = 'Emergency Stop: Press ⌘+Shift+Escape to stop';
+  } else {
+    killSwitchShortcut.textContent = 'Ctrl+Shift+Esc';
+    killSwitchTooltip.textContent = 'Emergency Stop: Press Ctrl+Shift+Escape to stop';
+  }
+}
+
+// Update kill switch indicator state
+function updateKillSwitchState(status, triggered) {
+  killSwitch.className = 'kill-switch';
+
+  if (triggered) {
+    killSwitch.classList.add('kill-switch--triggered');
+    killSwitchTriggered = true;
+
+    // Reset to idle after animation completes
+    setTimeout(() => {
+      killSwitchTriggered = false;
+      updateKillSwitchState('Idle', false);
+    }, 1500);
+  } else if (status === 'Running') {
+    killSwitch.classList.add('kill-switch--armed');
+  } else {
+    killSwitch.classList.add('kill-switch--idle');
+  }
+}
+
+// Handle kill switch triggered event
+function handleKillSwitchTriggered() {
+  updateKillSwitchState('Idle', true);
 }
 
 // Submit instruction to agent
@@ -201,6 +253,11 @@ async function stopAgent() {
 // Update UI with agent state
 function updateAgentState(state) {
   isRunning = state.status === 'Running';
+
+  // Update kill switch indicator (unless it was just triggered)
+  if (!killSwitchTriggered) {
+    updateKillSwitchState(state.status, state.kill_switch_triggered);
+  }
 
   // Update status indicator
   statusDot.className = 'status-dot';
