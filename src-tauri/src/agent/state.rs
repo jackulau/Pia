@@ -1,3 +1,4 @@
+use super::history::HistoryManager;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -44,6 +45,7 @@ impl Default for AgentState {
 pub struct AgentStateManager {
     state: Arc<RwLock<AgentState>>,
     should_stop: Arc<AtomicBool>,
+    history: HistoryManager,
 }
 
 impl Clone for AgentStateManager {
@@ -51,6 +53,7 @@ impl Clone for AgentStateManager {
         Self {
             state: Arc::clone(&self.state),
             should_stop: Arc::clone(&self.should_stop),
+            history: self.history.clone(),
         }
     }
 }
@@ -60,7 +63,12 @@ impl AgentStateManager {
         Self {
             state: Arc::new(RwLock::new(AgentState::default())),
             should_stop: Arc::new(AtomicBool::new(false)),
+            history: HistoryManager::new(),
         }
+    }
+
+    pub fn history(&self) -> &HistoryManager {
+        &self.history
     }
 
     pub async fn get_state(&self) -> AgentState {
@@ -75,7 +83,7 @@ impl AgentStateManager {
     pub async fn start(&self, instruction: String, max_iterations: u32) {
         let mut state = self.state.write().await;
         state.status = AgentStatus::Running;
-        state.instruction = Some(instruction);
+        state.instruction = Some(instruction.clone());
         state.iteration = 0;
         state.max_iterations = max_iterations;
         state.last_action = None;
@@ -84,6 +92,9 @@ impl AgentStateManager {
         state.total_input_tokens = 0;
         state.total_output_tokens = 0;
         self.should_stop.store(false, Ordering::SeqCst);
+        // Start a new history session
+        drop(state); // Release write lock before async call
+        self.history.start_session(instruction).await;
     }
 
     pub async fn increment_iteration(&self) -> u32 {
@@ -130,5 +141,7 @@ impl AgentStateManager {
         let mut state = self.state.write().await;
         *state = AgentState::default();
         self.should_stop.store(false, Ordering::SeqCst);
+        drop(state);
+        self.history.clear().await;
     }
 }

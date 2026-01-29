@@ -8,10 +8,18 @@ const settingsPanel = document.getElementById('settings-panel');
 const instructionInput = document.getElementById('instruction-input');
 const submitBtn = document.getElementById('submit-btn');
 const stopBtn = document.getElementById('stop-btn');
+const exportBtn = document.getElementById('export-btn');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
 const closeBtn = document.getElementById('close-btn');
 const saveSettingsBtn = document.getElementById('save-settings-btn');
+
+// Export dialog elements
+const exportDialog = document.getElementById('export-dialog');
+const exportJsonBtn = document.getElementById('export-json-btn');
+const exportTextBtn = document.getElementById('export-text-btn');
+const exportCancelBtn = document.getElementById('export-cancel-btn');
+const includeScreenshots = document.getElementById('include-screenshots');
 
 // Status elements
 const statusDot = document.querySelector('.status-dot');
@@ -42,6 +50,7 @@ const confirmActionBtn = document.getElementById('confirm-action-btn');
 // State
 let isRunning = false;
 let currentConfig = null;
+let hasHistory = false;
 
 // Initialize
 async function init() {
@@ -154,6 +163,18 @@ function setupEventListeners() {
     confirmationDialog.classList.add('hidden');
     // Continue execution - the backend will handle this
   });
+
+  // Export button
+  exportBtn.addEventListener('click', () => {
+    exportDialog.classList.remove('hidden');
+  });
+
+  // Export dialog
+  exportJsonBtn.addEventListener('click', () => exportSession('json'));
+  exportTextBtn.addEventListener('click', () => exportSession('text'));
+  exportCancelBtn.addEventListener('click', () => {
+    exportDialog.classList.add('hidden');
+  });
 }
 
 // Setup Tauri event listeners
@@ -255,6 +276,9 @@ function updateAgentState(state) {
   // Disable input while running
   instructionInput.disabled = isRunning;
   submitBtn.disabled = isRunning;
+
+  // Update export button visibility
+  updateHistoryCount();
 }
 
 // Format action for display
@@ -323,6 +347,52 @@ async function saveSettings() {
   } catch (error) {
     console.error('Failed to save settings:', error);
     showToast('Failed to save settings', 'error');
+  }
+}
+
+// Export session to file
+async function exportSession(format) {
+  try {
+    let content, filename, mimeType;
+
+    if (format === 'json') {
+      const includeScreenshotsValue = includeScreenshots.checked;
+      content = await invoke('export_session_json', { includeScreenshots: includeScreenshotsValue });
+      filename = `pia-session-${Date.now()}.json`;
+      mimeType = 'application/json';
+    } else {
+      content = await invoke('export_session_text');
+      filename = `pia-session-${Date.now()}.txt`;
+      mimeType = 'text/plain';
+    }
+
+    // Create download
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    exportDialog.classList.add('hidden');
+    showToast(`Exported to ${filename}`, 'success');
+  } catch (error) {
+    console.error('Failed to export session:', error);
+    showToast('Failed to export session', 'error');
+  }
+}
+
+// Check and update history count
+async function updateHistoryCount() {
+  try {
+    const count = await invoke('get_session_history_count');
+    hasHistory = count > 0;
+    exportBtn.classList.toggle('hidden', !hasHistory || isRunning);
+  } catch (error) {
+    console.error('Failed to get history count:', error);
   }
 }
 

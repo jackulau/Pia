@@ -59,5 +59,11 @@ dirs = "6.0"
 # Async trait
 async-trait = "0.1"
 
+# UUID generation
+uuid = { version = "1.11", features = ["v4"] }
+
+# Date/time handling
+chrono = { version = "0.4", features = ["serde"] }
+
 [features]
 custom-protocol = ["tauri/custom-protocol"]

@@ -1,8 +1,10 @@
-use super::action::{execute_action, parse_action, ActionError};
+use super::action::{execute_action, parse_action, Action, ActionError};
+use super::history::ActionEntry;
 use super::state::{AgentStateManager, AgentStatus};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
 use crate::llm::{AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider};
+use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
 use tokio::time::{sleep, Duration};
@@ -102,6 +104,27 @@ impl AgentLoop {
         self.state.start(instruction.clone(), max_iterations).await;
         self.emit_state_update().await;
 
+        let result = self.run_loop(&*provider, &instruction, max_iterations, confirm_dangerous).await;
+
+        // Complete the history session with final status
+        let status = match &result {
+            Ok(_) => "completed",
+            Err(LoopError::Stopped) => "stopped",
+            Err(LoopError::MaxIterations) => "max_iterations",
+            Err(_) => "error",
+        };
+        self.state.history().complete_session(status).await;
+
+        result
+    }
+
+    async fn run_loop(
+        &self,
+        provider: &dyn LlmProvider,
+        instruction: &str,
+        max_iterations: u32,
+        confirm_dangerous: bool,
+    ) -> Result<(), LoopError> {
         loop {
             // Check if should stop
             if self.state.should_stop() {
@@ -132,7 +155,7 @@ impl AgentLoop {
             // Send to LLM
             let (response, metrics) = provider
                 .send_with_image(
-                    &instruction,
+                    instruction,
                     &screenshot.base64,
                     screenshot.width,
                     screenshot.height,
@@ -148,6 +171,7 @@ impl AgentLoop {
                     metrics.output_tokens,
                 )
                 .await;
+            self.state.history().update_metrics(metrics.input_tokens, metrics.output_tokens).await;
             self.emit_state_update().await;
 
             // Parse and execute action
@@ -157,8 +181,25 @@ impl AgentLoop {
                 .await;
             self.emit_state_update().await;
 
+            let action_type = Self::get_action_type(&action);
+            let action_details = serde_json::to_value(&action).unwrap_or_default();
+
             match execute_action(&action, confirm_dangerous) {
                 Ok(result) => {
+                    // Record successful action to history
+                    let entry = ActionEntry {
+                        timestamp: Utc::now(),
+                        iteration,
+                        action_type,
+                        action_details,
+                        screenshot_base64: Some(screenshot.base64.clone()),
+                        llm_response: response.clone(),
+                        success: true,
+                        error_message: None,
+                        result_message: result.message.clone(),
+                    };
+                    self.state.history().add_entry(entry).await;
+
                     if result.completed {
                         self.state.complete(result.message).await;
                         self.emit_state_update().await;
@@ -166,6 +207,20 @@ impl AgentLoop {
                     }
                 }
                 Err(ActionError::RequiresConfirmation(msg)) => {
+                    // Record confirmation-required action to history
+                    let entry = ActionEntry {
+                        timestamp: Utc::now(),
+                        iteration,
+                        action_type,
+                        action_details,
+                        screenshot_base64: Some(screenshot.base64.clone()),
+                        llm_response: response.clone(),
+                        success: false,
+                        error_message: Some(format!("Requires confirmation: {}", msg)),
+                        result_message: None,
+                    };
+                    self.state.history().add_entry(entry).await;
+
                     // Emit confirmation request to frontend
                     let _ = self.app_handle.emit("confirmation-required", msg);
                     self.state.set_status(AgentStatus::Paused).await;
@@ -184,6 +239,20 @@ impl AgentLoop {
                     self.state.set_status(AgentStatus::Running).await;
                 }
                 Err(e) => {
+                    // Record failed action to history
+                    let entry = ActionEntry {
+                        timestamp: Utc::now(),
+                        iteration,
+                        action_type,
+                        action_details,
+                        screenshot_base64: Some(screenshot.base64.clone()),
+                        llm_response: response.clone(),
+                        success: false,
+                        error_message: Some(e.to_string()),
+                        result_message: None,
+                    };
+                    self.state.history().add_entry(entry).await;
+
                     self.state.set_error(e.to_string()).await;
                     self.emit_state_update().await;
                     return Err(e.into());
@@ -192,6 +261,19 @@ impl AgentLoop {
 
             // Small delay between iterations
             sleep(Duration::from_millis(500)).await;
+        }
+    }
+
+    fn get_action_type(action: &Action) -> String {
+        match action {
+            Action::Click { .. } => "click".to_string(),
+            Action::DoubleClick { .. } => "double_click".to_string(),
+            Action::Move { .. } => "move".to_string(),
+            Action::Type { .. } => "type".to_string(),
+            Action::Key { .. } => "key".to_string(),
+            Action::Scroll { .. } => "scroll".to_string(),
+            Action::Complete { .. } => "complete".to_string(),
+            Action::Error { .. } => "error".to_string(),
         }
     }
 
