@@ -256,6 +256,132 @@
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 2px; }
+
+    /* Queue UI Styles */
+    .queue-btn {
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .queue-btn:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
+    .queue-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .queue-btn.has-items { border-color: #0a84ff; color: #0a84ff; }
+
+    .queue-panel {
+      margin: 0 12px 12px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .queue-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .queue-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.6);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .queue-progress {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
+      font-variant-numeric: tabular-nums;
+    }
+    .queue-list {
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    .queue-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .queue-item:last-child { border-bottom: none; }
+    .queue-item-status {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.3);
+      flex-shrink: 0;
+    }
+    .queue-item-status.pending { background: rgba(255, 255, 255, 0.4); }
+    .queue-item-status.running { background: #32d74b; animation: pulse 1.5s infinite; }
+    .queue-item-status.completed { background: #0a84ff; }
+    .queue-item-status.failed { background: #ff453a; }
+    .queue-item-text {
+      flex: 1;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.7);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .queue-item.completed .queue-item-text { color: rgba(255, 255, 255, 0.4); text-decoration: line-through; }
+    .queue-item.failed .queue-item-text { color: rgba(255, 69, 58, 0.8); }
+    .queue-item-remove {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: rgba(255, 255, 255, 0.3);
+      cursor: pointer;
+      opacity: 0;
+      transition: all 0.15s;
+    }
+    .queue-item:hover .queue-item-remove { opacity: 1; }
+    .queue-item-remove:hover { background: rgba(255, 69, 58, 0.3); color: #ff453a; }
+    .queue-actions {
+      display: flex;
+      gap: 6px;
+      padding: 8px 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .queue-action-btn {
+      flex: 1;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .queue-start-btn {
+      background: #0a84ff;
+      color: #fff;
+    }
+    .queue-start-btn:hover { background: #409cff; }
+    .queue-start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .queue-clear-btn {
+      background: rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.7);
+    }
+    .queue-clear-btn:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
+    .queue-empty {
+      padding: 12px;
+      text-align: center;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+    }
   </style>
 </head>
 <body>
@@ -284,6 +410,12 @@
       </div>
       <div class="input-area">
         <input type="text" id="instruction-input" placeholder="What would you like me to do?" autocomplete="off">
+        <button class="queue-btn" id="add-queue-btn" title="Add to Queue">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
         <button class="submit-btn" id="submit-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -308,6 +440,19 @@
       <div class="action-display">
         <div class="action-label">Last Action</div>
         <div class="action-content" id="action-content">Waiting for instruction...</div>
+      </div>
+      <div class="queue-panel hidden" id="queue-panel">
+        <div class="queue-header">
+          <span class="queue-title">Queue</span>
+          <span class="queue-progress" id="queue-progress">0/0</span>
+        </div>
+        <div class="queue-list" id="queue-list">
+          <div class="queue-empty">No items in queue</div>
+        </div>
+        <div class="queue-actions">
+          <button class="queue-action-btn queue-start-btn" id="queue-start-btn" disabled>Start Queue</button>
+          <button class="queue-action-btn queue-clear-btn" id="queue-clear-btn">Clear</button>
+        </div>
       </div>
       <button class="stop-btn hidden" id="stop-btn">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>
@@ -381,6 +526,19 @@
             <span>Confirm dangerous actions</span>
           </label>
           <p class="setting-hint">Ask before delete/close operations</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Queue Failure Mode</label>
+          <select id="queue-failure-mode" class="setting-select">
+            <option value="stop">Stop on failure</option>
+            <option value="continue">Continue on failure</option>
+          </select>
+          <p class="setting-hint">What to do when a queue item fails</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Queue Delay (ms)</label>
+          <input type="number" id="queue-delay" class="setting-input" placeholder="500" min="0" max="10000">
+          <p class="setting-hint">Delay between queue items</p>
         </div>
         <button class="save-btn" id="save-settings-btn">Save</button>
       </div>

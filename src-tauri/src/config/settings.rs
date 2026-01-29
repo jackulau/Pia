@@ -26,6 +26,18 @@ pub struct GeneralConfig {
     pub default_provider: String,
     pub max_iterations: u32,
     pub confirm_dangerous_actions: bool,
+    #[serde(default = "default_queue_failure_mode")]
+    pub queue_failure_mode: String,
+    #[serde(default = "default_queue_delay_ms")]
+    pub queue_delay_ms: u32,
+}
+
+fn default_queue_failure_mode() -> String {
+    "stop".to_string()
+}
+
+fn default_queue_delay_ms() -> u32 {
+    500
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -71,6 +83,8 @@ impl Default for Config {
                 default_provider: "ollama".to_string(),
                 max_iterations: 50,
                 confirm_dangerous_actions: true,
+                queue_failure_mode: "stop".to_string(),
+                queue_delay_ms: 500,
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {

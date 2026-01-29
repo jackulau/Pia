@@ -4,17 +4,18 @@ mod config;
 mod input;
 mod llm;
 
-use agent::{AgentLoop, AgentStateManager, AgentStatus};
+use agent::{AgentLoop, AgentStateManager, AgentStatus, InstructionQueue, QueueFailureMode, QueueManager};
 use config::Config;
 use serde::Serialize;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri::State;
 use tokio::sync::RwLock;
 
 struct AppState {
     agent_state: AgentStateManager,
     config: Arc<RwLock<Config>>,
+    queue: QueueManager,
 }
 
 #[derive(Clone, Serialize)]
@@ -28,6 +29,9 @@ struct AgentStatePayload {
     tokens_per_second: f64,
     total_input_tokens: u64,
     total_output_tokens: u64,
+    queue_index: usize,
+    queue_total: usize,
+    queue_active: bool,
 }
 
 #[tauri::command]
@@ -74,6 +78,9 @@ async fn get_agent_state(state: State<'_, AppState>) -> Result<AgentStatePayload
         tokens_per_second: s.tokens_per_second,
         total_input_tokens: s.total_input_tokens,
         total_output_tokens: s.total_output_tokens,
+        queue_index: s.queue_index,
+        queue_total: s.queue_total,
+        queue_active: s.queue_active,
     })
 }
 
@@ -100,6 +107,98 @@ async fn show_window(window: WebviewWindow) -> Result<(), String> {
     window.set_focus().map_err(|e| e.to_string())
 }
 
+// Queue commands
+
+#[tauri::command]
+async fn add_to_queue(
+    instruction: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let id = state.queue.add(instruction).await;
+    Ok(id)
+}
+
+#[tauri::command]
+async fn add_multiple_to_queue(
+    instructions: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let ids = state.queue.add_multiple(instructions).await;
+    Ok(ids)
+}
+
+#[tauri::command]
+async fn remove_from_queue(
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    Ok(state.queue.remove(&id).await)
+}
+
+#[tauri::command]
+async fn clear_queue(state: State<'_, AppState>) -> Result<(), String> {
+    state.queue.clear().await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn reorder_queue(
+    order: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    Ok(state.queue.reorder(order).await)
+}
+
+#[tauri::command]
+async fn get_queue(state: State<'_, AppState>) -> Result<InstructionQueue, String> {
+    Ok(state.queue.get_state().await)
+}
+
+#[tauri::command]
+async fn start_queue(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let agent_state = state.agent_state.clone();
+    let config = state.config.read().await.clone();
+    let queue = state.queue.clone();
+
+    let current_state = agent_state.get_state().await;
+    if current_state.status == AgentStatus::Running {
+        return Err("Agent is already running".to_string());
+    }
+
+    if !queue.has_pending().await {
+        return Err("Queue is empty".to_string());
+    }
+
+    let app = app_handle.clone();
+    tokio::spawn(async move {
+        let loop_runner = AgentLoop::new(agent_state, config, app).with_queue(queue);
+        if let Err(e) = loop_runner.run_queue().await {
+            log::error!("Queue processing error: {}", e);
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_queue_failure_mode(
+    mode: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let failure_mode = QueueFailureMode::from(mode.as_str());
+    state.queue.set_failure_mode(failure_mode).await;
+
+    // Also update config
+    let mut config = state.config.write().await;
+    config.general.queue_failure_mode = mode;
+    config.save().map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = Config::load().unwrap_or_default();
@@ -109,7 +208,7 @@ pub fn run() {
         // .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             println!("Pia starting up...");
-            
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -121,6 +220,7 @@ pub fn run() {
             let state = AppState {
                 agent_state: AgentStateManager::new(),
                 config: Arc::new(RwLock::new(config)),
+                queue: QueueManager::new(),
             };
             app.manage(state);
 
@@ -143,6 +243,14 @@ pub fn run() {
             save_config,
             hide_window,
             show_window,
+            add_to_queue,
+            add_multiple_to_queue,
+            remove_from_queue,
+            clear_queue,
+            reorder_queue,
+            get_queue,
+            start_queue,
+            set_queue_failure_mode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

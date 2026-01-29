@@ -13,6 +13,14 @@ const settingsCloseBtn = document.getElementById('settings-close-btn');
 const closeBtn = document.getElementById('close-btn');
 const saveSettingsBtn = document.getElementById('save-settings-btn');
 
+// Queue elements
+const addQueueBtn = document.getElementById('add-queue-btn');
+const queuePanel = document.getElementById('queue-panel');
+const queueList = document.getElementById('queue-list');
+const queueProgress = document.getElementById('queue-progress');
+const queueStartBtn = document.getElementById('queue-start-btn');
+const queueClearBtn = document.getElementById('queue-clear-btn');
+
 // Status elements
 const statusDot = document.querySelector('.status-dot');
 const statusText = document.querySelector('.status-text');
@@ -24,6 +32,8 @@ const actionContent = document.getElementById('action-content');
 // Settings elements
 const providerSelect = document.getElementById('provider-select');
 const confirmDangerous = document.getElementById('confirm-dangerous');
+const queueFailureMode = document.getElementById('queue-failure-mode');
+const queueDelay = document.getElementById('queue-delay');
 
 // Provider-specific settings
 const providerSettings = {
@@ -42,12 +52,14 @@ const confirmActionBtn = document.getElementById('confirm-action-btn');
 // State
 let isRunning = false;
 let currentConfig = null;
+let queueItems = [];
 
 // Initialize
 async function init() {
   await loadConfig();
   setupEventListeners();
   setupTauriListeners();
+  await refreshQueue();
 }
 
 // Load configuration from backend
@@ -71,6 +83,10 @@ function updateSettingsUI() {
 
   // Set safety settings
   confirmDangerous.checked = currentConfig.general.confirm_dangerous_actions;
+
+  // Set queue settings
+  queueFailureMode.value = currentConfig.general.queue_failure_mode || 'stop';
+  queueDelay.value = currentConfig.general.queue_delay_ms || 500;
 
   // Set Ollama settings
   if (currentConfig.providers.ollama) {
@@ -154,6 +170,11 @@ function setupEventListeners() {
     confirmationDialog.classList.add('hidden');
     // Continue execution - the backend will handle this
   });
+
+  // Queue event listeners
+  addQueueBtn.addEventListener('click', addToQueue);
+  queueStartBtn.addEventListener('click', startQueue);
+  queueClearBtn.addEventListener('click', clearQueue);
 }
 
 // Setup Tauri event listeners
@@ -172,6 +193,24 @@ async function setupTauriListeners() {
   await listen('confirmation-required', (event) => {
     confirmationMessage.textContent = event.payload;
     confirmationDialog.classList.remove('hidden');
+  });
+
+  // Queue events
+  await listen('queue-update', (event) => {
+    queueItems = event.payload.items || [];
+    renderQueue();
+  });
+
+  await listen('queue-item-started', (event) => {
+    updateQueueItemStatus(event.payload.current_index, 'running');
+  });
+
+  await listen('queue-item-completed', (event) => {
+    updateQueueItemStatus(event.payload.current_index, 'completed');
+  });
+
+  await listen('queue-item-failed', (event) => {
+    updateQueueItemStatus(event.payload.current_index, 'failed');
   });
 }
 
@@ -292,6 +331,8 @@ async function saveSettings() {
         default_provider: providerSelect.value,
         max_iterations: 50,
         confirm_dangerous_actions: confirmDangerous.checked,
+        queue_failure_mode: queueFailureMode.value,
+        queue_delay_ms: parseInt(queueDelay.value, 10) || 500,
       },
       providers: {
         ollama: {
@@ -337,6 +378,139 @@ function showToast(message, type = 'info') {
     toast.remove();
   }, 3000);
 }
+
+// Queue Management Functions
+
+// Parse multi-step instructions (split on "then", "after that", "next")
+function parseMultiStepInstruction(text) {
+  const separators = /\s*(?:,?\s*then\s+|,?\s*after that\s+|,?\s*next\s+|,?\s*finally\s+)/gi;
+  const parts = text.split(separators).map(s => s.trim()).filter(s => s.length > 0);
+  return parts.length > 1 ? parts : [text];
+}
+
+// Add instruction(s) to queue
+async function addToQueue() {
+  const instruction = instructionInput.value.trim();
+  if (!instruction || isRunning) return;
+
+  try {
+    const instructions = parseMultiStepInstruction(instruction);
+
+    if (instructions.length > 1) {
+      await invoke('add_multiple_to_queue', { instructions });
+    } else {
+      await invoke('add_to_queue', { instruction });
+    }
+
+    instructionInput.value = '';
+    await refreshQueue();
+  } catch (error) {
+    console.error('Failed to add to queue:', error);
+    showToast('Failed to add to queue', 'error');
+  }
+}
+
+// Remove item from queue
+async function removeFromQueue(id) {
+  try {
+    await invoke('remove_from_queue', { id });
+    await refreshQueue();
+  } catch (error) {
+    console.error('Failed to remove from queue:', error);
+  }
+}
+
+// Start processing queue
+async function startQueue() {
+  if (isRunning || queueItems.length === 0) return;
+
+  try {
+    await invoke('start_queue');
+  } catch (error) {
+    console.error('Failed to start queue:', error);
+    showToast(error, 'error');
+  }
+}
+
+// Clear all queue items
+async function clearQueue() {
+  try {
+    await invoke('clear_queue');
+    await refreshQueue();
+  } catch (error) {
+    console.error('Failed to clear queue:', error);
+  }
+}
+
+// Refresh queue from backend
+async function refreshQueue() {
+  try {
+    const queue = await invoke('get_queue');
+    queueItems = queue.items || [];
+    renderQueue();
+  } catch (error) {
+    console.error('Failed to get queue:', error);
+  }
+}
+
+// Render queue UI
+function renderQueue() {
+  const pendingItems = queueItems.filter(i => i.status === 'Pending');
+  const completedItems = queueItems.filter(i => i.status === 'Completed');
+  const runningItem = queueItems.find(i => i.status === 'Running');
+
+  // Show/hide queue panel based on whether there are items
+  const hasItems = queueItems.length > 0;
+  queuePanel.classList.toggle('hidden', !hasItems);
+  addQueueBtn.classList.toggle('has-items', pendingItems.length > 0);
+
+  // Update progress
+  queueProgress.textContent = `${completedItems.length}/${queueItems.length}`;
+
+  // Update button states
+  queueStartBtn.disabled = isRunning || pendingItems.length === 0;
+
+  if (!hasItems) return;
+
+  // Render items
+  queueList.innerHTML = queueItems.map(item => {
+    let statusClass = item.status.toLowerCase();
+    let itemClass = statusClass;
+
+    return `
+      <div class="queue-item ${itemClass}" data-id="${item.id}">
+        <span class="queue-item-status ${statusClass}"></span>
+        <span class="queue-item-text" title="${escapeHtml(item.instruction)}">${escapeHtml(item.instruction)}</span>
+        ${item.status === 'Pending' ? `
+          <button class="queue-item-remove" onclick="window.removeQueueItem('${item.id}')" title="Remove">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+// Update a specific queue item's status (for real-time updates)
+function updateQueueItemStatus(index, status) {
+  if (queueItems[index]) {
+    queueItems[index].status = status.charAt(0).toUpperCase() + status.slice(1);
+    renderQueue();
+  }
+}
+
+// Escape HTML for safe display
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Expose removeQueueItem to window for inline onclick handlers
+window.removeQueueItem = removeFromQueue;
 
 // Initialize the app
 init();

@@ -1,8 +1,10 @@
 use super::action::{execute_action, parse_action, ActionError};
+use super::queue::{QueueFailureMode, QueueManager};
 use super::state::{AgentStateManager, AgentStatus};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
 use crate::llm::{AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
 use tokio::time::{sleep, Duration};
@@ -21,12 +23,23 @@ pub enum LoopError {
     Stopped,
     #[error("Max iterations reached")]
     MaxIterations,
+    #[error("Queue item failed: {0}")]
+    QueueItemFailed(String),
+}
+
+#[derive(Clone, Serialize)]
+pub struct QueueProgressEvent {
+    pub current_index: usize,
+    pub total: usize,
+    pub current_instruction: String,
+    pub status: String,
 }
 
 pub struct AgentLoop {
     state: AgentStateManager,
     config: Config,
     app_handle: AppHandle,
+    queue: Option<QueueManager>,
 }
 
 impl AgentLoop {
@@ -35,7 +48,13 @@ impl AgentLoop {
             state,
             config,
             app_handle,
+            queue: None,
         }
+    }
+
+    pub fn with_queue(mut self, queue: QueueManager) -> Self {
+        self.queue = Some(queue);
+        self
     }
 
     fn create_provider(&self) -> Result<Box<dyn LlmProvider>, LoopError> {
@@ -195,8 +214,143 @@ impl AgentLoop {
         }
     }
 
+    pub async fn run_queue(&self) -> Result<(), LoopError> {
+        let queue = match &self.queue {
+            Some(q) => q,
+            None => return Err(LoopError::NoProvider),
+        };
+
+        let failure_mode = QueueFailureMode::from(self.config.general.queue_failure_mode.as_str());
+        let queue_delay = Duration::from_millis(self.config.general.queue_delay_ms as u64);
+
+        queue.set_processing(true).await;
+
+        let total = queue.total_count().await;
+        self.state.set_queue_info(0, total, true).await;
+
+        loop {
+            // Check if should stop
+            if self.state.should_stop() {
+                queue.set_processing(false).await;
+                self.state.set_status(AgentStatus::Idle).await;
+                self.state.set_queue_info(0, 0, false).await;
+                self.emit_state_update().await;
+                self.emit_queue_update().await;
+                return Err(LoopError::Stopped);
+            }
+
+            // Get next pending item
+            let item = match queue.get_next().await {
+                Some(item) => item,
+                None => {
+                    // No more items to process
+                    queue.set_processing(false).await;
+                    self.state.set_status(AgentStatus::Completed).await;
+                    self.state.set_queue_info(total, total, false).await;
+                    self.emit_state_update().await;
+                    self.emit_queue_update().await;
+                    return Ok(());
+                }
+            };
+
+            let current_index = queue.current_index().await;
+            let instruction = item.instruction.clone();
+
+            // Emit queue progress
+            let _ = self.app_handle.emit(
+                "queue-item-started",
+                QueueProgressEvent {
+                    current_index,
+                    total,
+                    current_instruction: instruction.clone(),
+                    status: "running".to_string(),
+                },
+            );
+
+            // Mark as running
+            queue.mark_current_running().await;
+            self.state.update_queue_progress(current_index + 1, total).await;
+            self.emit_state_update().await;
+            self.emit_queue_update().await;
+
+            // Run the instruction
+            let result = self.run(instruction.clone()).await;
+
+            match result {
+                Ok(()) => {
+                    queue.mark_current_completed(Some("Completed".to_string())).await;
+                    let _ = self.app_handle.emit(
+                        "queue-item-completed",
+                        QueueProgressEvent {
+                            current_index,
+                            total,
+                            current_instruction: instruction,
+                            status: "completed".to_string(),
+                        },
+                    );
+                }
+                Err(LoopError::Stopped) => {
+                    // User stopped - exit immediately
+                    queue.set_processing(false).await;
+                    self.emit_queue_update().await;
+                    return Err(LoopError::Stopped);
+                }
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    queue.mark_current_failed(error_msg.clone()).await;
+
+                    let _ = self.app_handle.emit(
+                        "queue-item-failed",
+                        QueueProgressEvent {
+                            current_index,
+                            total,
+                            current_instruction: instruction,
+                            status: "failed".to_string(),
+                        },
+                    );
+
+                    match failure_mode {
+                        QueueFailureMode::Stop => {
+                            queue.set_processing(false).await;
+                            self.state.set_queue_info(current_index + 1, total, false).await;
+                            self.emit_state_update().await;
+                            self.emit_queue_update().await;
+                            return Err(LoopError::QueueItemFailed(error_msg));
+                        }
+                        QueueFailureMode::Continue => {
+                            // Continue to next item
+                        }
+                    }
+                }
+            }
+
+            // Advance to next item
+            if !queue.advance().await {
+                // No more items
+                queue.set_processing(false).await;
+                self.state.set_status(AgentStatus::Completed).await;
+                self.state.set_queue_info(total, total, false).await;
+                self.emit_state_update().await;
+                self.emit_queue_update().await;
+                return Ok(());
+            }
+
+            // Delay between queue items
+            if queue_delay.as_millis() > 0 {
+                sleep(queue_delay).await;
+            }
+        }
+    }
+
     async fn emit_state_update(&self) {
         let state = self.state.get_state().await;
         let _ = self.app_handle.emit("agent-state", state);
+    }
+
+    async fn emit_queue_update(&self) {
+        if let Some(queue) = &self.queue {
+            let queue_state = queue.get_state().await;
+            let _ = self.app_handle.emit("queue-update", queue_state);
+        }
     }
 }

@@ -23,6 +23,9 @@ pub struct AgentState {
     pub tokens_per_second: f64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
+    pub queue_index: usize,
+    pub queue_total: usize,
+    pub queue_active: bool,
 }
 
 impl Default for AgentState {
@@ -37,6 +40,9 @@ impl Default for AgentState {
             tokens_per_second: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            queue_index: 0,
+            queue_total: 0,
+            queue_active: false,
         }
     }
 }
@@ -130,5 +136,18 @@ impl AgentStateManager {
         let mut state = self.state.write().await;
         *state = AgentState::default();
         self.should_stop.store(false, Ordering::SeqCst);
+    }
+
+    pub async fn set_queue_info(&self, index: usize, total: usize, active: bool) {
+        let mut state = self.state.write().await;
+        state.queue_index = index;
+        state.queue_total = total;
+        state.queue_active = active;
+    }
+
+    pub async fn update_queue_progress(&self, index: usize, total: usize) {
+        let mut state = self.state.write().await;
+        state.queue_index = index;
+        state.queue_total = total;
     }
 }
