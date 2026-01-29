@@ -1,4 +1,5 @@
 use chrono::Utc;
+use super::history::HistoryManager;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -70,6 +71,7 @@ pub struct AgentStateManager {
     should_stop: Arc<AtomicBool>,
     confirmation_tx: Arc<RwLock<Option<mpsc::Sender<ConfirmationResponse>>>>,
     confirmation_rx: Arc<RwLock<Option<mpsc::Receiver<ConfirmationResponse>>>>,
+    history: HistoryManager,
 }
 
 impl Clone for AgentStateManager {
@@ -79,6 +81,7 @@ impl Clone for AgentStateManager {
             should_stop: Arc::clone(&self.should_stop),
             confirmation_tx: Arc::clone(&self.confirmation_tx),
             confirmation_rx: Arc::clone(&self.confirmation_rx),
+            history: self.history.clone(),
         }
     }
 }
@@ -91,7 +94,12 @@ impl AgentStateManager {
             should_stop: Arc::new(AtomicBool::new(false)),
             confirmation_tx: Arc::new(RwLock::new(Some(tx))),
             confirmation_rx: Arc::new(RwLock::new(Some(rx))),
+            history: HistoryManager::new(),
         }
+    }
+
+    pub fn history(&self) -> &HistoryManager {
+        &self.history
     }
 
     pub async fn get_state(&self) -> AgentState {
@@ -106,7 +114,7 @@ impl AgentStateManager {
     pub async fn start(&self, instruction: String, max_iterations: u32) {
         let mut state = self.state.write().await;
         state.status = AgentStatus::Running;
-        state.instruction = Some(instruction);
+        state.instruction = Some(instruction.clone());
         state.iteration = 0;
         state.max_iterations = max_iterations;
         state.last_action = None;
@@ -118,6 +126,9 @@ impl AgentStateManager {
         state.retry_count = 0;
         state.consecutive_errors = 0;
         self.should_stop.store(false, Ordering::SeqCst);
+        // Start a new history session
+        drop(state); // Release write lock before async call
+        self.history.start_session(instruction).await;
     }
 
     pub async fn increment_iteration(&self) -> u32 {
@@ -174,6 +185,8 @@ impl AgentStateManager {
         let mut state = self.state.write().await;
         *state = AgentState::default();
         self.should_stop.store(false, Ordering::SeqCst);
+        drop(state);
+        self.history.clear().await;
     }
 
     pub async fn set_pending_action(&self, action: Option<String>) {

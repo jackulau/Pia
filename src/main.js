@@ -10,6 +10,7 @@ const settingsPanel = document.getElementById('settings-panel');
 const instructionInput = document.getElementById('instruction-input');
 const submitBtn = document.getElementById('submit-btn');
 const stopBtn = document.getElementById('stop-btn');
+const exportBtn = document.getElementById('export-btn');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
 const closeBtn = document.getElementById('close-btn');
@@ -21,6 +22,13 @@ const expandBtn = document.getElementById('expand-btn');
 const elapsedValue = document.getElementById('elapsed-value');
 const actionsCount = document.getElementById('actions-count');
 const actionHistoryList = document.getElementById('action-history-list');
+
+// Export dialog elements
+const exportDialog = document.getElementById('export-dialog');
+const exportJsonBtn = document.getElementById('export-json-btn');
+const exportTextBtn = document.getElementById('export-text-btn');
+const exportCancelBtn = document.getElementById('export-cancel-btn');
+const includeScreenshots = document.getElementById('include-screenshots');
 
 // Status elements
 const statusDot = document.querySelector('.status-dot');
@@ -65,6 +73,7 @@ let totalActionsCount = 0;
 let sessionStartTime = null;
 let elapsedTimer = null;
 let previousFocusElement = null;
+let hasHistory = false;
 
 // Window sizes
 const COMPACT_SIZE = { width: 420, height: 280 };
@@ -240,6 +249,22 @@ function setupEventListeners() {
         console.error('Failed to disable hotkey:', error);
         showToast('Failed to disable hotkey', 'error');
       }
+    });
+  }
+
+  // Export button
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      if (exportDialog) exportDialog.classList.remove('hidden');
+    });
+  }
+
+  // Export dialog
+  if (exportJsonBtn) exportJsonBtn.addEventListener('click', () => exportSession('json'));
+  if (exportTextBtn) exportTextBtn.addEventListener('click', () => exportSession('text'));
+  if (exportCancelBtn) {
+    exportCancelBtn.addEventListener('click', () => {
+      if (exportDialog) exportDialog.classList.add('hidden');
     });
   }
 }
@@ -430,6 +455,9 @@ function updateAgentState(state) {
   // Sync aria-disabled for screen readers
   instructionInput.setAttribute('aria-disabled', isRunning.toString());
   submitBtn.setAttribute('aria-disabled', isRunning.toString());
+
+  // Update export button visibility
+  updateHistoryCount();
 }
 
 // Format a single action for display (used by formatAction and batch display)
@@ -577,6 +605,52 @@ async function saveSettings() {
   } catch (error) {
     console.error('Failed to save settings:', error);
     showToast('Failed to save settings', 'error');
+  }
+}
+
+// Export session to file
+async function exportSession(format) {
+  try {
+    let content, filename, mimeType;
+
+    if (format === 'json') {
+      const includeScreenshotsValue = includeScreenshots?.checked ?? false;
+      content = await invoke('export_session_json', { includeScreenshots: includeScreenshotsValue });
+      filename = `pia-session-${Date.now()}.json`;
+      mimeType = 'application/json';
+    } else {
+      content = await invoke('export_session_text');
+      filename = `pia-session-${Date.now()}.txt`;
+      mimeType = 'text/plain';
+    }
+
+    // Create download
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    if (exportDialog) exportDialog.classList.add('hidden');
+    showToast(`Exported to ${filename}`, 'success');
+  } catch (error) {
+    console.error('Failed to export session:', error);
+    showToast('Failed to export session', 'error');
+  }
+}
+
+// Check and update history count
+async function updateHistoryCount() {
+  try {
+    const count = await invoke('get_session_history_count');
+    hasHistory = count > 0;
+    if (exportBtn) exportBtn.classList.toggle('hidden', !hasHistory || isRunning);
+  } catch (error) {
+    console.error('Failed to get history count:', error);
   }
 }
 
