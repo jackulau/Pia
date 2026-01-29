@@ -73,6 +73,7 @@
       background: rgba(255, 255, 255, 0.4);
     }
     .status-dot.running { background: #32d74b; animation: pulse 1.5s infinite; }
+    .status-dot.recording { background: #ff9500; animation: pulse 1s infinite; }
     .status-dot.error { background: #ff453a; }
     .status-dot.completed { background: #0a84ff; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
@@ -112,21 +113,24 @@
       background: rgba(255, 255, 255, 0.12);
       border-color: rgba(10, 132, 255, 0.5);
     }
-    .submit-btn {
+    .submit-btn, .record-btn {
       width: 38px;
       height: 38px;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #0a84ff;
       border: none;
       border-radius: 8px;
       color: #fff;
       cursor: pointer;
       transition: all 0.15s;
     }
+    .submit-btn { background: #0a84ff; }
     .submit-btn:hover { background: #409cff; transform: scale(1.02); }
     .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .record-btn { background: #ff9500; }
+    .record-btn:hover { background: #ffaa33; transform: scale(1.02); }
+    .record-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
     .metrics-bar {
       display: flex;
@@ -142,6 +146,79 @@
     .action-display { padding: 10px 12px; }
     .action-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
     .action-content { font-size: 11px; color: rgba(255, 255, 255, 0.6); line-height: 1.4; max-height: 40px; overflow-y: auto; }
+
+    /* Recording Panel */
+    .recording-panel {
+      padding: 10px 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .recording-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .recording-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .recording-badge {
+      background: #ff9500;
+      color: #000;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 600;
+    }
+    .recording-actions-list {
+      max-height: 120px;
+      overflow-y: auto;
+      margin-bottom: 8px;
+    }
+    .recorded-action-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .recorded-action-item:last-child { border-bottom: none; }
+    .recorded-action-num {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.3);
+      min-width: 16px;
+    }
+    .recorded-action-content {
+      flex: 1;
+    }
+    .recorded-action-desc {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.8);
+    }
+    .recorded-action-reasoning {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.4);
+      margin-top: 2px;
+      font-style: italic;
+    }
+    .recording-controls {
+      display: flex;
+      gap: 8px;
+    }
+    .recording-controls .btn {
+      flex: 1;
+      padding: 8px 12px;
+      font-size: 11px;
+    }
+    .btn-execute { background: #32d74b; }
+    .btn-execute:hover { background: #4ae65f; }
+    .btn-clear { background: rgba(255, 255, 255, 0.1); }
+    .btn-clear:hover { background: rgba(255, 255, 255, 0.15); }
 
     .stop-btn {
       display: flex;
@@ -284,7 +361,12 @@
       </div>
       <div class="input-area">
         <input type="text" id="instruction-input" placeholder="What would you like me to do?" autocomplete="off">
-        <button class="submit-btn" id="submit-btn">
+        <button class="record-btn" id="record-btn" title="Record (preview actions)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="12" r="8"></circle>
+          </svg>
+        </button>
+        <button class="submit-btn" id="submit-btn" title="Execute">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="22" y1="2" x2="11" y2="13"></line>
             <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
@@ -308,6 +390,22 @@
       <div class="action-display">
         <div class="action-label">Last Action</div>
         <div class="action-content" id="action-content">Waiting for instruction...</div>
+      </div>
+      <div class="recording-panel hidden" id="recording-panel">
+        <div class="recording-header">
+          <div class="recording-title">
+            <span class="recording-badge">REC</span>
+            <span>Recorded Actions</span>
+          </div>
+          <span id="recording-count">0 actions</span>
+        </div>
+        <div class="recording-actions-list" id="recorded-actions-list">
+          <!-- Recorded actions will be inserted here -->
+        </div>
+        <div class="recording-controls">
+          <button class="btn btn-clear" id="clear-recording-btn">Clear</button>
+          <button class="btn btn-execute" id="execute-recording-btn">Execute All</button>
+        </div>
       </div>
       <button class="stop-btn hidden" id="stop-btn">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>

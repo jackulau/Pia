@@ -1,5 +1,5 @@
-use super::action::{execute_action, parse_action, ActionError};
-use super::state::{AgentStateManager, AgentStatus};
+use super::action::{execute_action, parse_action, Action, ActionError};
+use super::state::{AgentStateManager, AgentStatus, ExecutionMode};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
 use crate::llm::{AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider};
@@ -95,11 +95,19 @@ impl AgentLoop {
     }
 
     pub async fn run(&self, instruction: String) -> Result<(), LoopError> {
+        self.run_with_mode(instruction, ExecutionMode::Normal).await
+    }
+
+    pub async fn run_recording(&self, instruction: String) -> Result<(), LoopError> {
+        self.run_with_mode(instruction, ExecutionMode::Recording).await
+    }
+
+    async fn run_with_mode(&self, instruction: String, mode: ExecutionMode) -> Result<(), LoopError> {
         let provider = self.create_provider()?;
         let max_iterations = self.config.general.max_iterations;
         let confirm_dangerous = self.config.general.confirm_dangerous_actions;
 
-        self.state.start(instruction.clone(), max_iterations).await;
+        self.state.start_with_mode(instruction.clone(), max_iterations, mode).await;
         self.emit_state_update().await;
 
         loop {
@@ -150,13 +158,37 @@ impl AgentLoop {
                 .await;
             self.emit_state_update().await;
 
-            // Parse and execute action
+            // Parse action
             let action = parse_action(&response)?;
+            let action_json = serde_json::to_string(&action).unwrap_or_default();
             self.state
-                .set_last_action(serde_json::to_string(&action).unwrap_or_default())
+                .set_last_action(action_json.clone())
                 .await;
             self.emit_state_update().await;
 
+            // In recording mode, capture action but don't execute
+            if mode == ExecutionMode::Recording {
+                // Extract reasoning from LLM response (text before JSON)
+                let reasoning = extract_reasoning(&response);
+                self.state.add_recorded_action(action_json, reasoning).await;
+
+                // Check if this is a completion action
+                if matches!(action, Action::Complete { .. } | Action::Error { .. }) {
+                    self.state.complete(Some("Recording completed".to_string())).await;
+                    self.emit_state_update().await;
+                    return Ok(());
+                }
+
+                // Emit recorded action event
+                let recorded_actions = self.state.get_recorded_actions().await;
+                let _ = self.app_handle.emit("recorded-actions", recorded_actions);
+
+                // Continue to next iteration without executing
+                sleep(Duration::from_millis(500)).await;
+                continue;
+            }
+
+            // Normal mode: execute action
             match execute_action(&action, confirm_dangerous) {
                 Ok(result) => {
                     if result.completed {
@@ -199,4 +231,15 @@ impl AgentLoop {
         let state = self.state.get_state().await;
         let _ = self.app_handle.emit("agent-state", state);
     }
+}
+
+fn extract_reasoning(response: &str) -> Option<String> {
+    // Find the first { which starts the JSON action
+    if let Some(json_start) = response.find('{') {
+        let reasoning = response[..json_start].trim();
+        if !reasoning.is_empty() {
+            return Some(reasoning.to_string());
+        }
+    }
+    None
 }

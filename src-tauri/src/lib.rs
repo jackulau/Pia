@@ -4,11 +4,11 @@ mod config;
 mod input;
 mod llm;
 
-use agent::{AgentLoop, AgentStateManager, AgentStatus};
+use agent::{AgentLoop, AgentStateManager, AgentStatus, RecordedAction};
 use config::Config;
 use serde::Serialize;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri::State;
 use tokio::sync::RwLock;
 
@@ -28,6 +28,8 @@ struct AgentStatePayload {
     tokens_per_second: f64,
     total_input_tokens: u64,
     total_output_tokens: u64,
+    execution_mode: String,
+    recorded_actions_count: usize,
 }
 
 #[tauri::command]
@@ -62,6 +64,42 @@ async fn stop_agent(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn start_agent_recording(
+    instruction: String,
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let agent_state = state.agent_state.clone();
+    let config = state.config.read().await.clone();
+
+    let current_state = agent_state.get_state().await;
+    if current_state.status == AgentStatus::Running || current_state.status == AgentStatus::Recording {
+        return Err("Agent is already running".to_string());
+    }
+
+    let app = app_handle.clone();
+    tokio::spawn(async move {
+        let loop_runner = AgentLoop::new(agent_state, config, app);
+        if let Err(e) = loop_runner.run_recording(instruction).await {
+            log::error!("Agent recording loop error: {}", e);
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_recorded_actions(state: State<'_, AppState>) -> Result<Vec<RecordedAction>, String> {
+    Ok(state.agent_state.get_recorded_actions().await)
+}
+
+#[tauri::command]
+async fn clear_recorded_actions(state: State<'_, AppState>) -> Result<(), String> {
+    state.agent_state.clear_recorded_actions().await;
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_agent_state(state: State<'_, AppState>) -> Result<AgentStatePayload, String> {
     let s = state.agent_state.get_state().await;
     Ok(AgentStatePayload {
@@ -74,6 +112,8 @@ async fn get_agent_state(state: State<'_, AppState>) -> Result<AgentStatePayload
         tokens_per_second: s.tokens_per_second,
         total_input_tokens: s.total_input_tokens,
         total_output_tokens: s.total_output_tokens,
+        execution_mode: format!("{:?}", s.execution_mode),
+        recorded_actions_count: s.recorded_actions.len(),
     })
 }
 
@@ -138,6 +178,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             start_agent,
             stop_agent,
+            start_agent_recording,
+            get_recorded_actions,
+            clear_recorded_actions,
             get_agent_state,
             get_config,
             save_config,
