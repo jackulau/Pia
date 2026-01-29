@@ -141,7 +141,28 @@
 
     .action-display { padding: 10px 12px; }
     .action-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
-    .action-content { font-size: 11px; color: rgba(255, 255, 255, 0.6); line-height: 1.4; max-height: 40px; overflow-y: auto; }
+    .action-content { font-size: 11px; color: rgba(255, 255, 255, 0.6); line-height: 1.4; max-height: 40px; overflow-y: auto; display: flex; align-items: center; gap: 6px; }
+
+    .action-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      color: rgba(255, 255, 255, 0.5);
+      flex-shrink: 0;
+    }
+    .action-icon svg { width: 12px; height: 12px; }
+    .action-icon.click { color: #0a84ff; }
+    .action-icon.double_click { color: #5e5ce6; }
+    .action-icon.move { color: #64d2ff; }
+    .action-icon.type { color: #30d158; }
+    .action-icon.key { color: #ffd60a; }
+    .action-icon.scroll { color: #bf5af2; }
+    .action-icon.complete { color: #30d158; }
+    .action-icon.error { color: #ff453a; }
+    .action-icon.default { color: rgba(255, 255, 255, 0.5); }
+    .action-text { flex: 1; }
 
     .stop-btn {
       display: flex;
