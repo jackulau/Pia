@@ -44,6 +44,7 @@ impl Default for AgentState {
 pub struct AgentStateManager {
     state: Arc<RwLock<AgentState>>,
     should_stop: Arc<AtomicBool>,
+    should_pause: Arc<AtomicBool>,
 }
 
 impl Clone for AgentStateManager {
@@ -51,6 +52,7 @@ impl Clone for AgentStateManager {
         Self {
             state: Arc::clone(&self.state),
             should_stop: Arc::clone(&self.should_stop),
+            should_pause: Arc::clone(&self.should_pause),
         }
     }
 }
@@ -60,6 +62,7 @@ impl AgentStateManager {
         Self {
             state: Arc::new(RwLock::new(AgentState::default())),
             should_stop: Arc::new(AtomicBool::new(false)),
+            should_pause: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -84,6 +87,7 @@ impl AgentStateManager {
         state.total_input_tokens = 0;
         state.total_output_tokens = 0;
         self.should_stop.store(false, Ordering::SeqCst);
+        self.should_pause.store(false, Ordering::SeqCst);
     }
 
     pub async fn increment_iteration(&self) -> u32 {
@@ -126,9 +130,22 @@ impl AgentStateManager {
         self.should_stop.load(Ordering::SeqCst)
     }
 
+    pub fn request_pause(&self) {
+        self.should_pause.store(true, Ordering::SeqCst);
+    }
+
+    pub fn should_pause(&self) -> bool {
+        self.should_pause.load(Ordering::SeqCst)
+    }
+
+    pub fn resume(&self) {
+        self.should_pause.store(false, Ordering::SeqCst);
+    }
+
     pub async fn reset(&self) {
         let mut state = self.state.write().await;
         *state = AgentState::default();
         self.should_stop.store(false, Ordering::SeqCst);
+        self.should_pause.store(false, Ordering::SeqCst);
     }
 }

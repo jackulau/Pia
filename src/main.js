@@ -7,6 +7,9 @@ const mainModal = document.getElementById('main-modal');
 const settingsPanel = document.getElementById('settings-panel');
 const instructionInput = document.getElementById('instruction-input');
 const submitBtn = document.getElementById('submit-btn');
+const controlButtons = document.getElementById('control-buttons');
+const pauseBtn = document.getElementById('pause-btn');
+const resumeBtn = document.getElementById('resume-btn');
 const stopBtn = document.getElementById('stop-btn');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
@@ -41,6 +44,7 @@ const confirmActionBtn = document.getElementById('confirm-action-btn');
 
 // State
 let isRunning = false;
+let isPaused = false;
 let currentConfig = null;
 
 // Initialize
@@ -117,6 +121,12 @@ function setupEventListeners() {
     }
   });
 
+  // Pause agent
+  pauseBtn.addEventListener('click', pauseAgent);
+
+  // Resume agent
+  resumeBtn.addEventListener('click', resumeAgent);
+
   // Stop agent
   stopBtn.addEventListener('click', stopAgent);
 
@@ -189,6 +199,24 @@ async function submitInstruction() {
   }
 }
 
+// Pause the agent
+async function pauseAgent() {
+  try {
+    await invoke('pause_agent');
+  } catch (error) {
+    console.error('Failed to pause agent:', error);
+  }
+}
+
+// Resume the agent
+async function resumeAgent() {
+  try {
+    await invoke('resume_agent');
+  } catch (error) {
+    console.error('Failed to resume agent:', error);
+  }
+}
+
 // Stop the agent
 async function stopAgent() {
   try {
@@ -201,6 +229,7 @@ async function stopAgent() {
 // Update UI with agent state
 function updateAgentState(state) {
   isRunning = state.status === 'Running';
+  isPaused = state.status === 'Paused';
 
   // Update status indicator
   statusDot.className = 'status-dot';
@@ -209,6 +238,10 @@ function updateAgentState(state) {
       statusDot.classList.add('running');
       statusText.textContent = 'Running';
       break;
+    case 'Paused':
+      statusDot.classList.add('paused');
+      statusText.textContent = 'Paused';
+      break;
     case 'Completed':
       statusDot.classList.add('completed');
       statusText.textContent = 'Completed';
@@ -216,9 +249,6 @@ function updateAgentState(state) {
     case 'Error':
       statusDot.classList.add('error');
       statusText.textContent = 'Error';
-      break;
-    case 'Paused':
-      statusText.textContent = 'Paused';
       break;
     default:
       statusText.textContent = 'Ready';
@@ -249,12 +279,15 @@ function updateAgentState(state) {
     actionContent.style.color = '';
   }
 
-  // Show/hide stop button
-  stopBtn.classList.toggle('hidden', !isRunning);
+  // Show/hide control buttons based on state
+  const showControls = isRunning || isPaused;
+  controlButtons.classList.toggle('hidden', !showControls);
+  pauseBtn.classList.toggle('hidden', isPaused);
+  resumeBtn.classList.toggle('hidden', !isPaused);
 
-  // Disable input while running
-  instructionInput.disabled = isRunning;
-  submitBtn.disabled = isRunning;
+  // Disable input while running or paused
+  instructionInput.disabled = isRunning || isPaused;
+  submitBtn.disabled = isRunning || isPaused;
 }
 
 // Format action for display

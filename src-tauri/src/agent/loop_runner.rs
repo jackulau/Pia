@@ -110,6 +110,28 @@ impl AgentLoop {
                 return Err(LoopError::Stopped);
             }
 
+            // Check if should pause
+            if self.state.should_pause() {
+                self.state.set_status(AgentStatus::Paused).await;
+                self.emit_state_update().await;
+
+                // Wait while paused
+                while self.state.should_pause() && !self.state.should_stop() {
+                    sleep(Duration::from_millis(100)).await;
+                }
+
+                // Check if stopped while paused
+                if self.state.should_stop() {
+                    self.state.set_status(AgentStatus::Idle).await;
+                    self.emit_state_update().await;
+                    return Err(LoopError::Stopped);
+                }
+
+                // Resume running
+                self.state.set_status(AgentStatus::Running).await;
+                self.emit_state_update().await;
+            }
+
             // Check iteration limit
             let iteration = self.state.increment_iteration().await;
             if iteration > max_iterations {
