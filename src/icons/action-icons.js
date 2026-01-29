@@ -45,6 +45,22 @@ export const actionIcons = {
     <path d="M10 16l2 2 2-2"/>
   </svg>`,
 
+  drag: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M5 9l-3 3 3 3"/>
+    <path d="M9 5l3-3 3 3"/>
+    <line x1="12" y1="2" x2="12" y2="14"/>
+    <line x1="2" y1="12" x2="14" y2="12"/>
+    <path d="M14 10l8 8"/>
+    <path d="M18 10l4 4-4 4"/>
+  </svg>`,
+
+  batch: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <rect x="3" y="3" width="7" height="7" rx="1"/>
+    <rect x="14" y="3" width="7" height="7" rx="1"/>
+    <rect x="3" y="14" width="7" height="7" rx="1"/>
+    <rect x="14" y="14" width="7" height="7" rx="1"/>
+  </svg>`,
+
   complete: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
     <circle cx="12" cy="12" r="10"/>
     <path d="M8 12l3 3 5-6"/>

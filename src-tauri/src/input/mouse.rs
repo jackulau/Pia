@@ -102,6 +102,13 @@ impl MouseController {
         self.click(button)
     }
 
+    pub fn triple_click(&mut self, button: MouseButton) -> Result<(), MouseError> {
+        self.click(button)?;
+        self.click(button)?;
+        self.click(button)?;
+        Ok(())
+    }
+
     pub fn drag(
         &mut self,
         start_x: i32,

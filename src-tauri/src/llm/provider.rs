@@ -150,13 +150,24 @@ You must respond with a single JSON action. Available actions:
    Optional: "button" (default "left"), "duration_ms" (default 500, max 5000)
    Use for: moving files, resizing windows, adjusting sliders, selecting text
 
-8. Complete the task:
-   {{"action": "complete", "message": "Task completed successfully"}}
+8. Triple click (select entire line):
+   {{"action": "triple_click", "x": 100, "y": 200}}
+   Useful for selecting entire lines of text
 
-9. Report an error or inability to proceed:
-   {{"action": "error", "message": "Cannot find the required element"}}
+9. Right click (context menu):
+   {{"action": "right_click", "x": 100, "y": 200}}
 
-9. Execute multiple actions in sequence (batch):
+10. Wait/pause execution:
+    {{"action": "wait", "duration_ms": 1000}}
+    Useful when waiting for UI elements to load or animations to complete
+
+11. Complete the task:
+    {{"action": "complete", "message": "Task completed successfully"}}
+
+12. Report an error or inability to proceed:
+    {{"action": "error", "message": "Cannot find the required element"}}
+
+13. Execute multiple actions in sequence (batch):
    {{"action": "batch", "actions": [{{"action": "type", "text": "hello"}}, {{"action": "key", "key": "tab"}}]}}
    Use for predictable action sequences that don't need intermediate screenshots.
    Max 10 actions per batch. Batch stops on first failure or complete action.

@@ -135,6 +135,15 @@
       animation: flash-success 0.5s ease-out;
       box-shadow: 0 0 8px rgba(10, 132, 255, 0.4);
     }
+    .status-dot.retrying {
+      background: #ff9f0a;
+      animation: pulse-soft 1s ease-in-out infinite;
+      box-shadow: 0 0 8px rgba(255, 159, 10, 0.4);
+    }
+    .status-dot.paused {
+      background: #ffd60a;
+      box-shadow: 0 0 8px rgba(255, 214, 10, 0.4);
+    }
     @keyframes pulse-soft {
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.7; transform: scale(0.95); }
@@ -324,6 +333,8 @@
     .action-icon.type { color: #30d158; }
     .action-icon.key { color: #ffd60a; }
     .action-icon.scroll { color: #bf5af2; }
+    .action-icon.drag { color: #ff9f0a; }
+    .action-icon.batch { color: #ac8e68; }
     .action-icon.complete { color: #30d158; }
     .action-icon.error { color: #ff453a; }
     .action-icon.default { color: rgba(255, 255, 255, 0.5); }
@@ -504,6 +515,7 @@
     }
     .toast.success { border-color: rgba(50, 215, 75, 0.3); }
     .toast.error { border-color: rgba(255, 69, 58, 0.3); color: #ff6961; }
+    .toast.info { border-color: rgba(255, 159, 10, 0.3); color: #ffb84d; }
     .toast.hiding { animation: toast-out 0.25s ease-in forwards; }
     @keyframes toast-in {
       from { opacity: 0; transform: translate(-50%, 12px); }
@@ -536,6 +548,8 @@
       .status-dot.running { box-shadow: 0 0 6px rgba(50, 215, 75, 0.5); }
       .status-dot.error { box-shadow: 0 0 6px rgba(255, 69, 58, 0.5); }
       .status-dot.completed { box-shadow: 0 0 6px rgba(10, 132, 255, 0.5); }
+      .status-dot.retrying { box-shadow: 0 0 6px rgba(255, 159, 10, 0.5); }
+      .status-dot.paused { box-shadow: 0 0 6px rgba(255, 214, 10, 0.5); }
       .submit-btn.loading svg { animation: none !important; opacity: 0.6; }
     }
   </style>
@@ -683,6 +697,11 @@
             <label class="setting-label">Model</label>
             <input type="text" id="openrouter-model" class="setting-input" placeholder="anthropic/claude-sonnet-4-20250514">
           </div>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Max Iterations</label>
+          <input type="number" id="max-iterations" class="setting-input" placeholder="50" min="1" max="200" value="50">
+          <p class="setting-hint">Maximum number of agent iterations per task (1-200)</p>
         </div>
         <div class="setting-group">
           <label class="setting-checkbox">

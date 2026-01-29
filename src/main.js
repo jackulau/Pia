@@ -76,6 +76,9 @@ function updateSettingsUI() {
   providerSelect.value = currentConfig.general.default_provider;
   showProviderSettings(currentConfig.general.default_provider);
 
+  // Set max iterations
+  document.getElementById('max-iterations').value = currentConfig.general.max_iterations || 50;
+
   // Set safety settings
   confirmDangerous.checked = currentConfig.general.confirm_dangerous_actions;
 
@@ -205,6 +208,16 @@ async function setupTauriListeners() {
     confirmationMessage.textContent = event.payload;
     confirmationDialog.classList.remove('hidden');
   });
+
+  // Retry info notification
+  await listen('retry-info', (event) => {
+    showToast(event.payload, 'info');
+  });
+
+  // Parse error notification
+  await listen('parse-error', (event) => {
+    showToast(event.payload, 'error');
+  });
 }
 
 // Submit instruction to agent
@@ -250,7 +263,12 @@ function updateAgentState(state) {
       statusText.textContent = 'Error';
       break;
     case 'Paused':
+      statusDot.classList.add('paused');
       statusText.textContent = 'Paused';
+      break;
+    case 'Retrying':
+      statusDot.classList.add('retrying');
+      statusText.textContent = 'Retrying';
       break;
     case 'AwaitingConfirmation':
       statusDot.classList.add('running');
@@ -400,11 +418,18 @@ function formatTimestamp(isoString) {
 // Save settings to backend
 async function saveSettings() {
   try {
+    // Get max iterations with validation
+    const maxIterInput = document.getElementById('max-iterations');
+    let maxIterations = parseInt(maxIterInput.value, 10);
+    if (isNaN(maxIterations) || maxIterations < 1) maxIterations = 1;
+    if (maxIterations > 200) maxIterations = 200;
+    maxIterInput.value = maxIterations;
+
     // Build config object
     const config = {
       general: {
         default_provider: providerSelect.value,
-        max_iterations: 50,
+        max_iterations: maxIterations,
         confirm_dangerous_actions: confirmDangerous.checked,
         show_coordinate_overlay: showOverlay.checked,
       },

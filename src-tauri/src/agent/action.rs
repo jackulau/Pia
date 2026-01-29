@@ -61,6 +61,18 @@ pub enum Action {
         #[serde(default = "default_drag_duration")]
         duration_ms: u32,
     },
+    TripleClick {
+        x: i32,
+        y: i32,
+    },
+    RightClick {
+        x: i32,
+        y: i32,
+    },
+    Wait {
+        #[serde(default = "default_wait_duration")]
+        duration_ms: u64,
+    },
     Complete {
         message: String,
     },
@@ -85,6 +97,10 @@ const BATCH_INTER_ACTION_DELAY_MS: u64 = 100;
 
 fn default_drag_duration() -> u32 {
     500
+}
+
+fn default_wait_duration() -> u64 {
+    1000
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -300,6 +316,39 @@ pub async fn execute_action(
                     "Dragged from ({}, {}) to ({}, {})",
                     start_x, start_y, end_x, end_y
                 )),
+            })
+        }
+
+        Action::TripleClick { x, y } => {
+            let mut mouse = MouseController::new()?;
+            mouse.move_to(*x, *y)?;
+            mouse.triple_click(MouseButton::Left)?;
+
+            Ok(ActionResult {
+                success: true,
+                completed: false,
+                message: Some(format!("Triple-clicked at ({}, {})", x, y)),
+            })
+        }
+
+        Action::RightClick { x, y } => {
+            let mut mouse = MouseController::new()?;
+            mouse.click_at(*x, *y, MouseButton::Right)?;
+
+            Ok(ActionResult {
+                success: true,
+                completed: false,
+                message: Some(format!("Right-clicked at ({}, {})", x, y)),
+            })
+        }
+
+        Action::Wait { duration_ms } => {
+            std::thread::sleep(std::time::Duration::from_millis(*duration_ms));
+
+            Ok(ActionResult {
+                success: true,
+                completed: false,
+                message: Some(format!("Waited {} ms", duration_ms)),
             })
         }
 
