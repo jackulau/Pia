@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getActionIcon } from './icons/action-icons.js';
 // CSS is inlined in index.html for transparent window support
 
 // DOM Elements
@@ -235,15 +236,16 @@ function updateAgentState(state) {
 
   // Update action display
   if (state.last_error) {
-    actionContent.textContent = `Error: ${state.last_error}`;
+    renderActionWithIcon(actionContent, 'error', `Error: ${state.last_error}`);
     actionContent.style.color = 'var(--error)';
   } else if (state.last_action) {
     try {
       const action = JSON.parse(state.last_action);
-      actionContent.textContent = formatAction(action);
+      const actionType = action.action || 'default';
+      renderActionWithIcon(actionContent, actionType, formatAction(action));
       actionContent.style.color = '';
     } catch {
-      actionContent.textContent = state.last_action;
+      renderActionWithIcon(actionContent, 'default', state.last_action);
       actionContent.style.color = '';
     }
   } else if (state.instruction) {
@@ -300,6 +302,24 @@ function formatAction(action) {
     return `Batch (${count}): ${actionList}`;
   }
   return formatSingleAction(action);
+}
+
+// Render action with icon
+function renderActionWithIcon(container, actionType, text) {
+  container.innerHTML = '';
+
+  // Create icon element
+  const iconEl = document.createElement('span');
+  iconEl.className = `action-icon ${actionType}`;
+  iconEl.innerHTML = getActionIcon(actionType);
+
+  // Create text element
+  const textEl = document.createElement('span');
+  textEl.className = 'action-text';
+  textEl.textContent = text;
+
+  container.appendChild(iconEl);
+  container.appendChild(textEl);
 }
 
 // Save settings to backend
