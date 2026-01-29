@@ -124,11 +124,13 @@ function setupEventListeners() {
   settingsBtn.addEventListener('click', () => {
     mainModal.classList.add('hidden');
     settingsPanel.classList.remove('hidden');
+    settingsBtn.setAttribute('aria-expanded', 'true');
   });
 
   settingsCloseBtn.addEventListener('click', () => {
     settingsPanel.classList.add('hidden');
     mainModal.classList.remove('hidden');
+    settingsBtn.setAttribute('aria-expanded', 'false');
   });
 
   // Provider selection
@@ -255,6 +257,10 @@ function updateAgentState(state) {
   // Disable input while running
   instructionInput.disabled = isRunning;
   submitBtn.disabled = isRunning;
+
+  // Sync aria-disabled for screen readers
+  instructionInput.setAttribute('aria-disabled', isRunning.toString());
+  submitBtn.setAttribute('aria-disabled', isRunning.toString());
 }
 
 // Format action for display
@@ -320,6 +326,7 @@ async function saveSettings() {
     // Return to main view
     settingsPanel.classList.add('hidden');
     mainModal.classList.remove('hidden');
+    settingsBtn.setAttribute('aria-expanded', 'false');
   } catch (error) {
     console.error('Failed to save settings:', error);
     showToast('Failed to save settings', 'error');
