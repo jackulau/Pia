@@ -26,6 +26,20 @@ pub struct GeneralConfig {
     pub default_provider: String,
     pub max_iterations: u32,
     pub confirm_dangerous_actions: bool,
+    #[serde(default = "default_true")]
+    pub voice_input_enabled: bool,
+    #[serde(default)]
+    pub voice_auto_submit: bool,
+    #[serde(default = "default_voice_language")]
+    pub voice_language: String,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_voice_language() -> String {
+    "en-US".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -71,6 +85,9 @@ impl Default for Config {
                 default_provider: "ollama".to_string(),
                 max_iterations: 50,
                 confirm_dangerous_actions: true,
+                voice_input_enabled: true,
+                voice_auto_submit: false,
+                voice_language: "en-US".to_string(),
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {

@@ -128,6 +128,45 @@
     .submit-btn:hover { background: #409cff; transform: scale(1.02); }
     .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
+    .mic-btn {
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      color: rgba(255, 255, 255, 0.6);
+      cursor: pointer;
+      transition: all 0.15s;
+      position: relative;
+    }
+    .mic-btn:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+    .mic-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .mic-btn.listening {
+      background: rgba(255, 69, 58, 0.2);
+      border-color: rgba(255, 69, 58, 0.5);
+      color: #ff453a;
+    }
+    .mic-btn.listening::after {
+      content: '';
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 6px;
+      height: 6px;
+      background: #ff453a;
+      border-radius: 50%;
+      animation: pulse 1s infinite;
+    }
+    .mic-btn.processing {
+      background: rgba(10, 132, 255, 0.2);
+      border-color: rgba(10, 132, 255, 0.5);
+      color: #0a84ff;
+    }
+    .mic-btn.unavailable { display: none; }
+
     .metrics-bar {
       display: flex;
       justify-content: space-around;
@@ -284,6 +323,14 @@
       </div>
       <div class="input-area">
         <input type="text" id="instruction-input" placeholder="What would you like me to do?" autocomplete="off">
+        <button class="mic-btn" id="mic-btn" title="Voice input">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+        </button>
         <button class="submit-btn" id="submit-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -381,6 +428,36 @@
             <span>Confirm dangerous actions</span>
           </label>
           <p class="setting-hint">Ask before delete/close operations</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Voice Input</label>
+          <label class="setting-checkbox">
+            <input type="checkbox" id="voice-enabled" checked>
+            <span>Enable voice input</span>
+          </label>
+          <p class="setting-hint">Use microphone for hands-free instructions</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-checkbox">
+            <input type="checkbox" id="voice-auto-submit">
+            <span>Auto-submit after speaking</span>
+          </label>
+          <p class="setting-hint">Automatically submit when speech ends</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Voice Language</label>
+          <select id="voice-language" class="setting-select">
+            <option value="en-US">English (US)</option>
+            <option value="en-GB">English (UK)</option>
+            <option value="es-ES">Spanish</option>
+            <option value="fr-FR">French</option>
+            <option value="de-DE">German</option>
+            <option value="it-IT">Italian</option>
+            <option value="pt-BR">Portuguese (BR)</option>
+            <option value="zh-CN">Chinese (Simplified)</option>
+            <option value="ja-JP">Japanese</option>
+            <option value="ko-KR">Korean</option>
+          </select>
         </div>
         <button class="save-btn" id="save-settings-btn">Save</button>
       </div>

@@ -8,6 +8,7 @@ const settingsPanel = document.getElementById('settings-panel');
 const instructionInput = document.getElementById('instruction-input');
 const submitBtn = document.getElementById('submit-btn');
 const stopBtn = document.getElementById('stop-btn');
+const micBtn = document.getElementById('mic-btn');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
 const closeBtn = document.getElementById('close-btn');
@@ -24,6 +25,9 @@ const actionContent = document.getElementById('action-content');
 // Settings elements
 const providerSelect = document.getElementById('provider-select');
 const confirmDangerous = document.getElementById('confirm-dangerous');
+const voiceEnabled = document.getElementById('voice-enabled');
+const voiceAutoSubmit = document.getElementById('voice-auto-submit');
+const voiceLanguage = document.getElementById('voice-language');
 
 // Provider-specific settings
 const providerSettings = {
@@ -42,12 +46,15 @@ const confirmActionBtn = document.getElementById('confirm-action-btn');
 // State
 let isRunning = false;
 let currentConfig = null;
+let speechRecognition = null;
+let isListening = false;
 
 // Initialize
 async function init() {
   await loadConfig();
   setupEventListeners();
   setupTauriListeners();
+  initSpeechRecognition();
 }
 
 // Load configuration from backend
@@ -71,6 +78,11 @@ function updateSettingsUI() {
 
   // Set safety settings
   confirmDangerous.checked = currentConfig.general.confirm_dangerous_actions;
+
+  // Set voice settings
+  voiceEnabled.checked = currentConfig.general.voice_input_enabled !== false;
+  voiceAutoSubmit.checked = currentConfig.general.voice_auto_submit || false;
+  voiceLanguage.value = currentConfig.general.voice_language || 'en-US';
 
   // Set Ollama settings
   if (currentConfig.providers.ollama) {
@@ -119,6 +131,9 @@ function setupEventListeners() {
 
   // Stop agent
   stopBtn.addEventListener('click', stopAgent);
+
+  // Voice input
+  micBtn.addEventListener('click', toggleSpeechRecognition);
 
   // Settings
   settingsBtn.addEventListener('click', () => {
@@ -255,6 +270,12 @@ function updateAgentState(state) {
   // Disable input while running
   instructionInput.disabled = isRunning;
   submitBtn.disabled = isRunning;
+  micBtn.disabled = isRunning;
+
+  // Stop listening if agent starts running
+  if (isRunning && isListening) {
+    stopSpeechRecognition();
+  }
 }
 
 // Format action for display
@@ -292,6 +313,9 @@ async function saveSettings() {
         default_provider: providerSelect.value,
         max_iterations: 50,
         confirm_dangerous_actions: confirmDangerous.checked,
+        voice_input_enabled: voiceEnabled.checked,
+        voice_auto_submit: voiceAutoSubmit.checked,
+        voice_language: voiceLanguage.value,
       },
       providers: {
         ollama: {
@@ -317,6 +341,9 @@ async function saveSettings() {
     currentConfig = config;
     showToast('Settings saved', 'success');
 
+    // Update mic button visibility based on voice settings
+    updateMicButtonVisibility();
+
     // Return to main view
     settingsPanel.classList.add('hidden');
     mainModal.classList.remove('hidden');
@@ -336,6 +363,149 @@ function showToast(message, type = 'info') {
   setTimeout(() => {
     toast.remove();
   }, 3000);
+}
+
+// Initialize speech recognition
+function initSpeechRecognition() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    micBtn.classList.add('unavailable');
+    micBtn.title = 'Voice input not supported in this browser';
+    return;
+  }
+
+  speechRecognition = new SpeechRecognition();
+  speechRecognition.continuous = true;
+  speechRecognition.interimResults = true;
+  speechRecognition.lang = currentConfig?.general?.voice_language || 'en-US';
+
+  speechRecognition.onstart = () => {
+    isListening = true;
+    micBtn.classList.remove('processing');
+    micBtn.classList.add('listening');
+    micBtn.title = 'Listening... Click to stop';
+  };
+
+  speechRecognition.onresult = (event) => {
+    let interimTranscript = '';
+    let finalTranscript = '';
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcript;
+      } else {
+        interimTranscript += transcript;
+      }
+    }
+
+    // Update input field with transcription
+    if (finalTranscript) {
+      instructionInput.value = finalTranscript;
+
+      // Auto-submit if enabled and we have final results
+      if (currentConfig?.general?.voice_auto_submit) {
+        stopSpeechRecognition();
+        submitInstruction();
+      }
+    } else if (interimTranscript) {
+      instructionInput.value = interimTranscript;
+    }
+  };
+
+  speechRecognition.onerror = (event) => {
+    isListening = false;
+    micBtn.classList.remove('listening', 'processing');
+
+    switch (event.error) {
+      case 'not-allowed':
+        showToast('Microphone permission denied', 'error');
+        micBtn.title = 'Microphone permission denied. Click to retry.';
+        break;
+      case 'no-speech':
+        showToast('No speech detected', 'error');
+        break;
+      case 'network':
+        showToast('Network error during speech recognition', 'error');
+        break;
+      default:
+        showToast(`Speech recognition error: ${event.error}`, 'error');
+    }
+  };
+
+  speechRecognition.onend = () => {
+    isListening = false;
+    micBtn.classList.remove('listening', 'processing');
+    micBtn.title = 'Voice input';
+  };
+
+  // Update button visibility based on settings
+  updateMicButtonVisibility();
+}
+
+// Toggle speech recognition
+function toggleSpeechRecognition() {
+  if (isRunning) return;
+
+  if (isListening) {
+    stopSpeechRecognition();
+  } else {
+    startSpeechRecognition();
+  }
+}
+
+// Start speech recognition
+function startSpeechRecognition() {
+  if (!speechRecognition) {
+    showToast('Voice input not available', 'error');
+    return;
+  }
+
+  micBtn.classList.add('processing');
+  micBtn.title = 'Starting...';
+
+  // Update language from config
+  speechRecognition.lang = currentConfig?.general?.voice_language || 'en-US';
+
+  try {
+    speechRecognition.start();
+  } catch (error) {
+    if (error.name === 'InvalidStateError') {
+      // Already started, stop and restart
+      speechRecognition.stop();
+      setTimeout(() => speechRecognition.start(), 100);
+    } else {
+      showToast('Failed to start voice input', 'error');
+      micBtn.classList.remove('processing');
+    }
+  }
+}
+
+// Stop speech recognition
+function stopSpeechRecognition() {
+  if (speechRecognition && isListening) {
+    speechRecognition.stop();
+  }
+}
+
+// Update mic button visibility based on settings and API availability
+function updateMicButtonVisibility() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const apiAvailable = !!SpeechRecognition;
+  const enabled = currentConfig?.general?.voice_input_enabled !== false;
+
+  if (!apiAvailable || !enabled) {
+    micBtn.classList.add('unavailable');
+    if (!apiAvailable) {
+      micBtn.title = 'Voice input not supported in this browser';
+    } else {
+      micBtn.title = 'Voice input disabled in settings';
+    }
+  } else {
+    micBtn.classList.remove('unavailable');
+    micBtn.title = 'Voice input';
+  }
 }
 
 // Initialize the app
