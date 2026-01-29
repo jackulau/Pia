@@ -39,15 +39,55 @@ const confirmationMessage = document.getElementById('confirmation-message');
 const cancelActionBtn = document.getElementById('cancel-action-btn');
 const confirmActionBtn = document.getElementById('confirm-action-btn');
 
+// Preview mode
+const previewToggle = document.getElementById('preview-toggle');
+
 // State
 let isRunning = false;
 let currentConfig = null;
+let previewMode = false;
 
 // Initialize
 async function init() {
   await loadConfig();
+  await loadPreviewMode();
   setupEventListeners();
   setupTauriListeners();
+}
+
+// Load preview mode state from backend
+async function loadPreviewMode() {
+  try {
+    previewMode = await invoke('get_preview_mode');
+    updatePreviewModeUI();
+  } catch (error) {
+    console.error('Failed to load preview mode:', error);
+  }
+}
+
+// Update UI for preview mode
+function updatePreviewModeUI() {
+  previewToggle.classList.toggle('active', previewMode);
+  mainModal.classList.toggle('preview-mode', previewMode);
+}
+
+// Toggle preview mode
+async function togglePreviewMode() {
+  if (isRunning) {
+    showToast('Cannot change preview mode while running', 'error');
+    return;
+  }
+
+  try {
+    previewMode = !previewMode;
+    await invoke('set_preview_mode', { enabled: previewMode });
+    updatePreviewModeUI();
+    showToast(previewMode ? 'Preview mode enabled' : 'Preview mode disabled', 'info');
+  } catch (error) {
+    console.error('Failed to set preview mode:', error);
+    previewMode = !previewMode; // Revert
+    showToast('Failed to set preview mode', 'error');
+  }
 }
 
 // Load configuration from backend
@@ -154,6 +194,9 @@ function setupEventListeners() {
     confirmationDialog.classList.add('hidden');
     // Continue execution - the backend will handle this
   });
+
+  // Preview mode toggle
+  previewToggle.addEventListener('click', togglePreviewMode);
 }
 
 // Setup Tauri event listeners
@@ -202,16 +245,27 @@ async function stopAgent() {
 function updateAgentState(state) {
   isRunning = state.status === 'Running';
 
+  // Update preview mode from state
+  if (state.preview_mode !== previewMode) {
+    previewMode = state.preview_mode;
+    updatePreviewModeUI();
+  }
+
   // Update status indicator
   statusDot.className = 'status-dot';
   switch (state.status) {
     case 'Running':
-      statusDot.classList.add('running');
-      statusText.textContent = 'Running';
+      if (previewMode) {
+        statusDot.classList.add('preview');
+        statusText.textContent = 'Preview';
+      } else {
+        statusDot.classList.add('running');
+        statusText.textContent = 'Running';
+      }
       break;
     case 'Completed':
       statusDot.classList.add('completed');
-      statusText.textContent = 'Completed';
+      statusText.textContent = previewMode ? 'Preview Done' : 'Completed';
       break;
     case 'Error':
       statusDot.classList.add('error');
@@ -232,17 +286,32 @@ function updateAgentState(state) {
   tokensValue.textContent = (state.total_input_tokens + state.total_output_tokens).toLocaleString();
 
   // Update action display
+  actionContent.classList.remove('preview-action');
   if (state.last_error) {
     actionContent.textContent = `Error: ${state.last_error}`;
     actionContent.style.color = 'var(--error)';
   } else if (state.last_action) {
+    // Check if action has [PREVIEW] prefix
+    const isPreviewAction = state.last_action.startsWith('[PREVIEW]');
+    let actionText = state.last_action;
+
+    if (isPreviewAction) {
+      actionContent.classList.add('preview-action');
+      actionText = state.last_action.substring(10).trim(); // Remove "[PREVIEW] "
+    }
+
     try {
-      const action = JSON.parse(state.last_action);
-      actionContent.textContent = formatAction(action);
-      actionContent.style.color = '';
+      const action = JSON.parse(actionText);
+      const formatted = formatAction(action);
+      actionContent.textContent = isPreviewAction ? `Would: ${formatted}` : formatted;
+      if (!isPreviewAction) {
+        actionContent.style.color = '';
+      }
     } catch {
-      actionContent.textContent = state.last_action;
-      actionContent.style.color = '';
+      actionContent.textContent = isPreviewAction ? `Would: ${actionText}` : actionText;
+      if (!isPreviewAction) {
+        actionContent.style.color = '';
+      }
     }
   } else if (state.instruction) {
     actionContent.textContent = `Task: ${state.instruction}`;
@@ -252,9 +321,11 @@ function updateAgentState(state) {
   // Show/hide stop button
   stopBtn.classList.toggle('hidden', !isRunning);
 
-  // Disable input while running
+  // Disable input and preview toggle while running
   instructionInput.disabled = isRunning;
   submitBtn.disabled = isRunning;
+  previewToggle.style.pointerEvents = isRunning ? 'none' : 'auto';
+  previewToggle.style.opacity = isRunning ? '0.5' : '1';
 }
 
 // Format action for display

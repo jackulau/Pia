@@ -1,4 +1,4 @@
-use super::action::{execute_action, parse_action, ActionError};
+use super::action::{execute_action, parse_action, Action, ActionError};
 use super::state::{AgentStateManager, AgentStatus};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
@@ -27,14 +27,17 @@ pub struct AgentLoop {
     state: AgentStateManager,
     config: Config,
     app_handle: AppHandle,
+    preview_mode: bool,
 }
 
 impl AgentLoop {
     pub fn new(state: AgentStateManager, config: Config, app_handle: AppHandle) -> Self {
+        let preview_mode = config.general.preview_mode;
         Self {
             state,
             config,
             app_handle,
+            preview_mode,
         }
     }
 
@@ -152,10 +155,29 @@ impl AgentLoop {
 
             // Parse and execute action
             let action = parse_action(&response)?;
-            self.state
-                .set_last_action(serde_json::to_string(&action).unwrap_or_default())
-                .await;
+
+            // Format action string with optional [PREVIEW] prefix
+            let action_str = serde_json::to_string(&action).unwrap_or_default();
+            let action_display = if self.preview_mode {
+                format!("[PREVIEW] {}", action_str)
+            } else {
+                action_str
+            };
+            self.state.set_last_action(action_display).await;
             self.emit_state_update().await;
+
+            // Skip execution in preview mode
+            if self.preview_mode {
+                // In preview mode, check if action would be a completion
+                if let Action::Complete { .. } = action {
+                    self.state.complete(Some("Preview completed".to_string())).await;
+                    self.emit_state_update().await;
+                    return Ok(());
+                }
+                // Continue to next iteration without executing
+                sleep(Duration::from_millis(500)).await;
+                continue;
+            }
 
             match execute_action(&action, confirm_dangerous) {
                 Ok(result) => {

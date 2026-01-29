@@ -23,6 +23,7 @@ pub struct AgentState {
     pub tokens_per_second: f64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
+    pub preview_mode: bool,
 }
 
 impl Default for AgentState {
@@ -37,6 +38,7 @@ impl Default for AgentState {
             tokens_per_second: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            preview_mode: false,
         }
     }
 }
@@ -130,5 +132,15 @@ impl AgentStateManager {
         let mut state = self.state.write().await;
         *state = AgentState::default();
         self.should_stop.store(false, Ordering::SeqCst);
+    }
+
+    pub async fn set_preview_mode(&self, enabled: bool) {
+        let mut state = self.state.write().await;
+        state.preview_mode = enabled;
+    }
+
+    pub async fn is_preview_mode(&self) -> bool {
+        let state = self.state.read().await;
+        state.preview_mode
     }
 }

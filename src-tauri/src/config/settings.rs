@@ -26,6 +26,8 @@ pub struct GeneralConfig {
     pub default_provider: String,
     pub max_iterations: u32,
     pub confirm_dangerous_actions: bool,
+    #[serde(default)]
+    pub preview_mode: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -71,6 +73,7 @@ impl Default for Config {
                 default_provider: "ollama".to_string(),
                 max_iterations: 50,
                 confirm_dangerous_actions: true,
+                preview_mode: false,
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {
