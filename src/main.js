@@ -257,8 +257,8 @@ function updateAgentState(state) {
   submitBtn.disabled = isRunning;
 }
 
-// Format action for display
-function formatAction(action) {
+// Format a single action for display (used by formatAction and batch display)
+function formatSingleAction(action) {
   switch (action.action) {
     case 'click':
       return `Click ${action.button || 'left'} at (${action.x}, ${action.y})`;
@@ -281,6 +281,19 @@ function formatAction(action) {
     default:
       return JSON.stringify(action);
   }
+}
+
+// Format action for display
+function formatAction(action) {
+  if (action.action === 'batch') {
+    const count = action.actions?.length || 0;
+    if (count === 0) {
+      return 'Batch (empty)';
+    }
+    const actionList = action.actions.map(formatSingleAction).join(' → ');
+    return `Batch (${count}): ${actionList}`;
+  }
+  return formatSingleAction(action);
 }
 
 // Save settings to backend

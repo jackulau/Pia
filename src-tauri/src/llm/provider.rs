@@ -87,6 +87,11 @@ You must respond with a single JSON action. Available actions:
 8. Report an error or inability to proceed:
    {{"action": "error", "message": "Cannot find the required element"}}
 
+9. Execute multiple actions in sequence (batch):
+   {{"action": "batch", "actions": [{{"action": "type", "text": "hello"}}, {{"action": "key", "key": "tab"}}]}}
+   Use for predictable action sequences that don't need intermediate screenshots.
+   Max 10 actions per batch. Batch stops on first failure or complete action.
+
 Guidelines:
 - Analyze the screenshot carefully before acting
 - Use coordinates that match visible UI elements
