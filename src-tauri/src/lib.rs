@@ -5,7 +5,7 @@ mod input;
 mod llm;
 
 use agent::{AgentLoop, AgentStateManager, AgentStatus};
-use config::Config;
+use config::{Config, TaskTemplate};
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
@@ -95,6 +95,81 @@ async fn hide_window(window: WebviewWindow) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn get_templates(state: State<'_, AppState>) -> Result<Vec<TaskTemplate>, String> {
+    Ok(state.config.read().await.templates.clone())
+}
+
+#[tauri::command]
+async fn save_template(
+    name: String,
+    instruction: String,
+    state: State<'_, AppState>,
+) -> Result<TaskTemplate, String> {
+    // Validate name length
+    if name.len() > 50 {
+        return Err("Template name must be 50 characters or less".to_string());
+    }
+
+    // Validate instruction is not empty/whitespace
+    if instruction.trim().is_empty() {
+        return Err("Instruction cannot be empty".to_string());
+    }
+
+    let template = TaskTemplate::new(name, instruction);
+    let mut config = state.config.write().await;
+    config.templates.push(template.clone());
+    config.save().map_err(|e| e.to_string())?;
+
+    Ok(template)
+}
+
+#[tauri::command]
+async fn delete_template(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let mut config = state.config.write().await;
+    let original_len = config.templates.len();
+    config.templates.retain(|t| t.id != id);
+
+    if config.templates.len() == original_len {
+        return Err("Template not found".to_string());
+    }
+
+    config.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn update_template(
+    id: String,
+    name: String,
+    instruction: String,
+    state: State<'_, AppState>,
+) -> Result<TaskTemplate, String> {
+    // Validate name length
+    if name.len() > 50 {
+        return Err("Template name must be 50 characters or less".to_string());
+    }
+
+    // Validate instruction is not empty/whitespace
+    if instruction.trim().is_empty() {
+        return Err("Instruction cannot be empty".to_string());
+    }
+
+    let mut config = state.config.write().await;
+    let template = config
+        .templates
+        .iter_mut()
+        .find(|t| t.id == id)
+        .ok_or_else(|| "Template not found".to_string())?;
+
+    template.name = name;
+    template.instruction = instruction;
+    let updated = template.clone();
+
+    config.save().map_err(|e| e.to_string())?;
+    Ok(updated)
+}
+
+#[tauri::command]
 async fn show_window(window: WebviewWindow) -> Result<(), String> {
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())
@@ -143,6 +218,10 @@ pub fn run() {
             save_config,
             hide_window,
             show_window,
+            get_templates,
+            save_template,
+            delete_template,
+            update_template,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

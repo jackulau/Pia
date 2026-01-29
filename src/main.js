@@ -25,6 +25,15 @@ const actionContent = document.getElementById('action-content');
 const providerSelect = document.getElementById('provider-select');
 const confirmDangerous = document.getElementById('confirm-dangerous');
 
+// Template elements
+const templateSelect = document.getElementById('template-select');
+const saveTemplateBtn = document.getElementById('save-template-btn');
+const saveTemplateDialog = document.getElementById('save-template-dialog');
+const templateNameInput = document.getElementById('template-name-input');
+const cancelTemplateBtn = document.getElementById('cancel-template-btn');
+const confirmTemplateBtn = document.getElementById('confirm-template-btn');
+const templateList = document.getElementById('template-list');
+
 // Provider-specific settings
 const providerSettings = {
   ollama: document.getElementById('ollama-settings'),
@@ -42,10 +51,12 @@ const confirmActionBtn = document.getElementById('confirm-action-btn');
 // State
 let isRunning = false;
 let currentConfig = null;
+let cachedTemplates = [];
 
 // Initialize
 async function init() {
   await loadConfig();
+  await loadTemplates();
   setupEventListeners();
   setupTauriListeners();
 }
@@ -106,6 +117,141 @@ function showProviderSettings(provider) {
   });
 }
 
+// Load templates from backend
+async function loadTemplates() {
+  try {
+    cachedTemplates = await invoke('get_templates');
+    updateTemplateDropdown();
+    updateTemplateList();
+  } catch (error) {
+    console.error('Failed to load templates:', error);
+  }
+}
+
+// Update template dropdown
+function updateTemplateDropdown() {
+  // Clear existing options (keep the placeholder)
+  templateSelect.innerHTML = '<option value="">Select a template...</option>';
+
+  // Sort templates alphabetically by name
+  const sorted = [...cachedTemplates].sort((a, b) => a.name.localeCompare(b.name));
+
+  sorted.forEach(template => {
+    const option = document.createElement('option');
+    option.value = template.id;
+    option.textContent = template.name;
+    templateSelect.appendChild(option);
+  });
+}
+
+// Update template list in settings
+function updateTemplateList() {
+  if (cachedTemplates.length === 0) {
+    templateList.innerHTML = '<div class="no-templates">No templates saved yet</div>';
+    return;
+  }
+
+  const sorted = [...cachedTemplates].sort((a, b) => a.name.localeCompare(b.name));
+
+  templateList.innerHTML = sorted.map(template => `
+    <div class="template-item" data-id="${template.id}">
+      <div class="template-item-info">
+        <div class="template-item-name">${escapeHtml(template.name)}</div>
+        <div class="template-item-preview">${escapeHtml(template.instruction.substring(0, 60))}${template.instruction.length > 60 ? '...' : ''}</div>
+      </div>
+      <div class="template-item-actions">
+        <button class="template-delete-btn" data-id="${template.id}" title="Delete template">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  `).join('');
+
+  // Add delete handlers
+  templateList.querySelectorAll('.template-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      await deleteTemplate(id);
+    });
+  });
+}
+
+// Select a template
+function selectTemplate(id) {
+  if (!id) {
+    instructionInput.value = '';
+    return;
+  }
+
+  const template = cachedTemplates.find(t => t.id === id);
+  if (template) {
+    instructionInput.value = template.instruction;
+    instructionInput.focus();
+  }
+}
+
+// Save current instruction as template
+async function saveAsTemplate(name) {
+  const instruction = instructionInput.value.trim();
+
+  if (!instruction) {
+    showToast('Enter an instruction first', 'error');
+    return;
+  }
+
+  if (!name || !name.trim()) {
+    showToast('Template name is required', 'error');
+    return;
+  }
+
+  if (name.length > 50) {
+    showToast('Template name must be 50 characters or less', 'error');
+    return;
+  }
+
+  try {
+    const template = await invoke('save_template', { name: name.trim(), instruction });
+    cachedTemplates.push(template);
+    updateTemplateDropdown();
+    updateTemplateList();
+    showToast('Template saved', 'success');
+  } catch (error) {
+    console.error('Failed to save template:', error);
+    showToast(error, 'error');
+  }
+}
+
+// Delete a template
+async function deleteTemplate(id) {
+  try {
+    await invoke('delete_template', { id });
+    cachedTemplates = cachedTemplates.filter(t => t.id !== id);
+    updateTemplateDropdown();
+    updateTemplateList();
+
+    // Reset dropdown if deleted template was selected
+    if (templateSelect.value === id) {
+      templateSelect.value = '';
+    }
+
+    showToast('Template deleted', 'success');
+  } catch (error) {
+    console.error('Failed to delete template:', error);
+    showToast(error, 'error');
+  }
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 // Setup DOM event listeners
 function setupEventListeners() {
   // Submit instruction
@@ -138,6 +284,47 @@ function setupEventListeners() {
 
   // Save settings
   saveSettingsBtn.addEventListener('click', saveSettings);
+
+  // Template selection
+  templateSelect.addEventListener('change', (e) => {
+    selectTemplate(e.target.value);
+  });
+
+  // Save as template button
+  saveTemplateBtn.addEventListener('click', () => {
+    const instruction = instructionInput.value.trim();
+    if (!instruction) {
+      showToast('Enter an instruction first', 'error');
+      return;
+    }
+    templateNameInput.value = '';
+    saveTemplateDialog.classList.remove('hidden');
+    templateNameInput.focus();
+  });
+
+  // Cancel save template
+  cancelTemplateBtn.addEventListener('click', () => {
+    saveTemplateDialog.classList.add('hidden');
+  });
+
+  // Confirm save template
+  confirmTemplateBtn.addEventListener('click', async () => {
+    const name = templateNameInput.value;
+    await saveAsTemplate(name);
+    saveTemplateDialog.classList.add('hidden');
+  });
+
+  // Enter key in template name input
+  templateNameInput.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const name = templateNameInput.value;
+      await saveAsTemplate(name);
+      saveTemplateDialog.classList.add('hidden');
+    } else if (e.key === 'Escape') {
+      saveTemplateDialog.classList.add('hidden');
+    }
+  });
 
   // Close button
   closeBtn.addEventListener('click', async () => {

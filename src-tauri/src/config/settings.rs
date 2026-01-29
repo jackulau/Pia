@@ -1,7 +1,9 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use thiserror::Error;
+use uuid::Uuid;
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -16,9 +18,30 @@ pub enum ConfigError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskTemplate {
+    pub id: String,
+    pub name: String,
+    pub instruction: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl TaskTemplate {
+    pub fn new(name: String, instruction: String) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            name,
+            instruction,
+            created_at: Utc::now(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub general: GeneralConfig,
     pub providers: ProvidersConfig,
+    #[serde(default)]
+    pub templates: Vec<TaskTemplate>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,6 +104,7 @@ impl Default for Config {
                 openai: None,
                 openrouter: None,
             },
+            templates: Vec::new(),
         }
     }
 }
