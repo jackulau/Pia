@@ -1,0 +1,203 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cursor-indicator {
+  position: fixed;
+  width: 60px;
+  height: 60px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.cursor-indicator.hidden {
+  display: none;
+}
+
+/* Outer pulsing ring */
+.cursor-ring-outer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 50px;
+  height: 50px;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(10, 132, 255, 0.6);
+  border-radius: 50%;
+  animation: pulse-outer 1.5s ease-out infinite;
+}
+
+/* Inner ring */
+.cursor-ring-inner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 30px;
+  height: 30px;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(10, 132, 255, 0.9);
+  border-radius: 50%;
+  animation: pulse-inner 1.5s ease-out infinite;
+}
+
+/* Center dot */
+.cursor-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%);
+  background: #0a84ff;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(10, 132, 255, 0.8);
+}
+
+/* Crosshair lines */
+.cursor-crosshair {
+  position: absolute;
+  background: rgba(10, 132, 255, 0.5);
+}
+
+.cursor-crosshair-h {
+  top: 50%;
+  left: 50%;
+  width: 60px;
+  height: 1px;
+  transform: translate(-50%, -50%);
+}
+
+.cursor-crosshair-v {
+  top: 50%;
+  left: 50%;
+  width: 1px;
+  height: 60px;
+  transform: translate(-50%, -50%);
+}
+
+/* Click action style (blue) */
+.cursor-indicator.click .cursor-ring-outer,
+.cursor-indicator.double_click .cursor-ring-outer {
+  border-color: rgba(10, 132, 255, 0.6);
+}
+
+.cursor-indicator.click .cursor-ring-inner,
+.cursor-indicator.double_click .cursor-ring-inner {
+  border-color: rgba(10, 132, 255, 0.9);
+}
+
+.cursor-indicator.click .cursor-dot,
+.cursor-indicator.double_click .cursor-dot {
+  background: #0a84ff;
+  box-shadow: 0 0 10px rgba(10, 132, 255, 0.8);
+}
+
+.cursor-indicator.click .cursor-crosshair,
+.cursor-indicator.double_click .cursor-crosshair {
+  background: rgba(10, 132, 255, 0.5);
+}
+
+/* Move action style (green) */
+.cursor-indicator.move .cursor-ring-outer {
+  border-color: rgba(50, 215, 75, 0.6);
+}
+
+.cursor-indicator.move .cursor-ring-inner {
+  border-color: rgba(50, 215, 75, 0.9);
+}
+
+.cursor-indicator.move .cursor-dot {
+  background: #32d74b;
+  box-shadow: 0 0 10px rgba(50, 215, 75, 0.8);
+}
+
+.cursor-indicator.move .cursor-crosshair {
+  background: rgba(50, 215, 75, 0.5);
+}
+
+/* Scroll action style (orange) */
+.cursor-indicator.scroll .cursor-ring-outer {
+  border-color: rgba(255, 159, 10, 0.6);
+}
+
+.cursor-indicator.scroll .cursor-ring-inner {
+  border-color: rgba(255, 159, 10, 0.9);
+}
+
+.cursor-indicator.scroll .cursor-dot {
+  background: #ff9f0a;
+  box-shadow: 0 0 10px rgba(255, 159, 10, 0.8);
+}
+
+.cursor-indicator.scroll .cursor-crosshair {
+  background: rgba(255, 159, 10, 0.5);
+}
+
+/* Animations */
+@keyframes pulse-outer {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-inner {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Show animation */
+.cursor-indicator.showing {
+  animation: fade-in 0.2s ease-out forwards;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* Hide animation */
+.cursor-indicator.hiding {
+  animation: fade-out 0.15s ease-in forwards;
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+}

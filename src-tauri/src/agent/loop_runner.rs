@@ -1,9 +1,10 @@
-use super::action::{execute_action, parse_action, ActionError};
+use super::action::{execute_action, parse_action, Action, ActionError};
 use super::state::{AgentStateManager, AgentStatus};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
 use crate::llm::{AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider};
-use tauri::{AppHandle, Emitter};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use thiserror::Error;
 use tokio::time::{sleep, Duration};
 
@@ -157,8 +158,17 @@ impl AgentLoop {
                 .await;
             self.emit_state_update().await;
 
+            // Show cursor indicator before executing action
+            self.show_cursor_indicator(&action).await;
+
+            // Brief pause to let user see the indicator
+            sleep(Duration::from_millis(300)).await;
+
             match execute_action(&action, confirm_dangerous) {
                 Ok(result) => {
+                    // Hide cursor indicator after action
+                    self.hide_cursor_indicator().await;
+
                     if result.completed {
                         self.state.complete(result.message).await;
                         self.emit_state_update().await;
@@ -166,6 +176,7 @@ impl AgentLoop {
                     }
                 }
                 Err(ActionError::RequiresConfirmation(msg)) => {
+                    // Keep cursor indicator visible during confirmation
                     // Emit confirmation request to frontend
                     let _ = self.app_handle.emit("confirmation-required", msg);
                     self.state.set_status(AgentStatus::Paused).await;
@@ -174,6 +185,9 @@ impl AgentLoop {
                     // Wait for user response (handled externally)
                     // For now, just continue after a delay
                     sleep(Duration::from_secs(5)).await;
+
+                    // Hide cursor indicator after confirmation period
+                    self.hide_cursor_indicator().await;
 
                     if self.state.should_stop() {
                         self.state.set_status(AgentStatus::Idle).await;
@@ -184,6 +198,9 @@ impl AgentLoop {
                     self.state.set_status(AgentStatus::Running).await;
                 }
                 Err(e) => {
+                    // Hide cursor indicator on error
+                    self.hide_cursor_indicator().await;
+
                     self.state.set_error(e.to_string()).await;
                     self.emit_state_update().await;
                     return Err(e.into());
@@ -198,5 +215,69 @@ impl AgentLoop {
     async fn emit_state_update(&self) {
         let state = self.state.get_state().await;
         let _ = self.app_handle.emit("agent-state", state);
+    }
+
+    async fn show_cursor_indicator(&self, action: &Action) {
+        let (x, y, action_type) = match action {
+            Action::Click { x, y, .. } => (*x, *y, "click"),
+            Action::DoubleClick { x, y } => (*x, *y, "double_click"),
+            Action::Move { x, y } => (*x, *y, "move"),
+            Action::Scroll { x, y, .. } => (*x, *y, "scroll"),
+            _ => return,
+        };
+
+        if let Some(overlay) = self.app_handle.get_webview_window("cursor-overlay") {
+            // Get available monitors
+            if let Ok(monitors) = overlay.available_monitors() {
+                // Find the monitor containing the point
+                let target_monitor = monitors
+                    .iter()
+                    .find(|m| {
+                        let pos = m.position();
+                        let size = m.size();
+                        x >= pos.x && x < pos.x + size.width as i32 &&
+                        y >= pos.y && y < pos.y + size.height as i32
+                    })
+                    .or_else(|| monitors.first());
+
+                if let Some(monitor) = target_monitor {
+                    let monitor_pos = monitor.position();
+                    let monitor_size = monitor.size();
+
+                    // Position overlay to cover the monitor
+                    let _ = overlay.set_position(PhysicalPosition::new(monitor_pos.x, monitor_pos.y));
+                    let _ = overlay.set_size(PhysicalSize::new(monitor_size.width, monitor_size.height));
+
+                    // Calculate relative position
+                    let relative_x = x - monitor_pos.x;
+                    let relative_y = y - monitor_pos.y;
+
+                    // Show overlay and emit position
+                    let _ = overlay.show();
+
+                    #[derive(Clone, Serialize)]
+                    struct CursorPayload {
+                        x: i32,
+                        y: i32,
+                        action_type: String,
+                    }
+
+                    let _ = overlay.emit("show-cursor-indicator", CursorPayload {
+                        x: relative_x,
+                        y: relative_y,
+                        action_type: action_type.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    async fn hide_cursor_indicator(&self) {
+        if let Some(overlay) = self.app_handle.get_webview_window("cursor-overlay") {
+            let _ = overlay.emit("hide-cursor-indicator", ());
+            // Wait for animation
+            sleep(Duration::from_millis(150)).await;
+            let _ = overlay.hide();
+        }
     }
 }
