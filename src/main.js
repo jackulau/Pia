@@ -16,6 +16,7 @@ const saveSettingsBtn = document.getElementById('save-settings-btn');
 // Status elements
 const statusDot = document.querySelector('.status-dot');
 const statusText = document.querySelector('.status-text');
+const progressRingFill = document.querySelector('.progress-ring-fill');
 const iterationValue = document.getElementById('iteration-value');
 const speedValue = document.getElementById('speed-value');
 const tokensValue = document.getElementById('tokens-value');
@@ -198,6 +199,44 @@ async function stopAgent() {
   }
 }
 
+// Update progress ring
+function updateProgressRing(state) {
+  if (!progressRingFill) return;
+
+  // Calculate progress percentage (0-100)
+  const maxIterations = state.max_iterations || 50;
+  const progress = maxIterations > 0 ? (state.iteration / maxIterations) * 100 : 0;
+
+  // SVG circle circumference calculation: 2 * PI * r
+  // With r=10 and viewBox 24x24, the circumference is ~62.83
+  // We use stroke-dasharray with percentage values relative to 100
+  const circumference = 2 * Math.PI * 10; // ~62.83
+  const dashLength = (progress / 100) * circumference;
+
+  progressRingFill.style.strokeDasharray = `${dashLength}, ${circumference}`;
+
+  // Update ring color based on status
+  progressRingFill.className = 'progress-ring-fill';
+  switch (state.status) {
+    case 'Running':
+      progressRingFill.classList.add('running');
+      break;
+    case 'Completed':
+      progressRingFill.classList.add('completed');
+      // Show full ring on completion
+      progressRingFill.style.strokeDasharray = `${circumference}, ${circumference}`;
+      break;
+    case 'Error':
+      progressRingFill.classList.add('error');
+      // Show full ring on error
+      progressRingFill.style.strokeDasharray = `${circumference}, ${circumference}`;
+      break;
+    default:
+      // Idle/Ready state - show empty ring
+      progressRingFill.style.strokeDasharray = `0, ${circumference}`;
+  }
+}
+
 // Update UI with agent state
 function updateAgentState(state) {
   isRunning = state.status === 'Running';
@@ -223,6 +262,9 @@ function updateAgentState(state) {
     default:
       statusText.textContent = 'Ready';
   }
+
+  // Update progress ring
+  updateProgressRing(state);
 
   // Update metrics
   iterationValue.textContent = `${state.iteration}/${state.max_iterations}`;

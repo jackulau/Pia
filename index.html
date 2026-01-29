@@ -66,11 +66,45 @@
       padding: 4px 12px 8px;
     }
     .status-indicator { display: flex; align-items: center; gap: 6px; }
+
+    /* Progress Ring Container */
+    .progress-ring-container {
+      position: relative;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .progress-ring {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+    .progress-ring-bg {
+      fill: none;
+      stroke: rgba(255, 255, 255, 0.1);
+      stroke-width: 2;
+    }
+    .progress-ring-fill {
+      fill: none;
+      stroke: #0a84ff;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-dasharray: 0, 100;
+      transition: stroke-dasharray 0.3s ease, stroke 0.2s ease;
+    }
+    .progress-ring-fill.running { stroke: #32d74b; }
+    .progress-ring-fill.error { stroke: #ff453a; }
+    .progress-ring-fill.completed { stroke: #0a84ff; }
+
     .status-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
       background: rgba(255, 255, 255, 0.4);
+      z-index: 1;
     }
     .status-dot.running { background: #32d74b; animation: pulse 1.5s infinite; }
     .status-dot.error { background: #ff453a; }
@@ -264,7 +298,13 @@
       <div class="drag-handle" data-tauri-drag-region></div>
       <div class="modal-header">
         <div class="status-indicator">
-          <span class="status-dot"></span>
+          <div class="progress-ring-container">
+            <svg class="progress-ring" viewBox="0 0 24 24">
+              <circle class="progress-ring-bg" cx="12" cy="12" r="10" />
+              <circle class="progress-ring-fill" cx="12" cy="12" r="10" />
+            </svg>
+            <span class="status-dot"></span>
+          </div>
           <span class="status-text">Ready</span>
         </div>
         <div class="header-actions">
