@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
+import { availableMonitors, currentMonitor } from '@tauri-apps/api/window';
 // CSS is inlined in index.html for transparent window support
 
 // DOM Elements
@@ -39,15 +41,26 @@ const confirmationMessage = document.getElementById('confirmation-message');
 const cancelActionBtn = document.getElementById('cancel-action-btn');
 const confirmActionBtn = document.getElementById('confirm-action-btn');
 
+// Position menu elements
+const positionBtn = document.getElementById('position-btn');
+const positionDropdown = document.getElementById('position-dropdown');
+const positionOptions = document.querySelectorAll('.position-option');
+
 // State
 let isRunning = false;
 let currentConfig = null;
+let currentPosition = localStorage.getItem('pia-window-position') || null;
+
+// Position constants
+const POSITION_PADDING = 20;
 
 // Initialize
 async function init() {
   await loadConfig();
   setupEventListeners();
   setupTauriListeners();
+  setupPositionMenu();
+  await restoreSavedPosition();
 }
 
 // Load configuration from backend
@@ -336,6 +349,120 @@ function showToast(message, type = 'info') {
   setTimeout(() => {
     toast.remove();
   }, 3000);
+}
+
+// Setup position menu
+function setupPositionMenu() {
+  // Toggle dropdown
+  positionBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    positionDropdown.classList.toggle('visible');
+    positionDropdown.classList.remove('hidden');
+  });
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!positionDropdown.contains(e.target) && e.target !== positionBtn) {
+      positionDropdown.classList.remove('visible');
+    }
+  });
+
+  // Position option clicks
+  positionOptions.forEach(option => {
+    option.addEventListener('click', async () => {
+      const position = option.dataset.position;
+      await snapToPosition(position);
+      positionDropdown.classList.remove('visible');
+    });
+  });
+
+  // Update active state based on saved position
+  updatePositionActiveState();
+}
+
+// Update active state in dropdown
+function updatePositionActiveState() {
+  positionOptions.forEach(option => {
+    option.classList.toggle('active', option.dataset.position === currentPosition);
+  });
+}
+
+// Calculate snap positions
+async function calculateSnapPositions() {
+  const appWindow = getCurrentWindow();
+  const monitor = await currentMonitor();
+
+  if (!monitor) {
+    console.error('No monitor found');
+    return null;
+  }
+
+  const windowSize = await appWindow.innerSize();
+  const screenSize = monitor.size;
+  const screenPosition = monitor.position;
+
+  const windowWidth = windowSize.width;
+  const windowHeight = windowSize.height;
+  const screenWidth = screenSize.width;
+  const screenHeight = screenSize.height;
+  const screenX = screenPosition.x;
+  const screenY = screenPosition.y;
+
+  return {
+    'top-left': {
+      x: screenX + POSITION_PADDING,
+      y: screenY + POSITION_PADDING
+    },
+    'top-right': {
+      x: screenX + screenWidth - windowWidth - POSITION_PADDING,
+      y: screenY + POSITION_PADDING
+    },
+    'bottom-left': {
+      x: screenX + POSITION_PADDING,
+      y: screenY + screenHeight - windowHeight - POSITION_PADDING
+    },
+    'bottom-right': {
+      x: screenX + screenWidth - windowWidth - POSITION_PADDING,
+      y: screenY + screenHeight - windowHeight - POSITION_PADDING
+    },
+    'center': {
+      x: screenX + Math.floor((screenWidth - windowWidth) / 2),
+      y: screenY + Math.floor((screenHeight - windowHeight) / 2)
+    }
+  };
+}
+
+// Snap window to position
+async function snapToPosition(position) {
+  try {
+    const positions = await calculateSnapPositions();
+    if (!positions || !positions[position]) {
+      console.error('Invalid position:', position);
+      return;
+    }
+
+    const appWindow = getCurrentWindow();
+    const { x, y } = positions[position];
+
+    await appWindow.setPosition(new PhysicalPosition(x, y));
+
+    // Save position preference
+    currentPosition = position;
+    localStorage.setItem('pia-window-position', position);
+    updatePositionActiveState();
+  } catch (error) {
+    console.error('Failed to snap to position:', error);
+  }
+}
+
+// Restore saved position on startup
+async function restoreSavedPosition() {
+  if (currentPosition) {
+    // Small delay to ensure window is ready
+    setTimeout(async () => {
+      await snapToPosition(currentPosition);
+    }, 100);
+  }
 }
 
 // Initialize the app

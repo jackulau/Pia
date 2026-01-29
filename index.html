@@ -256,6 +256,52 @@
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 2px; }
+
+    /* Position Menu */
+    .position-menu-container { position: relative; }
+    .position-dropdown {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 4px;
+      min-width: 140px;
+      background: rgba(40, 40, 42, 0.98);
+      -webkit-backdrop-filter: blur(30px);
+      backdrop-filter: blur(30px);
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      padding: 4px;
+      z-index: 50;
+      opacity: 0;
+      transform: translateY(-4px) scale(0.96);
+      pointer-events: none;
+      transition: opacity 0.15s, transform 0.15s;
+    }
+    .position-dropdown.visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+    .position-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 10px;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.12s;
+      text-align: left;
+    }
+    .position-option:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+    .position-option.active { background: rgba(10, 132, 255, 0.3); color: #fff; }
+    .position-option svg { opacity: 0.6; flex-shrink: 0; }
+    .position-option:hover svg, .position-option.active svg { opacity: 1; }
   </style>
 </head>
 <body>
@@ -268,6 +314,38 @@
           <span class="status-text">Ready</span>
         </div>
         <div class="header-actions">
+          <div class="position-menu-container">
+            <button class="icon-btn" id="position-btn" title="Snap Position">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+            </button>
+            <div class="position-dropdown hidden" id="position-dropdown">
+              <button class="position-option" data-position="top-left">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="2" width="8" height="8" rx="1"></rect></svg>
+                <span>Top Left</span>
+              </button>
+              <button class="position-option" data-position="top-right">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="14" y="2" width="8" height="8" rx="1"></rect></svg>
+                <span>Top Right</span>
+              </button>
+              <button class="position-option" data-position="bottom-left">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="14" width="8" height="8" rx="1"></rect></svg>
+                <span>Bottom Left</span>
+              </button>
+              <button class="position-option" data-position="bottom-right">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="14" y="14" width="8" height="8" rx="1"></rect></svg>
+                <span>Bottom Right</span>
+              </button>
+              <button class="position-option" data-position="center">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="8" y="8" width="8" height="8" rx="1"></rect></svg>
+                <span>Center</span>
+              </button>
+            </div>
+          </div>
           <button class="icon-btn" id="settings-btn" title="Settings">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3"></circle>
