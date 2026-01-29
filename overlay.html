@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coordinate Overlay</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      background: transparent;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .crosshair {
+      position: absolute;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    .crosshair.visible {
+      opacity: 1;
+    }
+
+    .crosshair-h, .crosshair-v {
+      position: absolute;
+      background: rgba(10, 132, 255, 0.8);
+    }
+
+    .crosshair-h {
+      width: 40px;
+      height: 2px;
+      left: -20px;
+      top: -1px;
+    }
+
+    .crosshair-v {
+      width: 2px;
+      height: 40px;
+      left: -1px;
+      top: -20px;
+    }
+
+    .crosshair-dot {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      background: #0a84ff;
+      border-radius: 50%;
+      left: -4px;
+      top: -4px;
+      box-shadow: 0 0 10px rgba(10, 132, 255, 0.5);
+    }
+
+    .crosshair-label {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, monospace;
+      font-size: 11px;
+      color: #0a84ff;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .click-ripple {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      border: 2px solid #0a84ff;
+      border-radius: 50%;
+      pointer-events: none;
+      animation: ripple 0.4s ease-out forwards;
+    }
+
+    @keyframes ripple {
+      0% {
+        transform: translate(-50%, -50%) scale(0.5);
+        opacity: 1;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(2);
+        opacity: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="crosshair" id="crosshair">
+    <div class="crosshair-h"></div>
+    <div class="crosshair-v"></div>
+    <div class="crosshair-dot"></div>
+    <div class="crosshair-label" id="coord-label">(0, 0)</div>
+  </div>
+
+  <script type="module">
+    import { listen } from '@tauri-apps/api/event';
+
+    const crosshair = document.getElementById('crosshair');
+    const coordLabel = document.getElementById('coord-label');
+    let hideTimeout;
+
+    // Listen for coordinate updates from backend
+    listen('show-coordinate', (event) => {
+      const { x, y, action_type } = event.payload;
+
+      // Position crosshair
+      crosshair.style.left = `${x}px`;
+      crosshair.style.top = `${y}px`;
+      crosshair.classList.add('visible');
+
+      // Update label
+      coordLabel.textContent = `(${x}, ${y})`;
+
+      // Show click ripple for click actions
+      if (action_type === 'click' || action_type === 'double_click') {
+        showClickRipple(x, y);
+      }
+
+      // Hide after delay
+      clearTimeout(hideTimeout);
+      hideTimeout = setTimeout(() => {
+        crosshair.classList.remove('visible');
+      }, 1500);
+    });
+
+    function showClickRipple(x, y) {
+      const ripple = document.createElement('div');
+      ripple.className = 'click-ripple';
+      ripple.style.left = `${x}px`;
+      ripple.style.top = `${y}px`;
+      document.body.appendChild(ripple);
+
+      setTimeout(() => ripple.remove(), 400);
+    }
+  </script>
+</body>
+</html>

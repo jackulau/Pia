@@ -1,8 +1,9 @@
-use super::action::{execute_action, parse_action, ActionError};
+use super::action::{execute_action, parse_action, Action, ActionError};
 use super::state::{AgentStateManager, AgentStatus};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
 use crate::llm::{AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider};
+use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
 use tokio::time::{sleep, Duration};
@@ -98,6 +99,7 @@ impl AgentLoop {
         let provider = self.create_provider()?;
         let max_iterations = self.config.general.max_iterations;
         let confirm_dangerous = self.config.general.confirm_dangerous_actions;
+        let show_overlay = self.config.general.show_coordinate_overlay;
 
         self.state.start(instruction.clone(), max_iterations).await;
         self.emit_state_update().await;
@@ -157,6 +159,11 @@ impl AgentLoop {
                 .await;
             self.emit_state_update().await;
 
+            // Emit coordinate to overlay if enabled
+            if show_overlay {
+                self.emit_coordinate(&action);
+            }
+
             match execute_action(&action, confirm_dangerous) {
                 Ok(result) => {
                     if result.completed {
@@ -198,5 +205,24 @@ impl AgentLoop {
     async fn emit_state_update(&self) {
         let state = self.state.get_state().await;
         let _ = self.app_handle.emit("agent-state", state);
+    }
+
+    fn emit_coordinate(&self, action: &Action) {
+        let (x, y, action_type) = match action {
+            Action::Click { x, y, .. } => (*x, *y, "click"),
+            Action::DoubleClick { x, y } => (*x, *y, "double_click"),
+            Action::Move { x, y } => (*x, *y, "move"),
+            Action::Scroll { x, y, .. } => (*x, *y, "scroll"),
+            _ => return, // No coordinates for other actions
+        };
+
+        let _ = self.app_handle.emit(
+            "show-coordinate",
+            json!({
+                "x": x,
+                "y": y,
+                "action_type": action_type
+            }),
+        );
     }
 }

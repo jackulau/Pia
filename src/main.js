@@ -24,6 +24,7 @@ const actionContent = document.getElementById('action-content');
 // Settings elements
 const providerSelect = document.getElementById('provider-select');
 const confirmDangerous = document.getElementById('confirm-dangerous');
+const showOverlay = document.getElementById('show-overlay');
 
 // Provider-specific settings
 const providerSettings = {
@@ -71,6 +72,9 @@ function updateSettingsUI() {
 
   // Set safety settings
   confirmDangerous.checked = currentConfig.general.confirm_dangerous_actions;
+
+  // Set debug settings
+  showOverlay.checked = currentConfig.general.show_coordinate_overlay || false;
 
   // Set Ollama settings
   if (currentConfig.providers.ollama) {
@@ -292,6 +296,7 @@ async function saveSettings() {
         default_provider: providerSelect.value,
         max_iterations: 50,
         confirm_dangerous_actions: confirmDangerous.checked,
+        show_coordinate_overlay: showOverlay.checked,
       },
       providers: {
         ollama: {
