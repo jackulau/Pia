@@ -57,6 +57,10 @@ pub enum Action {
     Error {
         message: String,
     },
+    Wait {
+        timeout_ms: Option<u32>,
+        description: String,
+    },
 }
 
 fn default_button() -> String {
@@ -236,6 +240,22 @@ pub fn execute_action(
             completed: true,
             message: Some(message.clone()),
         }),
+
+        Action::Wait {
+            timeout_ms,
+            description,
+        } => {
+            let timeout = timeout_ms.unwrap_or(5000).min(10000);
+            log::info!("Waiting for: {} (timeout: {}ms)", description, timeout);
+
+            std::thread::sleep(std::time::Duration::from_millis(timeout as u64));
+
+            Ok(ActionResult {
+                success: true,
+                completed: false,
+                message: Some(format!("Waited for: {}", description)),
+            })
+        }
     }
 }
 

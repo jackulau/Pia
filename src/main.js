@@ -274,6 +274,8 @@ function formatAction(action) {
       return `Key: ${mods ? mods + '+' : ''}${action.key}`;
     case 'scroll':
       return `Scroll ${action.direction} at (${action.x}, ${action.y})`;
+    case 'wait':
+      return `⏳ Wait: ${action.description} (${action.timeout_ms || 5000}ms)`;
     case 'complete':
       return `Completed: ${action.message}`;
     case 'error':

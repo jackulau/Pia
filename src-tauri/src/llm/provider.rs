@@ -81,10 +81,18 @@ You must respond with a single JSON action. Available actions:
 6. Move mouse (without clicking):
    {{"action": "move", "x": 100, "y": 200}}
 
-7. Complete the task:
+7. Wait before proceeding:
+   {{"action": "wait", "timeout_ms": 3000, "description": "page to load"}}
+   Use when:
+   - After clicking a button that triggers loading
+   - After navigating to a new page
+   - When an element might not be immediately visible
+   Default timeout is 5000ms. Max is 10000ms.
+
+8. Complete the task:
    {{"action": "complete", "message": "Task completed successfully"}}
 
-8. Report an error or inability to proceed:
+9. Report an error or inability to proceed:
    {{"action": "error", "message": "Cannot find the required element"}}
 
 Guidelines:
