@@ -26,6 +26,12 @@ pub struct GeneralConfig {
     pub default_provider: String,
     pub max_iterations: u32,
     pub confirm_dangerous_actions: bool,
+    #[serde(default = "default_speed_multiplier")]
+    pub speed_multiplier: f32,
+}
+
+fn default_speed_multiplier() -> f32 {
+    1.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -71,6 +77,7 @@ impl Default for Config {
                 default_provider: "ollama".to_string(),
                 max_iterations: 50,
                 confirm_dangerous_actions: true,
+                speed_multiplier: 1.0,
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {

@@ -116,6 +116,18 @@ pub fn execute_action(
     action: &Action,
     confirm_dangerous: bool,
 ) -> Result<ActionResult, ActionError> {
+    execute_action_with_delay(
+        action,
+        confirm_dangerous,
+        std::time::Duration::from_millis(50),
+    )
+}
+
+pub fn execute_action_with_delay(
+    action: &Action,
+    confirm_dangerous: bool,
+    click_delay: std::time::Duration,
+) -> Result<ActionResult, ActionError> {
     match action {
         Action::Click { x, y, button } => {
             let btn = match button.to_lowercase().as_str() {
@@ -126,7 +138,7 @@ pub fn execute_action(
             };
 
             let mut mouse = MouseController::new()?;
-            mouse.click_at(*x, *y, btn)?;
+            mouse.click_at_with_delay(*x, *y, btn, click_delay)?;
 
             Ok(ActionResult {
                 success: true,
@@ -138,6 +150,7 @@ pub fn execute_action(
         Action::DoubleClick { x, y } => {
             let mut mouse = MouseController::new()?;
             mouse.move_to(*x, *y)?;
+            std::thread::sleep(click_delay);
             mouse.double_click(MouseButton::Left)?;
 
             Ok(ActionResult {
@@ -215,7 +228,7 @@ pub fn execute_action(
 
             let mut mouse = MouseController::new()?;
             mouse.move_to(*x, *y)?;
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            std::thread::sleep(click_delay);
             mouse.scroll(dir, *amount)?;
 
             Ok(ActionResult {

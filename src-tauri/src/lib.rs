@@ -4,7 +4,7 @@ mod config;
 mod input;
 mod llm;
 
-use agent::{AgentLoop, AgentStateManager, AgentStatus};
+use agent::{validate_speed_multiplier, AgentLoop, AgentStateManager, AgentStatus};
 use config::Config;
 use serde::Serialize;
 use std::sync::Arc;
@@ -90,6 +90,20 @@ async fn save_config(config: Config, state: State<'_, AppState>) -> Result<(), S
 }
 
 #[tauri::command]
+async fn set_speed_multiplier(multiplier: f32, state: State<'_, AppState>) -> Result<(), String> {
+    let validated = validate_speed_multiplier(multiplier)?;
+    let mut config = state.config.write().await;
+    config.general.speed_multiplier = validated;
+    config.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_speed_multiplier(state: State<'_, AppState>) -> Result<f32, String> {
+    Ok(state.config.read().await.general.speed_multiplier)
+}
+
+#[tauri::command]
 async fn hide_window(window: WebviewWindow) -> Result<(), String> {
     window.hide().map_err(|e| e.to_string())
 }
@@ -141,6 +155,8 @@ pub fn run() {
             get_agent_state,
             get_config,
             save_config,
+            set_speed_multiplier,
+            get_speed_multiplier,
             hide_window,
             show_window,
         ])
