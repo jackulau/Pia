@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getActionIcon } from './icons/action-icons.js';
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 // CSS is inlined in index.html for transparent window support
 
 // DOM Elements
@@ -14,6 +15,12 @@ const settingsCloseBtn = document.getElementById('settings-close-btn');
 const closeBtn = document.getElementById('close-btn');
 const saveSettingsBtn = document.getElementById('save-settings-btn');
 const dragHandle = document.querySelector('.drag-handle');
+const expandBtn = document.getElementById('expand-btn');
+
+// Expanded mode elements
+const elapsedValue = document.getElementById('elapsed-value');
+const actionsCount = document.getElementById('actions-count');
+const actionHistoryList = document.getElementById('action-history-list');
 
 // Status elements
 const statusDot = document.querySelector('.status-dot');
@@ -49,12 +56,22 @@ let currentConfig = null;
 let lastIteration = 0;
 let lastTokens = 0;
 let lastAction = null;
+let isExpanded = localStorage.getItem('pia-expanded-mode') === 'true';
+let actionHistory = [];
+let totalActionsCount = 0;
+let sessionStartTime = null;
+let elapsedTimer = null;
+
+// Window sizes
+const COMPACT_SIZE = { width: 420, height: 280 };
+const EXPANDED_SIZE = { width: 500, height: 450 };
 
 // Initialize
 async function init() {
   await loadConfig();
   setupEventListeners();
   setupTauriListeners();
+  await restoreExpandedState();
 }
 
 // Load configuration from backend
@@ -189,6 +206,11 @@ function setupEventListeners() {
       mainModal.classList.remove('dragging');
     });
   }
+
+  // Expand/collapse toggle
+  if (expandBtn) {
+    expandBtn.addEventListener('click', toggleExpandedMode);
+  }
 }
 
 // Setup Tauri event listeners
@@ -245,7 +267,18 @@ async function stopAgent() {
 
 // Update UI with agent state
 function updateAgentState(state) {
+  const wasRunning = isRunning;
   isRunning = state.status === 'Running';
+
+  // Start timer when agent starts running
+  if (isRunning && !wasRunning) {
+    startElapsedTimer();
+  }
+
+  // Stop timer when agent stops running
+  if (!isRunning && wasRunning) {
+    stopElapsedTimer();
+  }
 
   // Update status indicator
   statusDot.className = 'status-dot';
@@ -294,36 +327,56 @@ function updateAgentState(state) {
 
   // Update action timeline
   if (state.action_history && state.action_history.length > 0) {
-    actionCount.textContent = `${state.action_history.length} action${state.action_history.length === 1 ? '' : 's'}`;
+    if (actionCount) {
+      actionCount.textContent = `${state.action_history.length} action${state.action_history.length === 1 ? '' : 's'}`;
+    }
+    if (actionsCount) {
+      actionsCount.textContent = state.action_history.length;
+    }
 
     // Clear and rebuild timeline
-    timelineList.innerHTML = '';
+    if (timelineList) {
+      timelineList.innerHTML = '';
 
-    // Show most recent first (reverse order)
-    const recentActions = [...state.action_history].reverse();
+      // Show most recent first (reverse order)
+      const recentActions = [...state.action_history].reverse();
 
-    for (const entry of recentActions) {
-      const item = document.createElement('div');
-      item.className = `timeline-item${entry.is_error ? ' error' : ''}`;
+      for (const entry of recentActions) {
+        const item = document.createElement('div');
+        item.className = `timeline-item${entry.is_error ? ' error' : ''}`;
 
-      const time = document.createElement('span');
-      time.className = 'timeline-time';
-      time.textContent = formatTimestamp(entry.timestamp);
+        const time = document.createElement('span');
+        time.className = 'timeline-time';
+        time.textContent = formatTimestamp(entry.timestamp);
 
-      const actionContainer = document.createElement('span');
-      actionContainer.className = 'timeline-action';
+        const actionContainer = document.createElement('span');
+        actionContainer.className = 'timeline-action';
 
-      try {
-        const parsed = JSON.parse(entry.action);
-        const actionType = parsed.action || 'default';
-        renderActionWithIcon(actionContainer, actionType, formatAction(parsed));
-      } catch {
-        renderActionWithIcon(actionContainer, 'default', entry.action);
+        try {
+          const parsed = JSON.parse(entry.action);
+          const actionType = parsed.action || 'default';
+          renderActionWithIcon(actionContainer, actionType, formatAction(parsed));
+        } catch {
+          renderActionWithIcon(actionContainer, 'default', entry.action);
+        }
+
+        item.appendChild(time);
+        item.appendChild(actionContainer);
+        timelineList.appendChild(item);
       }
+    }
 
-      item.appendChild(time);
-      item.appendChild(actionContainer);
-      timelineList.appendChild(item);
+    // Update expanded mode action history
+    if (actionHistoryList && state.last_action) {
+      try {
+        const action = JSON.parse(state.last_action);
+        const formattedAction = formatAction(action);
+        if (actionHistory.length === 0 || actionHistory[0] !== formattedAction) {
+          addToActionHistory(action);
+        }
+      } catch {
+        // Skip if not valid JSON
+      }
     }
 
     // Auto-scroll to show newest (at top)
@@ -499,6 +552,116 @@ function triggerShake(element) {
   element.classList.remove('shake');
   void element.offsetWidth; // Force reflow
   element.classList.add('shake');
+}
+
+// Toggle expanded mode
+async function toggleExpandedMode() {
+  isExpanded = !isExpanded;
+  await applyExpandedState();
+  localStorage.setItem('pia-expanded-mode', isExpanded.toString());
+}
+
+// Apply expanded state to UI and window
+async function applyExpandedState() {
+  const appWindow = getCurrentWindow();
+
+  if (isExpanded) {
+    mainModal.classList.add('expanded');
+    expandBtn.classList.add('active');
+    expandBtn.title = 'Collapse';
+    // Update icon to collapse
+    expandBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="4 14 10 14 10 20"></polyline>
+        <polyline points="20 10 14 10 14 4"></polyline>
+        <line x1="14" y1="10" x2="21" y2="3"></line>
+        <line x1="3" y1="21" x2="10" y2="14"></line>
+      </svg>
+    `;
+    await appWindow.setSize(new LogicalSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height));
+  } else {
+    mainModal.classList.remove('expanded');
+    expandBtn.classList.remove('active');
+    expandBtn.title = 'Expand';
+    // Update icon to expand
+    expandBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="15 3 21 3 21 9"></polyline>
+        <polyline points="9 21 3 21 3 15"></polyline>
+        <line x1="21" y1="3" x2="14" y2="10"></line>
+        <line x1="3" y1="21" x2="10" y2="14"></line>
+      </svg>
+    `;
+    await appWindow.setSize(new LogicalSize(COMPACT_SIZE.width, COMPACT_SIZE.height));
+  }
+}
+
+// Restore expanded state on app launch
+async function restoreExpandedState() {
+  if (isExpanded) {
+    await applyExpandedState();
+  }
+}
+
+// Add action to history
+function addToActionHistory(action) {
+  const formattedAction = formatAction(action);
+  actionHistory.unshift(formattedAction);
+  // Keep only last 10 actions
+  if (actionHistory.length > 10) {
+    actionHistory.pop();
+  }
+  totalActionsCount++;
+  updateActionHistoryUI();
+}
+
+// Update action history UI
+function updateActionHistoryUI() {
+  if (!actionHistoryList) return;
+
+  actionHistoryList.innerHTML = actionHistory
+    .map(action => `<div class="action-history-item">${action}</div>`)
+    .join('');
+
+  if (actionsCount) {
+    actionsCount.textContent = totalActionsCount.toString();
+  }
+}
+
+// Start elapsed timer
+function startElapsedTimer() {
+  sessionStartTime = Date.now();
+  if (elapsedTimer) clearInterval(elapsedTimer);
+  elapsedTimer = setInterval(updateElapsedTime, 1000);
+  updateElapsedTime();
+}
+
+// Stop elapsed timer
+function stopElapsedTimer() {
+  if (elapsedTimer) {
+    clearInterval(elapsedTimer);
+    elapsedTimer = null;
+  }
+}
+
+// Update elapsed time display
+function updateElapsedTime() {
+  if (!sessionStartTime || !elapsedValue) return;
+
+  const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+  const minutes = Math.floor(elapsed / 60);
+  const seconds = elapsed % 60;
+  elapsedValue.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// Reset session stats
+function resetSessionStats() {
+  actionHistory = [];
+  totalActionsCount = 0;
+  sessionStartTime = null;
+  stopElapsedTimer();
+  updateActionHistoryUI();
+  if (elapsedValue) elapsedValue.textContent = '0:00';
 }
 
 // Initialize the app

@@ -552,6 +552,106 @@
       .status-dot.paused { box-shadow: 0 0 6px rgba(255, 214, 10, 0.5); }
       .submit-btn.loading svg { animation: none !important; opacity: 0.6; }
     }
+
+    /* Expandable Mode */
+    .expanded-only { display: none !important; }
+
+    .modal.expanded .expanded-only { display: flex !important; }
+
+    .modal {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .modal.expanded {
+      max-width: 480px;
+    }
+
+    .modal.expanded .input-area {
+      padding-bottom: 16px;
+    }
+
+    .modal.expanded #instruction-input {
+      height: 44px;
+    }
+
+    .modal.expanded .submit-btn {
+      width: 44px;
+      height: 44px;
+    }
+
+    .modal.expanded .metrics-bar {
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px 16px;
+    }
+
+    .modal.expanded .metric {
+      min-width: 60px;
+    }
+
+    .modal.expanded .action-display {
+      padding: 14px 16px;
+    }
+
+    .modal.expanded .action-content {
+      max-height: 60px;
+      font-size: 12px;
+    }
+
+    /* Action History (expanded only) */
+    .action-history {
+      padding: 0 16px 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      flex-direction: column;
+    }
+
+    .action-history .action-label {
+      padding-top: 10px;
+      padding-bottom: 6px;
+    }
+
+    .action-history-list {
+      max-height: 120px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .action-history-item {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      padding: 4px 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 4px;
+      line-height: 1.3;
+    }
+
+    .action-history-item:first-child {
+      color: rgba(255, 255, 255, 0.7);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    /* Expand button active state */
+    #expand-btn.active {
+      background: rgba(10, 132, 255, 0.2);
+      color: #0a84ff;
+    }
+
+    /* Transition animations for content */
+    .action-history,
+    .modal.expanded .action-display,
+    .metrics-bar .metric {
+      transition: opacity 0.2s ease-in-out;
+    }
+
+    .modal:not(.expanded) .expanded-only {
+      opacity: 0;
+    }
+
+    .modal.expanded .expanded-only {
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
@@ -585,6 +685,14 @@
           <span class="status-text">Ready</span>
         </div>
         <div class="header-actions">
+          <button class="icon-btn" id="expand-btn" title="Expand" aria-label="Expand/collapse window">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <polyline points="9 21 3 21 3 15"></polyline>
+              <line x1="21" y1="3" x2="14" y2="10"></line>
+              <line x1="3" y1="21" x2="10" y2="14"></line>
+            </svg>
+          </button>
           <button class="icon-btn" id="settings-btn" title="Settings" aria-label="Open settings" aria-expanded="false">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <circle cx="12" cy="12" r="3"></circle>
@@ -622,6 +730,14 @@
           <span class="metric-label" id="tokens-label">Tokens</span>
           <span class="metric-value" id="tokens-value" aria-labelledby="tokens-label">0</span>
         </div>
+        <div class="metric expanded-only">
+          <span class="metric-label">Elapsed</span>
+          <span class="metric-value" id="elapsed-value">0:00</span>
+        </div>
+        <div class="metric expanded-only">
+          <span class="metric-label">Actions</span>
+          <span class="metric-value" id="actions-count">0</span>
+        </div>
       </div>
       <div class="action-timeline" aria-live="polite" aria-atomic="true">
         <div class="timeline-header">
@@ -631,6 +747,10 @@
         <div class="timeline-list" id="timeline-list">
           <div class="timeline-empty">Waiting for instruction...</div>
         </div>
+      </div>
+      <div class="action-history expanded-only">
+        <div class="action-label">Action History</div>
+        <div class="action-history-list" id="action-history-list"></div>
       </div>
       <button class="stop-btn hidden" id="stop-btn" aria-label="Stop agent">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>
