@@ -26,6 +26,12 @@ pub struct GeneralConfig {
     pub default_provider: String,
     pub max_iterations: u32,
     pub confirm_dangerous_actions: bool,
+    #[serde(default = "default_global_hotkey")]
+    pub global_hotkey: Option<String>,
+}
+
+fn default_global_hotkey() -> Option<String> {
+    Some("CmdOrCtrl+Shift+P".to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -71,6 +77,7 @@ impl Default for Config {
                 default_provider: "ollama".to_string(),
                 max_iterations: 50,
                 confirm_dangerous_actions: true,
+                global_hotkey: default_global_hotkey(),
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {

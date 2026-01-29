@@ -24,6 +24,9 @@ const actionContent = document.getElementById('action-content');
 // Settings elements
 const providerSelect = document.getElementById('provider-select');
 const confirmDangerous = document.getElementById('confirm-dangerous');
+const globalHotkeyInput = document.getElementById('global-hotkey-input');
+const clearHotkeyBtn = document.getElementById('clear-hotkey-btn');
+const hotkeyError = document.getElementById('hotkey-error');
 
 // Provider-specific settings
 const providerSettings = {
@@ -71,6 +74,10 @@ function updateSettingsUI() {
 
   // Set safety settings
   confirmDangerous.checked = currentConfig.general.confirm_dangerous_actions;
+
+  // Set global hotkey
+  globalHotkeyInput.value = currentConfig.general.global_hotkey || '';
+  hotkeyError.style.display = 'none';
 
   // Set Ollama settings
   if (currentConfig.providers.ollama) {
@@ -153,6 +160,19 @@ function setupEventListeners() {
   confirmActionBtn.addEventListener('click', () => {
     confirmationDialog.classList.add('hidden');
     // Continue execution - the backend will handle this
+  });
+
+  // Clear hotkey button
+  clearHotkeyBtn.addEventListener('click', async () => {
+    try {
+      await invoke('unregister_global_hotkey');
+      globalHotkeyInput.value = '';
+      hotkeyError.style.display = 'none';
+      showToast('Hotkey disabled', 'success');
+    } catch (error) {
+      console.error('Failed to disable hotkey:', error);
+      showToast('Failed to disable hotkey', 'error');
+    }
   });
 }
 
@@ -286,12 +306,33 @@ function formatAction(action) {
 // Save settings to backend
 async function saveSettings() {
   try {
+    hotkeyError.style.display = 'none';
+
+    // Handle hotkey change first (if changed)
+    const newHotkey = globalHotkeyInput.value.trim();
+    const currentHotkey = currentConfig?.general?.global_hotkey || '';
+
+    if (newHotkey !== currentHotkey) {
+      if (newHotkey) {
+        try {
+          await invoke('set_global_hotkey', { shortcut: newHotkey });
+        } catch (error) {
+          hotkeyError.textContent = error;
+          hotkeyError.style.display = 'block';
+          return;
+        }
+      } else {
+        await invoke('unregister_global_hotkey');
+      }
+    }
+
     // Build config object
     const config = {
       general: {
         default_provider: providerSelect.value,
         max_iterations: 50,
         confirm_dangerous_actions: confirmDangerous.checked,
+        global_hotkey: newHotkey || null,
       },
       providers: {
         ollama: {
