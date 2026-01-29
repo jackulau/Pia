@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Pia</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -43,12 +43,14 @@
     }
 
     .drag-handle {
-      height: 28px;
+      height: 44px;
       cursor: grab;
       background: transparent;
       display: flex;
       align-items: center;
       justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
     }
     .drag-handle::after {
       content: '';
@@ -56,8 +58,10 @@
       height: 4px;
       background: rgba(255, 255, 255, 0.2);
       border-radius: 2px;
+      transition: all 0.15s;
     }
     .drag-handle:active { cursor: grabbing; }
+    .drag-handle:active::after, .drag-handle.touch-active::after { background: rgba(255, 255, 255, 0.4); width: 44px; }
 
     .modal-header {
       display: flex;
@@ -80,8 +84,8 @@
 
     .header-actions { display: flex; gap: 2px; }
     .icon-btn {
-      width: 26px;
-      height: 26px;
+      width: 44px;
+      height: 44px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -91,8 +95,11 @@
       color: rgba(255, 255, 255, 0.5);
       cursor: pointer;
       transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
     .icon-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+    .icon-btn:active, .icon-btn.touch-active { background: rgba(255, 255, 255, 0.15); color: #fff; transform: scale(0.95); }
 
     .input-area { display: flex; gap: 8px; padding: 0 12px 12px; }
     #instruction-input {
@@ -113,8 +120,8 @@
       border-color: rgba(10, 132, 255, 0.5);
     }
     .submit-btn {
-      width: 38px;
-      height: 38px;
+      width: 44px;
+      height: 44px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -124,8 +131,11 @@
       color: #fff;
       cursor: pointer;
       transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
     .submit-btn:hover { background: #409cff; transform: scale(1.02); }
+    .submit-btn:active, .submit-btn.touch-active { background: #006edb; transform: scale(0.95); }
     .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
     .metrics-bar {
@@ -150,7 +160,8 @@
       gap: 6px;
       width: calc(100% - 24px);
       margin: 0 12px 12px;
-      padding: 8px;
+      padding: 12px;
+      min-height: 44px;
       background: rgba(255, 69, 58, 0.9);
       border: none;
       border-radius: 8px;
@@ -159,8 +170,11 @@
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
     .stop-btn:hover { background: #ff453a; }
+    .stop-btn:active, .stop-btn.touch-active { background: #cc362e; transform: scale(0.98); }
 
     /* Settings Panel */
     .settings-panel {
@@ -213,7 +227,8 @@
     .provider-settings .setting-group:last-child { margin-bottom: 0; }
     .save-btn {
       width: 100%;
-      padding: 10px;
+      padding: 12px;
+      min-height: 44px;
       background: #0a84ff;
       border: none;
       border-radius: 8px;
@@ -222,8 +237,12 @@
       font-weight: 600;
       cursor: pointer;
       margin-top: 6px;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      transition: all 0.15s;
     }
     .save-btn:hover { background: #409cff; }
+    .save-btn:active, .save-btn.touch-active { background: #006edb; transform: scale(0.98); }
 
     .confirmation-dialog {
       position: fixed;
@@ -247,15 +266,102 @@
     .confirmation-content h3 { font-size: 15px; margin-bottom: 8px; }
     .confirmation-content p { font-size: 12px; color: rgba(255, 255, 255, 0.6); margin-bottom: 16px; }
     .confirmation-actions { display: flex; gap: 8px; justify-content: center; }
-    .btn { padding: 8px 16px; border-radius: 6px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .btn { padding: 12px 20px; min-height: 44px; border-radius: 6px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: all 0.15s; }
     .btn-cancel { background: rgba(255, 255, 255, 0.1); color: #fff; }
     .btn-cancel:hover { background: rgba(255, 255, 255, 0.15); }
+    .btn-cancel:active, .btn-cancel.touch-active { background: rgba(255, 255, 255, 0.2); transform: scale(0.98); }
     .btn-confirm { background: #0a84ff; color: #fff; }
     .btn-confirm:hover { background: #409cff; }
+    .btn-confirm:active, .btn-confirm.touch-active { background: #006edb; transform: scale(0.98); }
 
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 2px; }
+
+    /* Touch gesture support */
+    .status-indicator {
+      padding: 8px;
+      margin: -8px;
+      border-radius: 8px;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      cursor: pointer;
+    }
+    .status-indicator.long-press-active {
+      background: rgba(255, 255, 255, 0.1);
+      transform: scale(1.05);
+    }
+    .status-indicator.long-press-triggered {
+      background: rgba(10, 132, 255, 0.2);
+    }
+
+    .action-content {
+      padding: 8px;
+      margin: -8px;
+      border-radius: 6px;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      cursor: pointer;
+    }
+    .action-content.long-press-active {
+      background: rgba(255, 255, 255, 0.08);
+      transform: scale(1.02);
+    }
+    .action-content.long-press-triggered {
+      background: rgba(50, 215, 75, 0.2);
+    }
+
+    /* Settings panel touch support */
+    .settings-panel {
+      touch-action: pan-y;
+    }
+    .settings-panel.swipe-closing {
+      transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+    }
+
+    /* Touch toast notification */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      z-index: 200;
+      animation: toast-in 0.3s ease;
+    }
+    .toast.success { background: rgba(50, 215, 75, 0.9); color: #fff; }
+    .toast.error { background: rgba(255, 69, 58, 0.9); color: #fff; }
+    .toast.info { background: rgba(10, 132, 255, 0.9); color: #fff; }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    /* Prevent text selection during touch interactions */
+    .touch-no-select {
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* Long-press context hint */
+    .context-hint {
+      position: fixed;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.85);
+      border-radius: 6px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.9);
+      pointer-events: none;
+      z-index: 150;
+      animation: hint-in 0.15s ease;
+    }
+    @keyframes hint-in {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
   </style>
 </head>
 <body>
