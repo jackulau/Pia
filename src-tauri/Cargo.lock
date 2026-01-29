@@ -3808,6 +3808,7 @@ dependencies = [
  "futures",
  "image",
  "log",
+ "once_cell",
  "reqwest",
  "serde",
  "serde_json",
