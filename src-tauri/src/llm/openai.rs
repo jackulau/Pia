@@ -135,7 +135,8 @@ impl LlmProvider for OpenAIProvider {
         }
 
         let mut stream = response.bytes_stream();
-        let mut full_response = String::new();
+        // Pre-allocate response buffer with typical response size (~4KB)
+        let mut full_response = String::with_capacity(4096);
         let mut input_tokens = 0u64;
         let mut output_tokens = 0u64;
         let mut buffer = String::new();
@@ -144,31 +145,30 @@ impl LlmProvider for OpenAIProvider {
             let chunk = chunk_result?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
 
+            // Process complete lines using zero-allocation slicing
             while let Some(pos) = buffer.find('\n') {
-                let line = buffer[..pos].to_string();
-                buffer = buffer[pos + 1..].to_string();
-
-                if let Some(data) = line.strip_prefix("data: ") {
-                    if data == "[DONE]" {
-                        continue;
-                    }
-
-                    if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
-                        for choice in chunk.choices {
-                            if let Some(delta) = choice.delta {
-                                if let Some(content) = delta.content {
-                                    full_response.push_str(&content);
-                                    on_chunk(&content);
+                // Process line in-place before draining
+                if let Some(data) = buffer[..pos].strip_prefix("data: ") {
+                    if data != "[DONE]" {
+                        if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
+                            for choice in chunk.choices {
+                                if let Some(delta) = choice.delta {
+                                    if let Some(content) = delta.content {
+                                        full_response.push_str(&content);
+                                        on_chunk(&content);
+                                    }
                                 }
                             }
-                        }
 
-                        if let Some(usage) = chunk.usage {
-                            input_tokens = usage.prompt_tokens.unwrap_or(0);
-                            output_tokens = usage.completion_tokens.unwrap_or(0);
+                            if let Some(usage) = chunk.usage {
+                                input_tokens = usage.prompt_tokens.unwrap_or(0);
+                                output_tokens = usage.completion_tokens.unwrap_or(0);
+                            }
                         }
                     }
                 }
+                // Drain processed line from buffer (zero-allocation)
+                buffer.drain(..pos + 1);
             }
         }
 

@@ -77,7 +77,8 @@ impl LlmProvider for OllamaProvider {
         }
 
         let mut stream = response.bytes_stream();
-        let mut full_response = String::new();
+        // Pre-allocate response buffer with typical response size (~4KB)
+        let mut full_response = String::with_capacity(4096);
         let mut output_tokens = 0u64;
         let mut input_tokens = 0u64;
 
