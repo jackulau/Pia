@@ -1,0 +1,11 @@
+id: add-favicon
+status: complete
+branch: pia/add-favicon
+worktree_path: .claude-workspace/worktrees/add-favicon/worktree
+assigned_to: null
+started_at: null
+completed_at: 2026-01-28T07:28:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: ab9bcd9fff0d98ccb84feced64c0a239c5563c38
+tests_passing: true

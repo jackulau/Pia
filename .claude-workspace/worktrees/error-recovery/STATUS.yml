@@ -1,0 +1,11 @@
+id: error-recovery
+status: complete
+branch: pia/error-recovery
+worktree_path: .claude-workspace/worktrees/error-recovery/worktree
+assigned_to: null
+started_at: 2026-01-28T02:18:04-06:00
+completed_at: 2026-01-28T02:18:04-06:00
+dependencies_met: true
+conflicts: []
+commit_sha: bb7d0a9fa455a818ef017e5fda1f90eb163098b4
+tests_passing: true

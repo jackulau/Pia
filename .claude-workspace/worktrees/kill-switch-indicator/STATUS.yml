@@ -1,0 +1,11 @@
+id: kill-switch-indicator
+status: complete
+branch: pia/kill-switch-indicator
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/kill-switch-indicator/worktree
+assigned_to: claude
+started_at: 2026-01-28T20:22:00Z
+completed_at: 2026-01-28T20:35:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: 1ce3c122ce93c78e899dcef74741eeffbd7e4e73
+tests_passing: true

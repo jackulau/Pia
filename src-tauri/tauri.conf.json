@@ -40,6 +40,20 @@
         "fullscreen": true,
         "visible": false,
         "focus": false
+      },
+      {
+        "title": "Cursor Overlay",
+        "label": "cursor-overlay",
+        "url": "cursor-overlay.html",
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "fullscreen": false,
+        "resizable": false,
+        "visible": false,
+        "width": 800,
+        "height": 600
       }
     ],
     "security": {

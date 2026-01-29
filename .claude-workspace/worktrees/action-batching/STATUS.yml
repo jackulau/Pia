@@ -1,0 +1,11 @@
+id: action-batching
+status: complete
+branch: pia/action-batching
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/action-batching/worktree
+assigned_to: claude
+started_at: 2026-01-29T02:06:22Z
+completed_at: 2026-01-29T02:06:22Z
+dependencies_met: true
+conflicts: []
+commit_sha: a2acb82ad6b2a31ca3b519311f76dba13eb0cf29
+tests_passing: true

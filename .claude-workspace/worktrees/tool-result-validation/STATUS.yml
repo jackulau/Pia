@@ -1,0 +1,11 @@
+id: tool-result-validation
+status: complete
+branch: pia/tool-result-validation
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/tool-result-validation/worktree
+assigned_to: claude
+started_at: 2026-01-28T21:31:00Z
+completed_at: 2026-01-28T21:43:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: 373974727ee815dd9f107ccfd80f15a637d635db
+tests_passing: true

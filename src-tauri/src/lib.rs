@@ -6,9 +6,9 @@ mod llm;
 
 use agent::{AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse};
 use config::Config;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 use tauri::State;
 use tokio::sync::RwLock;
 
@@ -129,6 +129,74 @@ async fn show_window(window: WebviewWindow) -> Result<(), String> {
     window.set_focus().map_err(|e| e.to_string())
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+struct CursorIndicatorPayload {
+    x: i32,
+    y: i32,
+    action_type: String,
+}
+
+#[tauri::command]
+async fn show_cursor_indicator(
+    x: i32,
+    y: i32,
+    action_type: String,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    if let Some(overlay) = app_handle.get_webview_window("cursor-overlay") {
+        // Get the monitor that contains the target coordinates
+        let monitors = overlay.available_monitors().map_err(|e| e.to_string())?;
+
+        // Find the monitor containing the point, or use primary
+        let target_monitor = monitors
+            .iter()
+            .find(|m| {
+                let pos = m.position();
+                let size = m.size();
+                x >= pos.x && x < pos.x + size.width as i32 &&
+                y >= pos.y && y < pos.y + size.height as i32
+            })
+            .or_else(|| monitors.first());
+
+        if let Some(monitor) = target_monitor {
+            let monitor_pos = monitor.position();
+            let monitor_size = monitor.size();
+
+            // Position the overlay to cover the monitor
+            overlay.set_position(PhysicalPosition::new(monitor_pos.x, monitor_pos.y))
+                .map_err(|e| e.to_string())?;
+            overlay.set_size(PhysicalSize::new(monitor_size.width, monitor_size.height))
+                .map_err(|e| e.to_string())?;
+
+            // Calculate position relative to the overlay window
+            let relative_x = x - monitor_pos.x;
+            let relative_y = y - monitor_pos.y;
+
+            // Show the overlay and emit the cursor position
+            overlay.show().map_err(|e| e.to_string())?;
+
+            let payload = CursorIndicatorPayload {
+                x: relative_x,
+                y: relative_y,
+                action_type,
+            };
+            overlay.emit("show-cursor-indicator", payload).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn hide_cursor_indicator(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(overlay) = app_handle.get_webview_window("cursor-overlay") {
+        overlay.emit("hide-cursor-indicator", ()).map_err(|e| e.to_string())?;
+        // Hide after a short delay for animation
+        tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+        overlay.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = Config::load().unwrap_or_default();
@@ -182,6 +250,8 @@ pub fn run() {
             show_window,
             confirm_action,
             deny_action,
+            show_cursor_indicator,
+            hide_cursor_indicator,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

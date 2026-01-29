@@ -1,0 +1,11 @@
+id: keyboard-navigation
+status: complete
+branch: pia/keyboard-navigation
+worktree_path: .claude-workspace/worktrees/keyboard-navigation/worktree
+assigned_to: null
+started_at: null
+completed_at: 2026-01-28T07:43:28Z
+dependencies_met: true
+conflicts: []
+commit_sha: e63f580ca431a7219065c87c27168b51507d7028
+tests_passing: null

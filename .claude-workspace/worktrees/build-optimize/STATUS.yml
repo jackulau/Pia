@@ -1,0 +1,11 @@
+id: build-optimize
+status: complete
+branch: pia/build-optimize
+worktree_path: .claude-workspace/worktrees/build-optimize/worktree
+assigned_to: null
+started_at: null
+completed_at: 2026-01-28T07:38:56Z
+dependencies_met: true
+conflicts: []
+commit_sha: b132af8e65e58556e022a0888bd3038a5dcd80e9
+tests_passing: true

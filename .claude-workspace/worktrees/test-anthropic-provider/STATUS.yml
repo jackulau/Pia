@@ -1,0 +1,11 @@
+id: test-anthropic-provider
+status: complete
+branch: pia/test-anthropic-provider
+worktree_path: .claude-workspace/worktrees/test-anthropic-provider/worktree
+assigned_to: claude
+started_at: 2026-01-28T19:23:50Z
+completed_at: 2026-01-28T21:30:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: bbbc9f2b777d2d914338298658357a507c7ac21e
+tests_passing: true

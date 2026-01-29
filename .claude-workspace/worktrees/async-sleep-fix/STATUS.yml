@@ -1,0 +1,11 @@
+id: async-sleep-fix
+status: complete
+branch: pia/async-sleep-fix
+worktree_path: .claude-workspace/worktrees/async-sleep-fix/worktree
+assigned_to: null
+started_at: null
+completed_at: 2026-01-28T01:39:24-06:00
+dependencies_met: true
+conflicts: []
+commit_sha: c3932332d6f220d1c205b8beeafb88db8424dca2
+tests_passing: true

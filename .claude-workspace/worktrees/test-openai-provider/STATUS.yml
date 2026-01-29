@@ -1,0 +1,11 @@
+id: test-openai-provider
+status: complete
+branch: pia/test-openai-provider
+worktree_path: null
+assigned_to: null
+started_at: null
+completed_at: 2026-01-28T13:29:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: 7efe2b4a92dfaac5d2e4b39515cb2d063861043f
+tests_passing: true

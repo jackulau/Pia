@@ -1,0 +1,11 @@
+id: screenshot-preview
+status: complete
+branch: pia/screenshot-preview
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/screenshot-preview/worktree
+assigned_to: null
+started_at: 2026-01-29T02:35:31Z
+completed_at: 2026-01-29T02:35:31Z
+dependencies_met: true
+conflicts: []
+commit_sha: d5247487fd1c7a71e40a3b4b125c254d4e67c7ae
+tests_passing: true

@@ -1,0 +1,11 @@
+id: string-allocation-optimize
+status: complete
+branch: pia/string-allocation-optimize
+worktree_path: null
+assigned_to: null
+started_at: null
+completed_at: 2026-01-29T04:54:06Z
+dependencies_met: true
+conflicts: []
+commit_sha: c1376e1e579d90d607c4eac068863b5f7552fe41
+tests_passing: true

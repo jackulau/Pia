@@ -1,0 +1,11 @@
+id: self-correction-retry
+status: complete
+branch: pia/self-correction-retry
+worktree_path: .claude-workspace/worktrees/self-correction-retry/worktree
+assigned_to: null
+started_at: 2026-01-29T00:00:00Z
+completed_at: 2026-01-29T00:00:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: 329ae5ad4e81811f9c5743c0f7861d682b2e371b
+tests_passing: true
