@@ -13,6 +13,7 @@ const settingsBtn = document.getElementById('settings-btn');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
 const closeBtn = document.getElementById('close-btn');
 const saveSettingsBtn = document.getElementById('save-settings-btn');
+const dragHandle = document.querySelector('.drag-handle');
 
 // Status elements
 const statusDot = document.querySelector('.status-dot');
@@ -173,6 +174,18 @@ function setupEventListeners() {
       console.error('Failed to confirm action:', error);
     }
   });
+
+  // Drag state visual feedback
+  if (dragHandle) {
+    dragHandle.addEventListener('mousedown', () => {
+      mainModal.classList.add('dragging');
+    });
+
+    // Listen for mouseup on window to catch release outside the handle
+    window.addEventListener('mouseup', () => {
+      mainModal.classList.remove('dragging');
+    });
+  }
 }
 
 // Setup Tauri event listeners
