@@ -8,8 +8,11 @@ use agent::{AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse};
 use config::Config;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
-use tauri::State;
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow, State,
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+};
 use tokio::sync::RwLock;
 
 struct AppState {
@@ -221,6 +224,58 @@ pub fn run() {
                 config: Arc::new(RwLock::new(config)),
             };
             app.manage(state);
+
+            // Create tray menu
+            let show_hide = MenuItem::with_id(app, "show_hide", "Show/Hide Pia", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_hide, &quit])?;
+
+            // Create tray icon
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .tooltip("Pia - Computer Use Agent")
+                .on_tray_icon_event(|tray, event| {
+                    match event {
+                        TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } => {
+                            // Toggle window visibility on left click
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
+                                if window.is_visible().unwrap_or(false) {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                })
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show_hide" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                if window.is_visible().unwrap_or(false) {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .build(app)?;
 
             // Show main window on startup
             if let Some(window) = app.get_webview_window("main") {
