@@ -23,6 +23,10 @@ pub struct AgentState {
     pub tokens_per_second: f64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
+    /// Whether there is an action that can be undone
+    pub can_undo: bool,
+    /// Description of the last action that can be undone
+    pub last_undoable_action: Option<String>,
 }
 
 impl Default for AgentState {
@@ -37,6 +41,8 @@ impl Default for AgentState {
             tokens_per_second: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            can_undo: false,
+            last_undoable_action: None,
         }
     }
 }
@@ -130,5 +136,12 @@ impl AgentStateManager {
         let mut state = self.state.write().await;
         *state = AgentState::default();
         self.should_stop.store(false, Ordering::SeqCst);
+    }
+
+    /// Update the undo state based on action history
+    pub async fn update_undo_state(&self, can_undo: bool, last_undoable: Option<String>) {
+        let mut state = self.state.write().await;
+        state.can_undo = can_undo;
+        state.last_undoable_action = last_undoable;
     }
 }

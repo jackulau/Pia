@@ -1,10 +1,13 @@
 use super::action::{execute_action, parse_action, ActionError};
+use super::history::{ActionHistory, ActionRecord};
 use super::state::{AgentStateManager, AgentStatus};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
 use crate::llm::{AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 use thiserror::Error;
+use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 
 #[derive(Error, Debug)]
@@ -27,14 +30,21 @@ pub struct AgentLoop {
     state: AgentStateManager,
     config: Config,
     app_handle: AppHandle,
+    action_history: Arc<RwLock<ActionHistory>>,
 }
 
 impl AgentLoop {
-    pub fn new(state: AgentStateManager, config: Config, app_handle: AppHandle) -> Self {
+    pub fn new(
+        state: AgentStateManager,
+        config: Config,
+        app_handle: AppHandle,
+        action_history: Arc<RwLock<ActionHistory>>,
+    ) -> Self {
         Self {
             state,
             config,
             app_handle,
+            action_history,
         }
     }
 
@@ -99,7 +109,14 @@ impl AgentLoop {
         let max_iterations = self.config.general.max_iterations;
         let confirm_dangerous = self.config.general.confirm_dangerous_actions;
 
+        // Clear action history for new session
+        {
+            let mut history = self.action_history.write().await;
+            history.clear();
+        }
+
         self.state.start(instruction.clone(), max_iterations).await;
+        self.state.update_undo_state(false, None).await;
         self.emit_state_update().await;
 
         loop {
@@ -159,6 +176,20 @@ impl AgentLoop {
 
             match execute_action(&action, confirm_dangerous) {
                 Ok(result) => {
+                    // Record successful action in history (unless it's a terminal action)
+                    if !result.completed {
+                        let record = ActionRecord::new(action.clone(), true);
+                        let mut history = self.action_history.write().await;
+                        history.push(record);
+
+                        // Update undo state
+                        let can_undo = history.can_undo();
+                        let last_undoable = history.get_last_undoable_description();
+                        drop(history);
+                        self.state.update_undo_state(can_undo, last_undoable).await;
+                        self.emit_state_update().await;
+                    }
+
                     if result.completed {
                         self.state.complete(result.message).await;
                         self.emit_state_update().await;
@@ -184,6 +215,12 @@ impl AgentLoop {
                     self.state.set_status(AgentStatus::Running).await;
                 }
                 Err(e) => {
+                    // Record failed action in history
+                    let record = ActionRecord::new(action.clone(), false);
+                    let mut history = self.action_history.write().await;
+                    history.push(record);
+                    drop(history);
+
                     self.state.set_error(e.to_string()).await;
                     self.emit_state_update().await;
                     return Err(e.into());

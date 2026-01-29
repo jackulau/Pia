@@ -4,17 +4,19 @@ mod config;
 mod input;
 mod llm;
 
-use agent::{AgentLoop, AgentStateManager, AgentStatus};
+use agent::{ActionHistory, AgentLoop, AgentStateManager, AgentStatus};
+use agent::action::execute_action;
 use config::Config;
 use serde::Serialize;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use tauri::State;
 use tokio::sync::RwLock;
 
 struct AppState {
     agent_state: AgentStateManager,
     config: Arc<RwLock<Config>>,
+    action_history: Arc<RwLock<ActionHistory>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -28,6 +30,8 @@ struct AgentStatePayload {
     tokens_per_second: f64,
     total_input_tokens: u64,
     total_output_tokens: u64,
+    can_undo: bool,
+    last_undoable_action: Option<String>,
 }
 
 #[tauri::command]
@@ -38,6 +42,7 @@ async fn start_agent(
 ) -> Result<(), String> {
     let agent_state = state.agent_state.clone();
     let config = state.config.read().await.clone();
+    let action_history = state.action_history.clone();
 
     let current_state = agent_state.get_state().await;
     if current_state.status == AgentStatus::Running {
@@ -46,7 +51,7 @@ async fn start_agent(
 
     let app = app_handle.clone();
     tokio::spawn(async move {
-        let loop_runner = AgentLoop::new(agent_state, config, app);
+        let loop_runner = AgentLoop::new(agent_state, config, app, action_history);
         if let Err(e) = loop_runner.run(instruction).await {
             log::error!("Agent loop error: {}", e);
         }
@@ -74,6 +79,8 @@ async fn get_agent_state(state: State<'_, AppState>) -> Result<AgentStatePayload
         tokens_per_second: s.tokens_per_second,
         total_input_tokens: s.total_input_tokens,
         total_output_tokens: s.total_output_tokens,
+        can_undo: s.can_undo,
+        last_undoable_action: s.last_undoable_action,
     })
 }
 
@@ -87,6 +94,71 @@ async fn save_config(config: Config, state: State<'_, AppState>) -> Result<(), S
     config.save().map_err(|e| e.to_string())?;
     *state.config.write().await = config;
     Ok(())
+}
+
+#[tauri::command]
+async fn undo_last_action(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    // Check if agent is running - can't undo during execution
+    let current_state = state.agent_state.get_state().await;
+    if current_state.status == AgentStatus::Running {
+        return Err("Cannot undo while agent is running".to_string());
+    }
+
+    // Pop the last action from history
+    let record = {
+        let mut history = state.action_history.write().await;
+        history.pop_last()
+    };
+
+    let record = match record {
+        Some(r) => r,
+        None => return Err("No actions to undo".to_string()),
+    };
+
+    // Check if the action is reversible
+    let reverse_action = match record.reverse_action {
+        Some(action) => action,
+        None => return Err(format!("Action '{}' cannot be undone", record.description)),
+    };
+
+    // Execute the reverse action
+    match execute_action(&reverse_action, false) {
+        Ok(_result) => {
+            // Update undo state after successful undo
+            let history = state.action_history.read().await;
+            let can_undo = history.can_undo();
+            let last_undoable = history.get_last_undoable_description();
+            drop(history);
+
+            state
+                .agent_state
+                .update_undo_state(can_undo, last_undoable)
+                .await;
+
+            // Emit state update
+            let s = state.agent_state.get_state().await;
+            let payload = AgentStatePayload {
+                status: format!("{:?}", s.status),
+                instruction: s.instruction,
+                iteration: s.iteration,
+                max_iterations: s.max_iterations,
+                last_action: Some(format!("Undone: {}", record.description)),
+                last_error: s.last_error,
+                tokens_per_second: s.tokens_per_second,
+                total_input_tokens: s.total_input_tokens,
+                total_output_tokens: s.total_output_tokens,
+                can_undo: s.can_undo,
+                last_undoable_action: s.last_undoable_action,
+            };
+            let _ = app_handle.emit("agent-state", payload);
+
+            Ok(format!("Undone: {}", record.description))
+        }
+        Err(e) => Err(format!("Failed to undo: {}", e)),
+    }
 }
 
 #[tauri::command]
@@ -121,6 +193,7 @@ pub fn run() {
             let state = AppState {
                 agent_state: AgentStateManager::new(),
                 config: Arc::new(RwLock::new(config)),
+                action_history: Arc::new(RwLock::new(ActionHistory::default())),
             };
             app.manage(state);
 
@@ -143,6 +216,7 @@ pub fn run() {
             save_config,
             hide_window,
             show_window,
+            undo_last_action,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

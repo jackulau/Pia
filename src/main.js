@@ -8,6 +8,7 @@ const settingsPanel = document.getElementById('settings-panel');
 const instructionInput = document.getElementById('instruction-input');
 const submitBtn = document.getElementById('submit-btn');
 const stopBtn = document.getElementById('stop-btn');
+const undoBtn = document.getElementById('undo-btn');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
 const closeBtn = document.getElementById('close-btn');
@@ -42,6 +43,8 @@ const confirmActionBtn = document.getElementById('confirm-action-btn');
 // State
 let isRunning = false;
 let currentConfig = null;
+let canUndo = false;
+let lastUndoableAction = null;
 
 // Initialize
 async function init() {
@@ -119,6 +122,17 @@ function setupEventListeners() {
 
   // Stop agent
   stopBtn.addEventListener('click', stopAgent);
+
+  // Undo last action
+  undoBtn.addEventListener('click', undoLastAction);
+
+  // Keyboard shortcut for undo (Cmd+Z on Mac, Ctrl+Z on other platforms)
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !isRunning && canUndo) {
+      e.preventDefault();
+      undoLastAction();
+    }
+  });
 
   // Settings
   settingsBtn.addEventListener('click', () => {
@@ -198,9 +212,24 @@ async function stopAgent() {
   }
 }
 
+// Undo the last action
+async function undoLastAction() {
+  if (isRunning || !canUndo) return;
+
+  try {
+    const result = await invoke('undo_last_action');
+    showToast(result, 'success');
+  } catch (error) {
+    console.error('Failed to undo action:', error);
+    showToast(error, 'error');
+  }
+}
+
 // Update UI with agent state
 function updateAgentState(state) {
   isRunning = state.status === 'Running';
+  canUndo = state.can_undo && !isRunning;
+  lastUndoableAction = state.last_undoable_action;
 
   // Update status indicator
   statusDot.className = 'status-dot';
@@ -251,6 +280,13 @@ function updateAgentState(state) {
 
   // Show/hide stop button
   stopBtn.classList.toggle('hidden', !isRunning);
+
+  // Show/hide undo button and update its state
+  undoBtn.classList.toggle('hidden', isRunning);
+  undoBtn.disabled = !canUndo;
+  undoBtn.title = canUndo && lastUndoableAction
+    ? `Undo: ${lastUndoableAction} (Cmd+Z)`
+    : 'Nothing to undo';
 
   // Disable input while running
   instructionInput.disabled = isRunning;

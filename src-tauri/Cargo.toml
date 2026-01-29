@@ -59,5 +59,8 @@ dirs = "6.0"
 # Async trait
 async-trait = "0.1"
 
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
 [features]
 custom-protocol = ["tauri/custom-protocol"]
