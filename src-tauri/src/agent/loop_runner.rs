@@ -1,4 +1,5 @@
-use super::action::{execute_action, parse_action, ActionError};
+use super::action::{execute_action, execute_action_with_retry, parse_action, ActionError};
+use super::retry::RetryContext;
 use super::state::{AgentStateManager, AgentStatus};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
@@ -99,6 +100,13 @@ impl AgentLoop {
         let max_iterations = self.config.general.max_iterations;
         let confirm_dangerous = self.config.general.confirm_dangerous_actions;
 
+        // Create retry context from config
+        let mut retry_ctx = RetryContext::new(
+            self.config.general.max_retries,
+            self.config.general.retry_delay_ms,
+            self.config.general.enable_self_correction,
+        );
+
         self.state.start(instruction.clone(), max_iterations).await;
         self.emit_state_update().await;
 
@@ -157,8 +165,22 @@ impl AgentLoop {
                 .await;
             self.emit_state_update().await;
 
-            match execute_action(&action, confirm_dangerous) {
+            // Use retry-enabled execution if self-correction is enabled
+            let execution_result = if self.config.general.enable_self_correction {
+                execute_action_with_retry(&action, confirm_dangerous, &mut retry_ctx)
+            } else {
+                execute_action(&action, confirm_dangerous)
+            };
+
+            match execution_result {
                 Ok(result) => {
+                    // Update retry statistics
+                    if result.retry_count > 0 {
+                        self.state.update_retry_stats(result.retry_count).await;
+                        log::info!("Action succeeded after {} retries", result.retry_count);
+                    }
+                    self.emit_state_update().await;
+
                     if result.completed {
                         self.state.complete(result.message).await;
                         self.emit_state_update().await;

@@ -231,6 +231,17 @@ function updateAgentState(state) {
     : '-- tok/s';
   tokensValue.textContent = (state.total_input_tokens + state.total_output_tokens).toLocaleString();
 
+  // Update retry indicator if retries occurred
+  const retryIndicator = document.getElementById('retry-indicator');
+  if (retryIndicator) {
+    if (state.total_retries > 0) {
+      retryIndicator.textContent = `${state.total_retries} retries`;
+      retryIndicator.classList.remove('hidden');
+    } else {
+      retryIndicator.classList.add('hidden');
+    }
+  }
+
   // Update action display
   if (state.last_error) {
     actionContent.textContent = `Error: ${state.last_error}`;
@@ -238,7 +249,7 @@ function updateAgentState(state) {
   } else if (state.last_action) {
     try {
       const action = JSON.parse(state.last_action);
-      actionContent.textContent = formatAction(action);
+      actionContent.textContent = formatAction(action, state.last_retry_count || 0);
       actionContent.style.color = '';
     } catch {
       actionContent.textContent = state.last_action;
@@ -258,29 +269,45 @@ function updateAgentState(state) {
 }
 
 // Format action for display
-function formatAction(action) {
+function formatAction(action, retryCount = 0) {
+  let actionText;
   switch (action.action) {
     case 'click':
-      return `Click ${action.button || 'left'} at (${action.x}, ${action.y})`;
+      actionText = `Click ${action.button || 'left'} at (${action.x}, ${action.y})`;
+      break;
     case 'double_click':
-      return `Double-click at (${action.x}, ${action.y})`;
+      actionText = `Double-click at (${action.x}, ${action.y})`;
+      break;
     case 'move':
-      return `Move to (${action.x}, ${action.y})`;
+      actionText = `Move to (${action.x}, ${action.y})`;
+      break;
     case 'type':
       const text = action.text.length > 30 ? action.text.substring(0, 30) + '...' : action.text;
-      return `Type: "${text}"`;
+      actionText = `Type: "${text}"`;
+      break;
     case 'key':
       const mods = action.modifiers?.join('+') || '';
-      return `Key: ${mods ? mods + '+' : ''}${action.key}`;
+      actionText = `Key: ${mods ? mods + '+' : ''}${action.key}`;
+      break;
     case 'scroll':
-      return `Scroll ${action.direction} at (${action.x}, ${action.y})`;
+      actionText = `Scroll ${action.direction} at (${action.x}, ${action.y})`;
+      break;
     case 'complete':
-      return `Completed: ${action.message}`;
+      actionText = `Completed: ${action.message}`;
+      break;
     case 'error':
-      return `Error: ${action.message}`;
+      actionText = `Error: ${action.message}`;
+      break;
     default:
-      return JSON.stringify(action);
+      actionText = JSON.stringify(action);
   }
+
+  // Add retry count if retries occurred
+  if (retryCount > 0) {
+    actionText += ` (${retryCount} ${retryCount === 1 ? 'retry' : 'retries'})`;
+  }
+
+  return actionText;
 }
 
 // Save settings to backend

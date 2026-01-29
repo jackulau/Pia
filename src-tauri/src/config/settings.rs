@@ -26,6 +26,24 @@ pub struct GeneralConfig {
     pub default_provider: String,
     pub max_iterations: u32,
     pub confirm_dangerous_actions: bool,
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    #[serde(default = "default_retry_delay_ms")]
+    pub retry_delay_ms: u32,
+    #[serde(default = "default_enable_self_correction")]
+    pub enable_self_correction: bool,
+}
+
+fn default_max_retries() -> u32 {
+    3
+}
+
+fn default_retry_delay_ms() -> u32 {
+    1000
+}
+
+fn default_enable_self_correction() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -71,6 +89,9 @@ impl Default for Config {
                 default_provider: "ollama".to_string(),
                 max_iterations: 50,
                 confirm_dangerous_actions: true,
+                max_retries: default_max_retries(),
+                retry_delay_ms: default_retry_delay_ms(),
+                enable_self_correction: default_enable_self_correction(),
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {

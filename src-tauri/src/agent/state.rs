@@ -23,6 +23,8 @@ pub struct AgentState {
     pub tokens_per_second: f64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
+    pub last_retry_count: u32,
+    pub total_retries: u32,
 }
 
 impl Default for AgentState {
@@ -37,6 +39,8 @@ impl Default for AgentState {
             tokens_per_second: 0.0,
             total_input_tokens: 0,
             total_output_tokens: 0,
+            last_retry_count: 0,
+            total_retries: 0,
         }
     }
 }
@@ -83,6 +87,8 @@ impl AgentStateManager {
         state.tokens_per_second = 0.0;
         state.total_input_tokens = 0;
         state.total_output_tokens = 0;
+        state.last_retry_count = 0;
+        state.total_retries = 0;
         self.should_stop.store(false, Ordering::SeqCst);
     }
 
@@ -108,6 +114,12 @@ impl AgentStateManager {
         state.tokens_per_second = tokens_per_sec;
         state.total_input_tokens += input_tokens;
         state.total_output_tokens += output_tokens;
+    }
+
+    pub async fn update_retry_stats(&self, retry_count: u32) {
+        let mut state = self.state.write().await;
+        state.last_retry_count = retry_count;
+        state.total_retries += retry_count;
     }
 
     pub async fn complete(&self, message: Option<String>) {

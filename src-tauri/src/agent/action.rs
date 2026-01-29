@@ -2,7 +2,10 @@ use crate::input::{
     is_dangerous_key_combination, parse_key, parse_modifier, KeyboardController, Modifier,
     MouseButton, MouseController, ScrollDirection,
 };
+use super::retry::{RetryContext, RetryError};
 use serde::{Deserialize, Serialize};
+use std::thread;
+use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -17,6 +20,8 @@ pub enum ActionError {
     RequiresConfirmation(String),
     #[error("Unknown action type: {0}")]
     UnknownAction(String),
+    #[error("Retry error: {0}")]
+    RetryError(#[from] RetryError),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,6 +77,8 @@ pub struct ActionResult {
     pub success: bool,
     pub completed: bool,
     pub message: Option<String>,
+    #[serde(default)]
+    pub retry_count: u32,
 }
 
 pub fn parse_action(response: &str) -> Result<Action, ActionError> {
@@ -132,6 +139,7 @@ pub fn execute_action(
                 success: true,
                 completed: false,
                 message: Some(format!("Clicked {} at ({}, {})", button, x, y)),
+                retry_count: 0,
             })
         }
 
@@ -144,6 +152,7 @@ pub fn execute_action(
                 success: true,
                 completed: false,
                 message: Some(format!("Double-clicked at ({}, {})", x, y)),
+                retry_count: 0,
             })
         }
 
@@ -155,6 +164,7 @@ pub fn execute_action(
                 success: true,
                 completed: false,
                 message: Some(format!("Moved mouse to ({}, {})", x, y)),
+                retry_count: 0,
             })
         }
 
@@ -166,6 +176,7 @@ pub fn execute_action(
                 success: true,
                 completed: false,
                 message: Some(format!("Typed: {}", truncate_string(text, 50))),
+                retry_count: 0,
             })
         }
 
@@ -196,6 +207,7 @@ pub fn execute_action(
                 success: true,
                 completed: false,
                 message: Some(format!("Pressed key: {} with modifiers: {:?}", key, modifiers)),
+                retry_count: 0,
             })
         }
 
@@ -222,6 +234,7 @@ pub fn execute_action(
                 success: true,
                 completed: false,
                 message: Some(format!("Scrolled {} {} times at ({}, {})", direction, amount, x, y)),
+                retry_count: 0,
             })
         }
 
@@ -229,12 +242,14 @@ pub fn execute_action(
             success: true,
             completed: true,
             message: Some(message.clone()),
+            retry_count: 0,
         }),
 
         Action::Error { message } => Ok(ActionResult {
             success: false,
             completed: true,
             message: Some(message.clone()),
+            retry_count: 0,
         }),
     }
 }
@@ -244,5 +259,83 @@ fn truncate_string(s: &str, max_len: usize) -> String {
         format!("{}...", &s[..max_len])
     } else {
         s.to_string()
+    }
+}
+
+impl Action {
+    /// Returns true if this action should produce visible screen changes
+    /// and should be verified after execution.
+    pub fn should_verify_effect(&self) -> bool {
+        matches!(
+            self,
+            Action::Click { .. }
+                | Action::DoubleClick { .. }
+                | Action::Type { .. }
+                | Action::Key { .. }
+                | Action::Scroll { .. }
+        )
+    }
+}
+
+/// Execute an action with retry logic.
+/// Automatically retries failed actions or actions that don't produce
+/// visible screen changes.
+pub fn execute_action_with_retry(
+    action: &Action,
+    confirm_dangerous: bool,
+    retry_ctx: &mut RetryContext,
+) -> Result<ActionResult, ActionError> {
+    // Reset retry context for this action
+    retry_ctx.reset();
+
+    loop {
+        // Capture before state for actions that should change the screen
+        if action.should_verify_effect() {
+            retry_ctx.capture_before()?;
+        }
+
+        // Execute the action
+        let mut result = execute_action(action, confirm_dangerous)?;
+
+        // If action failed and we can retry
+        if !result.success {
+            if retry_ctx.should_retry() {
+                retry_ctx.increment();
+                log::warn!(
+                    "Action failed, retrying ({}/{}): {:?}",
+                    retry_ctx.attempt,
+                    retry_ctx.max_retries,
+                    action
+                );
+                thread::sleep(retry_ctx.retry_delay);
+                continue;
+            }
+            result.retry_count = retry_ctx.attempt;
+            return Ok(result);
+        }
+
+        // For actions that should have visible effect, verify screen changed
+        if action.should_verify_effect() && retry_ctx.enabled {
+            // Wait a bit for UI to update
+            thread::sleep(Duration::from_millis(200));
+
+            if !retry_ctx.screen_changed()? {
+                if retry_ctx.should_retry() {
+                    retry_ctx.increment();
+                    log::warn!(
+                        "Action had no visible effect, retrying ({}/{}): {:?}",
+                        retry_ctx.attempt,
+                        retry_ctx.max_retries,
+                        action
+                    );
+                    thread::sleep(retry_ctx.retry_delay);
+                    continue;
+                }
+                log::warn!("Action completed but no screen change detected after {} retries", retry_ctx.attempt);
+            }
+        }
+
+        result.retry_count = retry_ctx.attempt;
+        return Ok(result);
     }
 }
