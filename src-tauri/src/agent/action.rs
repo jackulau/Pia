@@ -57,6 +57,9 @@ pub enum Action {
     Error {
         message: String,
     },
+    Batch {
+        actions: Vec<Action>,
+    },
 }
 
 fn default_button() -> String {
@@ -66,6 +69,9 @@ fn default_button() -> String {
 fn default_scroll_amount() -> i32 {
     3
 }
+
+const MAX_BATCH_SIZE: usize = 10;
+const BATCH_INTER_ACTION_DELAY_MS: u64 = 100;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionResult {
@@ -236,6 +242,78 @@ pub fn execute_action(
             completed: true,
             message: Some(message.clone()),
         }),
+
+        Action::Batch { actions } => {
+            if actions.is_empty() {
+                return Ok(ActionResult {
+                    success: true,
+                    completed: false,
+                    message: Some("Empty batch, nothing to execute".into()),
+                });
+            }
+
+            if actions.len() > MAX_BATCH_SIZE {
+                return Ok(ActionResult {
+                    success: false,
+                    completed: false,
+                    message: Some(format!(
+                        "Batch size {} exceeds maximum of {}",
+                        actions.len(),
+                        MAX_BATCH_SIZE
+                    )),
+                });
+            }
+
+            for (i, sub_action) in actions.iter().enumerate() {
+                // Prevent nested batches
+                if matches!(sub_action, Action::Batch { .. }) {
+                    return Ok(ActionResult {
+                        success: false,
+                        completed: false,
+                        message: Some("Nested batches are not allowed".into()),
+                    });
+                }
+
+                let result = execute_action(sub_action, confirm_dangerous)?;
+
+                if !result.success {
+                    return Ok(ActionResult {
+                        success: false,
+                        completed: false,
+                        message: Some(format!(
+                            "Batch failed at action {}/{}: {}",
+                            i + 1,
+                            actions.len(),
+                            result.message.unwrap_or_default()
+                        )),
+                    });
+                }
+
+                if result.completed {
+                    return Ok(ActionResult {
+                        success: true,
+                        completed: true,
+                        message: Some(format!(
+                            "Batch completed early at action {}/{}: {}",
+                            i + 1,
+                            actions.len(),
+                            result.message.unwrap_or_default()
+                        )),
+                    });
+                }
+
+                // Small delay between batched actions (except after the last one)
+                if i < actions.len() - 1 {
+                    std::thread::sleep(std::time::Duration::from_millis(BATCH_INTER_ACTION_DELAY_MS));
+                }
+            }
+
+            Ok(ActionResult {
+                success: true,
+                completed: false,
+                message: Some(format!("Batch completed: {} actions executed", actions.len())),
+            })
+        }
     }
 }
 
