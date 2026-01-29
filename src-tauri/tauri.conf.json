@@ -27,6 +27,19 @@
         "visible": true,
         "center": true,
         "skipTaskbar": true
+      },
+      {
+        "title": "Pia Overlay",
+        "label": "overlay",
+        "url": "src/overlay.html",
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "fullscreen": true,
+        "visible": false,
+        "focus": false
       }
     ],
     "security": {

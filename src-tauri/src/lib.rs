@@ -8,7 +8,7 @@ use agent::{AgentLoop, AgentStateManager, AgentStatus};
 use config::Config;
 use serde::Serialize;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, Runtime, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri::State;
 use tokio::sync::RwLock;
 
@@ -100,6 +100,22 @@ async fn show_window(window: WebviewWindow) -> Result<(), String> {
     window.set_focus().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn show_overlay(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(overlay) = app_handle.get_webview_window("overlay") {
+        overlay.show().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn hide_overlay(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(overlay) = app_handle.get_webview_window("overlay") {
+        overlay.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = Config::load().unwrap_or_default();
@@ -133,6 +149,30 @@ pub fn run() {
                 println!("ERROR: No window found!");
             }
 
+            // Setup overlay window if visual feedback is enabled
+            let show_visual_feedback = {
+                let app_state: tauri::State<AppState> = app.state();
+                let config = app_state.config.blocking_read();
+                config.general.show_visual_feedback
+            };
+
+            if show_visual_feedback {
+                if let Some(overlay) = app.get_webview_window("overlay") {
+                    // Make window click-through on macOS
+                    #[cfg(target_os = "macos")]
+                    {
+                        if let Err(e) = overlay.set_ignore_cursor_events(true) {
+                            log::warn!("Failed to set overlay click-through: {}", e);
+                        }
+                    }
+
+                    let _ = overlay.show();
+                    println!("Overlay window initialized");
+                } else {
+                    println!("WARN: Overlay window not found");
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -143,6 +183,8 @@ pub fn run() {
             save_config,
             hide_window,
             show_window,
+            show_overlay,
+            hide_overlay,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

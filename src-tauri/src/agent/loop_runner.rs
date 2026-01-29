@@ -1,4 +1,4 @@
-use super::action::{execute_action, parse_action, ActionError};
+use super::action::{execute_action, parse_action, Action, ActionError};
 use super::state::{AgentStateManager, AgentStatus};
 use crate::capture::capture_primary_screen;
 use crate::config::Config;
@@ -157,6 +157,9 @@ impl AgentLoop {
                 .await;
             self.emit_state_update().await;
 
+            // Emit visual feedback indicator
+            self.emit_action_indicator(&action);
+
             match execute_action(&action, confirm_dangerous) {
                 Ok(result) => {
                     if result.completed {
@@ -198,5 +201,47 @@ impl AgentLoop {
     async fn emit_state_update(&self) {
         let state = self.state.get_state().await;
         let _ = self.app_handle.emit("agent-state", state);
+    }
+
+    fn emit_action_indicator(&self, action: &Action) {
+        let payload = match action {
+            Action::Click { x, y, button } => serde_json::json!({
+                "action": button.to_lowercase(),
+                "x": x,
+                "y": y,
+                "label": format!("{} click", button)
+            }),
+            Action::DoubleClick { x, y } => serde_json::json!({
+                "action": "double_click",
+                "x": x,
+                "y": y,
+                "label": "double click"
+            }),
+            Action::Move { x, y } => serde_json::json!({
+                "action": "move",
+                "x": x,
+                "y": y,
+                "label": "move"
+            }),
+            Action::Type { text } => serde_json::json!({
+                "action": "type",
+                "text": text
+            }),
+            Action::Key { key, modifiers } => serde_json::json!({
+                "action": "key",
+                "key": key,
+                "modifiers": modifiers
+            }),
+            Action::Scroll { x, y, direction, amount: _ } => serde_json::json!({
+                "action": "scroll",
+                "x": x,
+                "y": y,
+                "direction": direction,
+                "label": format!("scroll {}", direction)
+            }),
+            Action::Complete { .. } | Action::Error { .. } => return,
+        };
+
+        let _ = self.app_handle.emit("show-action-indicator", payload);
     }
 }

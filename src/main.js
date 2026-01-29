@@ -24,6 +24,7 @@ const actionContent = document.getElementById('action-content');
 // Settings elements
 const providerSelect = document.getElementById('provider-select');
 const confirmDangerous = document.getElementById('confirm-dangerous');
+const visualFeedback = document.getElementById('visual-feedback');
 
 // Provider-specific settings
 const providerSettings = {
@@ -71,6 +72,9 @@ function updateSettingsUI() {
 
   // Set safety settings
   confirmDangerous.checked = currentConfig.general.confirm_dangerous_actions;
+
+  // Set visual feedback setting
+  visualFeedback.checked = currentConfig.general.show_visual_feedback !== false;
 
   // Set Ollama settings
   if (currentConfig.providers.ollama) {
@@ -292,6 +296,7 @@ async function saveSettings() {
         default_provider: providerSelect.value,
         max_iterations: 50,
         confirm_dangerous_actions: confirmDangerous.checked,
+        show_visual_feedback: visualFeedback.checked,
       },
       providers: {
         ollama: {
@@ -315,6 +320,14 @@ async function saveSettings() {
 
     await invoke('save_config', { config });
     currentConfig = config;
+
+    // Toggle overlay visibility based on setting
+    if (config.general.show_visual_feedback) {
+      await invoke('show_overlay');
+    } else {
+      await invoke('hide_overlay');
+    }
+
     showToast('Settings saved', 'success');
 
     // Return to main view
