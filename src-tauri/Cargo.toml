@@ -64,3 +64,17 @@ async-trait = "0.1"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = 3           # Maximum optimization
+lto = true              # Link-Time Optimization (smaller, faster binary)
+codegen-units = 1       # Single codegen unit for better optimization
+panic = "abort"         # Smaller binary, no unwinding overhead
+strip = true            # Strip symbols from binary
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.dev.package."*"]
+opt-level = 2           # Optimize dependencies even in dev builds
