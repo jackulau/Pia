@@ -1,6 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 // CSS is inlined in index.html for transparent window support
+
+// Size presets configuration
+const SIZE_PRESETS = {
+  mini: { width: 300, height: 180, name: 'Mini', cssClass: 'size-mini' },
+  standard: { width: 420, height: 280, name: 'Standard', cssClass: 'size-standard' },
+  detailed: { width: 550, height: 420, name: 'Detailed', cssClass: 'size-detailed' }
+};
 
 // DOM Elements
 const mainModal = document.getElementById('main-modal');
@@ -39,15 +47,23 @@ const confirmationMessage = document.getElementById('confirmation-message');
 const cancelActionBtn = document.getElementById('cancel-action-btn');
 const confirmActionBtn = document.getElementById('confirm-action-btn');
 
+// Size selector buttons
+const sizeMiniBtn = document.getElementById('size-mini');
+const sizeStandardBtn = document.getElementById('size-standard');
+const sizeDetailedBtn = document.getElementById('size-detailed');
+
 // State
 let isRunning = false;
 let currentConfig = null;
+let currentSizePreset = 'standard';
 
 // Initialize
 async function init() {
   await loadConfig();
   setupEventListeners();
   setupTauriListeners();
+  setupSizeSelector();
+  await loadSavedSizePreset();
 }
 
 // Load configuration from backend
@@ -336,6 +352,54 @@ function showToast(message, type = 'info') {
   setTimeout(() => {
     toast.remove();
   }, 3000);
+}
+
+// Apply size preset
+async function applySizePreset(presetName) {
+  const preset = SIZE_PRESETS[presetName];
+  if (!preset) return;
+
+  currentSizePreset = presetName;
+
+  // Update window size via Tauri
+  try {
+    const appWindow = getCurrentWindow();
+    await appWindow.setSize(new LogicalSize(preset.width, preset.height));
+  } catch (error) {
+    console.error('Failed to resize window:', error);
+  }
+
+  // Update CSS class on modal
+  Object.values(SIZE_PRESETS).forEach(p => {
+    mainModal.classList.remove(p.cssClass);
+  });
+  mainModal.classList.add(preset.cssClass);
+
+  // Update button states
+  sizeMiniBtn.classList.toggle('active', presetName === 'mini');
+  sizeStandardBtn.classList.toggle('active', presetName === 'standard');
+  sizeDetailedBtn.classList.toggle('active', presetName === 'detailed');
+
+  // Persist preference
+  localStorage.setItem('pia-size-preset', presetName);
+}
+
+// Load saved size preset
+async function loadSavedSizePreset() {
+  const saved = localStorage.getItem('pia-size-preset');
+  if (saved && SIZE_PRESETS[saved]) {
+    await applySizePreset(saved);
+  } else {
+    // Apply default standard preset
+    mainModal.classList.add(SIZE_PRESETS.standard.cssClass);
+  }
+}
+
+// Setup size selector event listeners
+function setupSizeSelector() {
+  sizeMiniBtn.addEventListener('click', () => applySizePreset('mini'));
+  sizeStandardBtn.addEventListener('click', () => applySizePreset('standard'));
+  sizeDetailedBtn.addEventListener('click', () => applySizePreset('detailed'));
 }
 
 // Initialize the app
