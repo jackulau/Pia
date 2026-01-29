@@ -1,4 +1,5 @@
-use super::provider::{build_system_prompt, ChunkCallback, LlmError, LlmProvider, TokenMetrics};
+use super::provider::{build_system_prompt, ChunkCallback, LlmError, LlmProvider, TokenMetrics, history_to_messages};
+use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
@@ -85,10 +86,9 @@ impl AnthropicProvider {
 
 #[async_trait]
 impl LlmProvider for AnthropicProvider {
-    async fn send_with_image(
+    async fn send_with_history(
         &self,
-        instruction: &str,
-        image_base64: &str,
+        history: &ConversationHistory,
         screen_width: u32,
         screen_height: u32,
         on_chunk: ChunkCallback,
@@ -96,28 +96,43 @@ impl LlmProvider for AnthropicProvider {
         let start = Instant::now();
         let system_prompt = build_system_prompt(screen_width, screen_height);
 
+        // Convert conversation history to Anthropic message format
+        let messages: Vec<AnthropicMessage> = history_to_messages(history)
+            .into_iter()
+            .map(|(role, text, image_base64)| {
+                let mut content = Vec::new();
+
+                // Add image first if present (Anthropic prefers image before text)
+                if let Some(img_data) = image_base64 {
+                    content.push(AnthropicContent::Image {
+                        source: ImageSource {
+                            source_type: "base64".to_string(),
+                            media_type: "image/png".to_string(),
+                            data: img_data,
+                        },
+                    });
+                }
+
+                // Add text content
+                let text_content = if role == "user" && content.iter().any(|c| matches!(c, AnthropicContent::Image { .. })) {
+                    format!(
+                        "User instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.",
+                        text
+                    )
+                } else {
+                    text
+                };
+                content.push(AnthropicContent::Text { text: text_content });
+
+                AnthropicMessage { role, content }
+            })
+            .collect();
+
         let request = AnthropicRequest {
             model: self.model.clone(),
             max_tokens: 1024,
             system: system_prompt,
-            messages: vec![AnthropicMessage {
-                role: "user".to_string(),
-                content: vec![
-                    AnthropicContent::Image {
-                        source: ImageSource {
-                            source_type: "base64".to_string(),
-                            media_type: "image/png".to_string(),
-                            data: image_base64.to_string(),
-                        },
-                    },
-                    AnthropicContent::Text {
-                        text: format!(
-                            "User instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.",
-                            instruction
-                        ),
-                    },
-                ],
-            }],
+            messages,
             stream: true,
         };
 

@@ -1,4 +1,5 @@
-use super::provider::{build_system_prompt, ChunkCallback, LlmError, LlmProvider, TokenMetrics};
+use super::provider::{build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, TokenMetrics};
+use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
@@ -41,10 +42,9 @@ impl OllamaProvider {
 
 #[async_trait]
 impl LlmProvider for OllamaProvider {
-    async fn send_with_image(
+    async fn send_with_history(
         &self,
-        instruction: &str,
-        image_base64: &str,
+        history: &ConversationHistory,
         screen_width: u32,
         screen_height: u32,
         on_chunk: ChunkCallback,
@@ -52,15 +52,33 @@ impl LlmProvider for OllamaProvider {
         let start = Instant::now();
         let system_prompt = build_system_prompt(screen_width, screen_height);
 
-        let prompt = format!(
-            "{}\n\nUser instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.",
-            system_prompt, instruction
-        );
+        // Build prompt from conversation history
+        // Ollama uses a simple prompt format, so we concatenate messages
+        let mut prompt = format!("{}\n\n", system_prompt);
+        let mut images = Vec::new();
+
+        for (role, text, image_base64) in history_to_messages(history) {
+            let role_label = match role.as_str() {
+                "user" => "User",
+                "assistant" => "Assistant",
+                _ => "System",
+            };
+
+            if let Some(img_data) = image_base64 {
+                images.push(img_data);
+                prompt.push_str(&format!(
+                    "{}: [Screenshot attached]\n{}\n\nAnalyze the screenshot and respond with a single JSON action.\n\n",
+                    role_label, text
+                ));
+            } else {
+                prompt.push_str(&format!("{}: {}\n\n", role_label, text));
+            }
+        }
 
         let request = OllamaRequest {
             model: self.model.clone(),
             prompt,
-            images: vec![image_base64.to_string()],
+            images,
             stream: true,
         };
 
