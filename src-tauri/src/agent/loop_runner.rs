@@ -151,13 +151,14 @@ impl AgentLoop {
             self.emit_state_update().await;
 
             // Parse and execute action
-            let action = parse_action(&response)?;
+            let parsed = parse_action(&response)?;
             self.state
-                .set_last_action(serde_json::to_string(&action).unwrap_or_default())
+                .set_last_action(serde_json::to_string(&parsed.action).unwrap_or_default())
                 .await;
+            self.state.set_last_reasoning(parsed.reasoning).await;
             self.emit_state_update().await;
 
-            match execute_action(&action, confirm_dangerous) {
+            match execute_action(&parsed.action, confirm_dangerous) {
                 Ok(result) => {
                     if result.completed {
                         self.state.complete(result.message).await;

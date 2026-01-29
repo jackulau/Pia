@@ -139,7 +139,11 @@
     .metric-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; }
     .metric-value { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.8); font-variant-numeric: tabular-nums; }
 
-    .action-display { padding: 10px 12px; }
+    .thinking-display { padding: 10px 12px 6px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+    .thinking-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+    .thinking-content { font-size: 11px; color: rgba(255, 255, 255, 0.5); line-height: 1.4; max-height: 48px; overflow-y: auto; font-style: italic; }
+
+    .action-display { padding: 6px 12px 10px; }
     .action-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
     .action-content { font-size: 11px; color: rgba(255, 255, 255, 0.6); line-height: 1.4; max-height: 40px; overflow-y: auto; }
 
@@ -304,6 +308,10 @@
           <span class="metric-label">Tokens</span>
           <span class="metric-value" id="tokens-value">0</span>
         </div>
+      </div>
+      <div class="thinking-display">
+        <div class="thinking-label">Agent Thinking</div>
+        <div class="thinking-content" id="thinking-content">Waiting for task...</div>
       </div>
       <div class="action-display">
         <div class="action-label">Last Action</div>

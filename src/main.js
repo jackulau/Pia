@@ -20,6 +20,7 @@ const iterationValue = document.getElementById('iteration-value');
 const speedValue = document.getElementById('speed-value');
 const tokensValue = document.getElementById('tokens-value');
 const actionContent = document.getElementById('action-content');
+const thinkingContent = document.getElementById('thinking-content');
 
 // Settings elements
 const providerSelect = document.getElementById('provider-select');
@@ -231,6 +232,15 @@ function updateAgentState(state) {
     : '-- tok/s';
   tokensValue.textContent = (state.total_input_tokens + state.total_output_tokens).toLocaleString();
 
+  // Update thinking display
+  if (state.last_reasoning) {
+    thinkingContent.textContent = truncateText(state.last_reasoning, 150);
+  } else if (state.status === 'Running') {
+    thinkingContent.textContent = 'Analyzing screen...';
+  } else if (state.status === 'Idle') {
+    thinkingContent.textContent = 'Waiting for task...';
+  }
+
   // Update action display
   if (state.last_error) {
     actionContent.textContent = `Error: ${state.last_error}`;
@@ -255,6 +265,13 @@ function updateAgentState(state) {
   // Disable input while running
   instructionInput.disabled = isRunning;
   submitBtn.disabled = isRunning;
+}
+
+// Truncate text with ellipsis
+function truncateText(text, maxLength) {
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength).trim() + '...';
 }
 
 // Format action for display

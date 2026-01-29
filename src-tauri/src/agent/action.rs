@@ -74,12 +74,48 @@ pub struct ActionResult {
     pub message: Option<String>,
 }
 
-pub fn parse_action(response: &str) -> Result<Action, ActionError> {
+#[derive(Debug, Clone)]
+pub struct ParsedResponse {
+    pub action: Action,
+    pub reasoning: Option<String>,
+}
+
+pub fn parse_action(response: &str) -> Result<ParsedResponse, ActionError> {
+    // Extract reasoning (text before the JSON block)
+    let reasoning = extract_reasoning(response);
+
     // Try to find JSON in the response
     let json_str = extract_json(response)?;
 
-    serde_json::from_str(&json_str)
-        .map_err(|e| ActionError::ParseError(format!("Invalid JSON: {} in '{}'", e, json_str)))
+    let action = serde_json::from_str(&json_str)
+        .map_err(|e| ActionError::ParseError(format!("Invalid JSON: {} in '{}'", e, json_str)))?;
+
+    Ok(ParsedResponse { action, reasoning })
+}
+
+fn extract_reasoning(text: &str) -> Option<String> {
+    // Find the start of JSON
+    let json_start = text.find('{')?;
+
+    // Get text before the JSON
+    let before_json = text[..json_start].trim();
+
+    if before_json.is_empty() {
+        return None;
+    }
+
+    // Clean up the reasoning text
+    // Remove markdown code block markers if present
+    let cleaned = before_json
+        .trim_end_matches("```json")
+        .trim_end_matches("```")
+        .trim();
+
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned.to_string())
+    }
 }
 
 fn extract_json(text: &str) -> Result<String, ActionError> {

@@ -19,6 +19,7 @@ pub struct AgentState {
     pub iteration: u32,
     pub max_iterations: u32,
     pub last_action: Option<String>,
+    pub last_reasoning: Option<String>,
     pub last_error: Option<String>,
     pub tokens_per_second: f64,
     pub total_input_tokens: u64,
@@ -33,6 +34,7 @@ impl Default for AgentState {
             iteration: 0,
             max_iterations: 50,
             last_action: None,
+            last_reasoning: None,
             last_error: None,
             tokens_per_second: 0.0,
             total_input_tokens: 0,
@@ -79,6 +81,7 @@ impl AgentStateManager {
         state.iteration = 0;
         state.max_iterations = max_iterations;
         state.last_action = None;
+        state.last_reasoning = None;
         state.last_error = None;
         state.tokens_per_second = 0.0;
         state.total_input_tokens = 0;
@@ -95,6 +98,11 @@ impl AgentStateManager {
     pub async fn set_last_action(&self, action: String) {
         let mut state = self.state.write().await;
         state.last_action = Some(action);
+    }
+
+    pub async fn set_last_reasoning(&self, reasoning: Option<String>) {
+        let mut state = self.state.write().await;
+        state.last_reasoning = reasoning;
     }
 
     pub async fn set_error(&self, error: String) {
