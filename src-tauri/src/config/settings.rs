@@ -28,6 +28,12 @@ pub struct GeneralConfig {
     pub confirm_dangerous_actions: bool,
     #[serde(default)]
     pub show_coordinate_overlay: bool,
+    #[serde(default = "default_global_hotkey")]
+    pub global_hotkey: Option<String>,
+}
+
+fn default_global_hotkey() -> Option<String> {
+    Some("CmdOrCtrl+Shift+P".to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -74,6 +80,7 @@ impl Default for Config {
                 max_iterations: 50,
                 confirm_dangerous_actions: true,
                 show_coordinate_overlay: false,
+                global_hotkey: default_global_hotkey(),
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {

@@ -35,6 +35,9 @@ const actionCount = document.getElementById('action-count');
 const providerSelect = document.getElementById('provider-select');
 const confirmDangerous = document.getElementById('confirm-dangerous');
 const showOverlay = document.getElementById('show-overlay');
+const globalHotkeyInput = document.getElementById('global-hotkey-input');
+const clearHotkeyBtn = document.getElementById('clear-hotkey-btn');
+const hotkeyError = document.getElementById('hotkey-error');
 
 // Provider-specific settings
 const providerSettings = {
@@ -100,7 +103,17 @@ function updateSettingsUI() {
   confirmDangerous.checked = currentConfig.general.confirm_dangerous_actions;
 
   // Set debug settings
-  showOverlay.checked = currentConfig.general.show_coordinate_overlay || false;
+  if (showOverlay) {
+    showOverlay.checked = currentConfig.general.show_coordinate_overlay || false;
+  }
+
+  // Set global hotkey
+  if (globalHotkeyInput) {
+    globalHotkeyInput.value = currentConfig.general.global_hotkey || '';
+  }
+  if (hotkeyError) {
+    hotkeyError.style.display = 'none';
+  }
 
   // Set Ollama settings
   if (currentConfig.providers.ollama) {
@@ -210,6 +223,21 @@ function setupEventListeners() {
   // Expand/collapse toggle
   if (expandBtn) {
     expandBtn.addEventListener('click', toggleExpandedMode);
+  }
+
+  // Clear hotkey button
+  if (clearHotkeyBtn) {
+    clearHotkeyBtn.addEventListener('click', async () => {
+      try {
+        await invoke('unregister_global_hotkey');
+        globalHotkeyInput.value = '';
+        hotkeyError.style.display = 'none';
+        showToast('Hotkey disabled', 'success');
+      } catch (error) {
+        console.error('Failed to disable hotkey:', error);
+        showToast('Failed to disable hotkey', 'error');
+      }
+    });
   }
 }
 
@@ -478,13 +506,41 @@ async function saveSettings() {
     if (maxIterations > 200) maxIterations = 200;
     maxIterInput.value = maxIterations;
 
+    // Handle hotkey change first (if changed)
+    if (hotkeyError) {
+      hotkeyError.style.display = 'none';
+    }
+
+    let newHotkey = null;
+    if (globalHotkeyInput) {
+      newHotkey = globalHotkeyInput.value.trim() || null;
+      const currentHotkey = currentConfig?.general?.global_hotkey || null;
+
+      if (newHotkey !== currentHotkey) {
+        if (newHotkey) {
+          try {
+            await invoke('set_global_hotkey', { shortcut: newHotkey });
+          } catch (error) {
+            if (hotkeyError) {
+              hotkeyError.textContent = error;
+              hotkeyError.style.display = 'block';
+            }
+            return;
+          }
+        } else {
+          await invoke('unregister_global_hotkey');
+        }
+      }
+    }
+
     // Build config object
     const config = {
       general: {
         default_provider: providerSelect.value,
         max_iterations: maxIterations,
         confirm_dangerous_actions: confirmDangerous.checked,
-        show_coordinate_overlay: showOverlay.checked,
+        show_coordinate_overlay: showOverlay ? showOverlay.checked : false,
+        global_hotkey: newHotkey,
       },
       providers: {
         ollama: {
