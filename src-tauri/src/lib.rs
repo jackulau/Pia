@@ -128,6 +128,40 @@ async fn hide_window(window: WebviewWindow) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn export_session_json(
+    include_screenshots: bool,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    state
+        .agent_state
+        .history()
+        .export_json(include_screenshots)
+        .await
+        .ok_or_else(|| "No session history available".to_string())
+}
+
+#[tauri::command]
+async fn export_session_text(state: State<'_, AppState>) -> Result<String, String> {
+    state
+        .agent_state
+        .history()
+        .export_text()
+        .await
+        .ok_or_else(|| "No session history available".to_string())
+}
+
+#[tauri::command]
+async fn get_session_history_count(state: State<'_, AppState>) -> Result<usize, String> {
+    Ok(state.agent_state.history().get_entry_count().await)
+}
+
+#[tauri::command]
+async fn clear_session_history(state: State<'_, AppState>) -> Result<(), String> {
+    state.agent_state.history().clear().await;
+    Ok(())
+}
+
+#[tauri::command]
 async fn show_window(window: WebviewWindow) -> Result<(), String> {
     window.show().map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())
@@ -491,6 +525,10 @@ pub fn run() {
             get_current_hotkey,
             set_global_hotkey,
             unregister_global_hotkey,
+            export_session_json,
+            export_session_text,
+            get_session_history_count,
+            clear_session_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,5 +1,6 @@
 use super::action::{execute_action, parse_action, Action, ActionError};
 use super::conversation::ConversationHistory;
+use super::history::ActionEntry;
 use super::recovery::{
     classify_capture_error, classify_llm_error, retry_with_policy, ErrorClassification,
     RetryPolicy,
@@ -8,9 +9,9 @@ use super::state::{AgentStateManager, AgentStatus, ConfirmationResponse};
 use crate::capture::{capture_primary_screen, CaptureError, Screenshot};
 use crate::config::Config;
 use crate::llm::{
-    AnthropicProvider, LlmError, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider,
-    TokenMetrics,
+    AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider,
 };
+use chrono::Utc;
 use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
@@ -123,6 +124,29 @@ impl AgentLoop {
         self.state.start(instruction.clone(), max_iterations).await;
         self.emit_state_update().await;
 
+        let result = self.run_loop(&*provider, &instruction, max_iterations, confirm_dangerous, show_overlay, &mut conversation).await;
+
+        // Complete the history session with final status
+        let status = match &result {
+            Ok(_) => "completed",
+            Err(LoopError::Stopped) => "stopped",
+            Err(LoopError::MaxIterations) => "max_iterations",
+            Err(_) => "error",
+        };
+        self.state.history().complete_session(status).await;
+
+        result
+    }
+
+    async fn run_loop(
+        &self,
+        provider: &dyn LlmProvider,
+        instruction: &str,
+        max_iterations: u32,
+        confirm_dangerous: bool,
+        show_overlay: bool,
+        conversation: &mut ConversationHistory,
+    ) -> Result<(), LoopError> {
         loop {
             // Check if should stop
             if self.state.should_stop() {
@@ -223,6 +247,7 @@ impl AgentLoop {
                     metrics.output_tokens,
                 )
                 .await;
+            self.state.history().update_metrics(metrics.input_tokens, metrics.output_tokens).await;
             self.emit_state_update().await;
 
             // Parse action - on parse error, send feedback to LLM
@@ -260,10 +285,28 @@ impl AgentLoop {
             // Brief pause to let user see the indicator
             sleep(Duration::from_millis(300)).await;
 
+            // Prepare action details for history logging
+            let action_type = Self::get_action_type(&action);
+            let action_details = serde_json::to_value(&action).unwrap_or_default();
+
             match execute_action(&action, confirm_dangerous).await {
                 Ok(result) => {
                     // Add successful tool result to conversation
                     conversation.add_tool_result(true, result.message.clone(), None);
+
+                    // Record successful action to history
+                    let entry = ActionEntry {
+                        timestamp: Utc::now(),
+                        iteration,
+                        action_type: action_type.clone(),
+                        action_details: action_details.clone(),
+                        screenshot_base64: Some(screenshot.base64.clone()),
+                        llm_response: response.clone(),
+                        success: true,
+                        error_message: None,
+                        result_message: result.message.clone(),
+                    };
+                    self.state.history().add_entry(entry).await;
 
                     // Reset consecutive errors on successful action
                     self.state.reset_consecutive_errors().await;
@@ -284,6 +327,20 @@ impl AgentLoop {
                         None,
                         Some(format!("Action requires confirmation: {}", msg)),
                     );
+
+                    // Record confirmation-required action to history
+                    let entry = ActionEntry {
+                        timestamp: Utc::now(),
+                        iteration,
+                        action_type: action_type.clone(),
+                        action_details: action_details.clone(),
+                        screenshot_base64: Some(screenshot.base64.clone()),
+                        llm_response: response.clone(),
+                        success: false,
+                        error_message: Some(format!("Requires confirmation: {}", msg)),
+                        result_message: None,
+                    };
+                    self.state.history().add_entry(entry).await;
 
                     // Reset confirmation channel for fresh state
                     self.state.reset_confirmation_channel().await;
@@ -331,6 +388,20 @@ impl AgentLoop {
                     // Add error to conversation before returning
                     conversation.add_tool_result(false, None, Some(e.to_string()));
 
+                    // Record failed action to history
+                    let entry = ActionEntry {
+                        timestamp: Utc::now(),
+                        iteration,
+                        action_type: action_type.clone(),
+                        action_details: action_details.clone(),
+                        screenshot_base64: Some(screenshot.base64.clone()),
+                        llm_response: response.clone(),
+                        success: false,
+                        error_message: Some(e.to_string()),
+                        result_message: None,
+                    };
+                    self.state.history().add_entry(entry).await;
+
                     // Increment consecutive errors
                     self.state.increment_consecutive_errors().await;
 
@@ -367,6 +438,24 @@ impl AgentLoop {
         }
 
         result.result
+    }
+
+    fn get_action_type(action: &Action) -> String {
+        match action {
+            Action::Click { .. } => "click".to_string(),
+            Action::DoubleClick { .. } => "double_click".to_string(),
+            Action::Move { .. } => "move".to_string(),
+            Action::Type { .. } => "type".to_string(),
+            Action::Key { .. } => "key".to_string(),
+            Action::Scroll { .. } => "scroll".to_string(),
+            Action::Drag { .. } => "drag".to_string(),
+            Action::TripleClick { .. } => "triple_click".to_string(),
+            Action::RightClick { .. } => "right_click".to_string(),
+            Action::Wait { .. } => "wait".to_string(),
+            Action::Complete { .. } => "complete".to_string(),
+            Action::Error { .. } => "error".to_string(),
+            Action::Batch { .. } => "batch".to_string(),
+        }
     }
 
     async fn emit_state_update(&self) {

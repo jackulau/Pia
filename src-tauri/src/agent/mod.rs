@@ -1,5 +1,6 @@
 pub mod action;
 pub mod conversation;
+pub mod history;
 pub mod loop_runner;
 pub mod recovery;
 pub mod state;
