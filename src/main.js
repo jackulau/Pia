@@ -102,6 +102,7 @@ let previousStatus = null;
 let historyEntries = [];
 let queueItems = [];
 let previewMode = false;
+let resizeDebounceTimer = null;
 
 // Window sizes
 const COMPACT_SIZE = { width: 420, height: 280 };
@@ -112,9 +113,11 @@ async function init() {
   await loadConfig();
   await loadHistory();
   await loadPreviewMode();
+  await restoreWindowSize();
   setupEventListeners();
   setupTauriListeners();
   setupKeyboardNavigation();
+  setupResizeListener();
   await restoreExpandedState();
   await refreshQueue();
 
@@ -1419,6 +1422,41 @@ function escapeHtml(text) {
 
 // Expose removeQueueItem to window for inline onclick handlers
 window.removeQueueItem = removeFromQueue;
+
+// Window size persistence
+const WINDOW_SIZE_KEY = 'pia-window-size';
+
+async function restoreWindowSize() {
+  try {
+    const saved = localStorage.getItem(WINDOW_SIZE_KEY);
+    if (saved) {
+      const { width, height } = JSON.parse(saved);
+      const appWindow = getCurrentWindow();
+      await appWindow.setSize(new LogicalSize(Math.round(width), Math.round(height)));
+    }
+  } catch (error) {
+    console.error('Failed to restore window size:', error);
+  }
+}
+
+function saveWindowSize(width, height) {
+  try {
+    localStorage.setItem(WINDOW_SIZE_KEY, JSON.stringify({ width, height }));
+  } catch (error) {
+    console.error('Failed to save window size:', error);
+  }
+}
+
+function setupResizeListener() {
+  const appWindow = getCurrentWindow();
+  appWindow.onResized(({ payload: size }) => {
+    // Debounce to avoid excessive saves during drag
+    clearTimeout(resizeDebounceTimer);
+    resizeDebounceTimer = setTimeout(() => {
+      saveWindowSize(size.width, size.height);
+    }, 300);
+  });
+}
 
 // Initialize the app
 init();

@@ -23,7 +23,7 @@
       width: 100%;
       height: 100%;
       display: flex;
-      align-items: flex-start;
+      align-items: stretch;
       justify-content: center;
       padding: 10px;
       background: transparent;
@@ -45,7 +45,10 @@
 
     .modal {
       width: 100%;
-      max-width: 400px;
+      height: 100%;
+      max-width: none;
+      display: flex;
+      flex-direction: column;
       background: rgba(30, 30, 32, 0.95);
       -webkit-backdrop-filter: blur(50px) saturate(180%);
       backdrop-filter: blur(50px) saturate(180%);
@@ -1102,11 +1105,83 @@
     }
 
     .status-dot.preview { background: #ff9500; animation: pulse 1.5s infinite; }
+
+    /* Resize Handle */
+    .resize-handle {
+      position: absolute;
+      bottom: 4px;
+      right: 4px;
+      width: 16px;
+      height: 16px;
+      cursor: se-resize;
+      opacity: 0.4;
+      transition: opacity 0.15s;
+    }
+    .resize-handle:hover { opacity: 0.7; }
+    .resize-handle::before,
+    .resize-handle::after {
+      content: '';
+      position: absolute;
+      background: rgba(255, 255, 255, 0.5);
+      border-radius: 1px;
+    }
+    .resize-handle::before {
+      width: 10px;
+      height: 2px;
+      bottom: 2px;
+      right: 2px;
+      transform: rotate(-45deg);
+      transform-origin: bottom right;
+    }
+    .resize-handle::after {
+      width: 6px;
+      height: 2px;
+      bottom: 5px;
+      right: 2px;
+      transform: rotate(-45deg);
+      transform-origin: bottom right;
+    }
+
+    /* Responsive Breakpoints */
+    /* Small: 300-350px - Compact mode */
+    @media (max-width: 350px) {
+      .modal-header { padding: 2px 8px 6px; }
+      .status-text { font-size: 10px; }
+      .icon-btn { width: 22px; height: 22px; }
+      .input-area { padding: 0 8px 8px; gap: 6px; }
+      #instruction-input { height: 32px; font-size: 12px; padding: 0 8px; }
+      .submit-btn { width: 32px; height: 32px; }
+      .metrics-bar { padding: 6px 8px; }
+      .metric-label { font-size: 8px; }
+      .metric-value { font-size: 10px; }
+      .action-display { padding: 8px; }
+      .action-label { font-size: 8px; }
+      .action-content { font-size: 10px; }
+      .stop-btn { font-size: 11px; padding: 6px; margin: 0 8px 8px; width: calc(100% - 16px); }
+    }
+
+    /* Large: 450px+ - Expanded view */
+    @media (min-width: 450px) {
+      .modal-header { padding: 6px 16px 10px; }
+      .status-text { font-size: 13px; }
+      .icon-btn { width: 30px; height: 30px; }
+      .input-area { padding: 0 16px 14px; gap: 10px; }
+      #instruction-input { height: 42px; font-size: 15px; padding: 0 14px; }
+      .submit-btn { width: 42px; height: 42px; }
+      .metrics-bar { padding: 10px 16px; }
+      .metric { gap: 2px; }
+      .metric-label { font-size: 10px; }
+      .metric-value { font-size: 14px; }
+      .action-display { padding: 12px 16px; }
+      .action-label { font-size: 10px; margin-bottom: 4px; }
+      .action-content { font-size: 12px; line-height: 1.5; }
+      .stop-btn { font-size: 13px; padding: 10px; margin: 0 16px 14px; width: calc(100% - 32px); }
+    }
   </style>
 </head>
 <body>
   <div id="app">
-    <div class="modal" id="main-modal" role="main">
+    <div class="modal" id="main-modal" role="main" style="position: relative;">
       <div class="drag-handle" data-tauri-drag-region aria-hidden="true"></div>
       <div class="modal-header">
         <div class="status-indicator" role="status" aria-live="polite" aria-atomic="true">
@@ -1250,6 +1325,7 @@
         </svg>
         Export Log
       </button>
+      <div class="resize-handle" title="Resize"></div>
     </div>
 
     <div class="settings-panel hidden" id="settings-panel" role="region" aria-label="Settings" aria-labelledby="settings-title">
