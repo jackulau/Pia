@@ -18,6 +18,12 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use thiserror::Error;
 use tokio::time::{sleep, timeout, Duration};
 
+#[derive(Clone, Serialize)]
+struct HistoryEvent {
+    instruction: String,
+    success: bool,
+}
+
 #[derive(Error, Debug)]
 pub enum LoopError {
     #[error("Capture error: {0}")]
@@ -317,6 +323,14 @@ impl AgentLoop {
                     if result.completed {
                         self.state.complete(result.message).await;
                         self.emit_state_update().await;
+                        // Emit history event for successful completion
+                        let _ = self.app_handle.emit(
+                            "instruction-completed",
+                            HistoryEvent {
+                                instruction: instruction.clone(),
+                                success: true,
+                            },
+                        );
                         return Ok(());
                     }
                 }
@@ -410,6 +424,15 @@ impl AgentLoop {
 
                     self.state.set_error(e.to_string()).await;
                     self.emit_state_update().await;
+
+                    // Emit history event for failed completion
+                    let _ = self.app_handle.emit(
+                        "instruction-completed",
+                        HistoryEvent {
+                            instruction: instruction.clone(),
+                            success: false,
+                        },
+                    );
 
                     // Action errors are generally not retryable
                     return Err(e.into());
