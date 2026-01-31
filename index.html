@@ -997,6 +997,77 @@
       font-size: 11px;
       color: rgba(255, 255, 255, 0.4);
     }
+
+    /* Preview Mode Styles */
+    .modal.preview-mode {
+      border: 2px dashed #ff9500;
+      box-shadow:
+        0 0 0 0.5px rgba(0, 0, 0, 0.3),
+        0 8px 32px rgba(255, 149, 0, 0.2),
+        0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .preview-badge {
+      display: none;
+      padding: 2px 6px;
+      background: rgba(255, 149, 0, 0.9);
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #000;
+      margin-left: 8px;
+    }
+    .modal.preview-mode .preview-badge { display: inline-block; }
+
+    .preview-action { color: #ff9500 !important; }
+
+    /* Preview Toggle */
+    .preview-toggle-container {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 12px 8px;
+    }
+    .preview-toggle-label {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+    .preview-toggle {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .preview-toggle.active {
+      background: rgba(255, 149, 0, 0.8);
+    }
+    .preview-toggle::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      transition: all 0.2s;
+    }
+    .preview-toggle.active::after {
+      left: 18px;
+    }
+    .preview-toggle:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .preview-toggle.active:hover {
+      background: rgba(255, 149, 0, 0.9);
+    }
+
+    .status-dot.preview { background: #ff9500; animation: pulse 1.5s infinite; }
   </style>
 </head>
 <body>
@@ -1028,6 +1099,7 @@
           </svg>
           <span class="status-dot" aria-hidden="true"></span>
           <span class="status-text">Ready</span>
+          <span class="preview-badge">Preview</span>
         </div>
         <div class="header-actions">
           <button class="icon-btn" id="expand-btn" title="Expand" aria-label="Expand/collapse window">
@@ -1051,6 +1123,10 @@
             </svg>
           </button>
         </div>
+      </div>
+      <div class="preview-toggle-container">
+        <span class="preview-toggle-label">Preview Mode</span>
+        <div class="preview-toggle" id="preview-toggle" title="When enabled, actions are shown but not executed"></div>
       </div>
       <div class="input-area">
         <label for="instruction-input" class="visually-hidden">Enter instruction for the agent</label>

@@ -80,6 +80,9 @@ const historyDropdown = document.getElementById('history-dropdown');
 const historyList = document.getElementById('history-list');
 const historyClearBtn = document.getElementById('history-clear-btn');
 
+// Preview mode
+const previewToggle = document.getElementById('preview-toggle');
+
 // State
 let isRunning = false;
 let isPaused = false;
@@ -97,6 +100,7 @@ let hasHistory = false;
 let previousStatus = null;
 let historyEntries = [];
 let queueItems = [];
+let previewMode = false;
 
 // Window sizes
 const COMPACT_SIZE = { width: 420, height: 280 };
@@ -106,6 +110,7 @@ const EXPANDED_SIZE = { width: 500, height: 450 };
 async function init() {
   await loadConfig();
   await loadHistory();
+  await loadPreviewMode();
   setupEventListeners();
   setupTauriListeners();
   setupKeyboardNavigation();
@@ -114,6 +119,41 @@ async function init() {
 
   // Auto-focus input on app start
   instructionInput.focus();
+}
+
+// Load preview mode state from backend
+async function loadPreviewMode() {
+  try {
+    previewMode = await invoke('get_preview_mode');
+    updatePreviewModeUI();
+  } catch (error) {
+    console.error('Failed to load preview mode:', error);
+  }
+}
+
+// Update UI for preview mode
+function updatePreviewModeUI() {
+  previewToggle.classList.toggle('active', previewMode);
+  mainModal.classList.toggle('preview-mode', previewMode);
+}
+
+// Toggle preview mode
+async function togglePreviewMode() {
+  if (isRunning) {
+    showToast('Cannot change preview mode while running', 'error');
+    return;
+  }
+
+  try {
+    previewMode = !previewMode;
+    await invoke('set_preview_mode', { enabled: previewMode });
+    updatePreviewModeUI();
+    showToast(previewMode ? 'Preview mode enabled' : 'Preview mode disabled', 'info');
+  } catch (error) {
+    console.error('Failed to set preview mode:', error);
+    previewMode = !previewMode; // Revert
+    showToast('Failed to set preview mode', 'error');
+  }
 }
 
 // Load configuration from backend
@@ -416,6 +456,9 @@ function setupEventListeners() {
   addQueueBtn.addEventListener('click', addToQueue);
   queueStartBtn.addEventListener('click', startQueue);
   queueClearBtn.addEventListener('click', clearQueue);
+
+  // Preview mode toggle
+  previewToggle.addEventListener('click', togglePreviewMode);
 }
 
 // Setup Tauri event listeners
@@ -536,21 +579,28 @@ function updateAgentState(state) {
     stopElapsedTimer();
   }
 
+  // Update preview mode from state
+  if (state.preview_mode !== previewMode) {
+    previewMode = state.preview_mode;
+    updatePreviewModeUI();
+  }
+
   // Update status indicator
   statusDot.className = 'status-dot';
   let statusLabel = 'Ready';
   switch (state.status) {
     case 'Running':
-      statusDot.classList.add('running');
-      statusLabel = 'Running';
-      break;
-    case 'Paused':
-      statusDot.classList.add('paused');
-      statusText.textContent = 'Paused';
+      if (previewMode) {
+        statusDot.classList.add('preview');
+        statusLabel = 'Preview';
+      } else {
+        statusDot.classList.add('running');
+        statusLabel = 'Running';
+      }
       break;
     case 'Completed':
       statusDot.classList.add('completed');
-      statusLabel = 'Completed';
+      statusLabel = previewMode ? 'Preview Done' : 'Completed';
       break;
     case 'Error':
       statusDot.classList.add('error');
@@ -569,7 +619,7 @@ function updateAgentState(state) {
       statusLabel = 'Awaiting Confirmation';
       break;
     default:
-      statusText.textContent = 'Ready';
+      statusLabel = 'Ready';
   }
   statusText.textContent = statusLabel;
 
@@ -592,6 +642,38 @@ function updateAgentState(state) {
   speedValue.textContent = state.tokens_per_second > 0
     ? `${state.tokens_per_second.toFixed(1)} tok/s`
     : '-- tok/s';
+
+  // Update action display with preview mode awareness
+  if (actionContent) {
+    actionContent.classList.remove('preview-action');
+    if (state.last_error) {
+      actionContent.textContent = `Error: ${state.last_error}`;
+      actionContent.style.color = 'var(--error)';
+    } else if (state.last_action) {
+      // Check if action has [PREVIEW] prefix
+      const isPreviewAction = state.last_action.startsWith('[PREVIEW]');
+      let actionText = state.last_action;
+
+      if (isPreviewAction) {
+        actionContent.classList.add('preview-action');
+        actionText = state.last_action.substring(10).trim(); // Remove "[PREVIEW] "
+      }
+
+      try {
+        const action = JSON.parse(actionText);
+        const formatted = formatAction(action);
+        actionContent.textContent = isPreviewAction ? `Would: ${formatted}` : formatted;
+        if (!isPreviewAction) {
+          actionContent.style.color = '';
+        }
+      } catch {
+        actionContent.textContent = isPreviewAction ? `Would: ${actionText}` : actionText;
+        if (!isPreviewAction) {
+          actionContent.style.color = '';
+        }
+      }
+    }
+  }
 
   // Update action timeline
   if (state.action_history && state.action_history.length > 0) {
@@ -668,6 +750,12 @@ function updateAgentState(state) {
   // Sync aria-disabled for screen readers
   instructionInput.setAttribute('aria-disabled', inputDisabled.toString());
   submitBtn.setAttribute('aria-disabled', inputDisabled.toString());
+
+  // Disable preview toggle while running
+  if (previewToggle) {
+    previewToggle.style.pointerEvents = isRunning ? 'none' : 'auto';
+    previewToggle.style.opacity = isRunning ? '0.5' : '1';
+  }
 
   // Update export button visibility
   updateHistoryCount();

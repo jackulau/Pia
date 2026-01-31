@@ -47,6 +47,7 @@ pub struct AgentState {
     pub queue_index: usize,
     pub queue_total: usize,
     pub queue_active: bool,
+    pub preview_mode: bool,
 }
 
 impl Default for AgentState {
@@ -68,6 +69,7 @@ impl Default for AgentState {
             queue_index: 0,
             queue_total: 0,
             queue_active: false,
+            preview_mode: false,
         }
     }
 }
@@ -281,5 +283,15 @@ impl AgentStateManager {
         let mut state = self.state.write().await;
         state.queue_index = index;
         state.queue_total = total;
+    }
+
+    pub async fn set_preview_mode(&self, enabled: bool) {
+        let mut state = self.state.write().await;
+        state.preview_mode = enabled;
+    }
+
+    pub async fn is_preview_mode(&self) -> bool {
+        let state = self.state.read().await;
+        state.preview_mode
     }
 }

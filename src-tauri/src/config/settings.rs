@@ -34,6 +34,8 @@ pub struct GeneralConfig {
     pub queue_failure_mode: String,
     #[serde(default = "default_queue_delay_ms")]
     pub queue_delay_ms: u32,
+    #[serde(default)]
+    pub preview_mode: bool,
 }
 
 fn default_global_hotkey() -> Option<String> {
@@ -95,6 +97,7 @@ impl Default for Config {
                 global_hotkey: default_global_hotkey(),
                 queue_failure_mode: "stop".to_string(),
                 queue_delay_ms: 500,
+                preview_mode: false,
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {

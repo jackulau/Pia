@@ -40,6 +40,7 @@ struct AgentStatePayload {
     queue_index: usize,
     queue_total: usize,
     queue_active: bool,
+    preview_mode: bool,
 }
 
 #[tauri::command]
@@ -102,6 +103,7 @@ async fn get_agent_state(state: State<'_, AppState>) -> Result<AgentStatePayload
         queue_index: s.queue_index,
         queue_total: s.queue_total,
         queue_active: s.queue_active,
+        preview_mode: s.preview_mode,
     })
 }
 
@@ -142,6 +144,24 @@ async fn save_config(config: Config, app_handle: AppHandle, state: State<'_, App
     }
 
     Ok(())
+}
+
+#[tauri::command]
+async fn set_preview_mode(enabled: bool, state: State<'_, AppState>) -> Result<(), String> {
+    // Update the agent state
+    state.agent_state.set_preview_mode(enabled).await;
+
+    // Also update the config and save it
+    let mut config = state.config.write().await;
+    config.general.preview_mode = enabled;
+    config.save().map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_preview_mode(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.agent_state.is_preview_mode().await)
 }
 
 #[tauri::command]
@@ -577,8 +597,17 @@ pub fn run() {
                 )?;
             }
 
+            let agent_state = AgentStateManager::new();
+            // Initialize preview_mode from config
+            {
+                let preview_mode = config.general.preview_mode;
+                let agent_state_clone = agent_state.clone();
+                tokio::spawn(async move {
+                    agent_state_clone.set_preview_mode(preview_mode).await;
+                });
+            }
             let state = AppState {
-                agent_state: AgentStateManager::new(),
+                agent_state,
                 config: Arc::new(RwLock::new(config)),
                 history: Arc::new(RwLock::new(history)),
                 queue: QueueManager::new(),
@@ -671,6 +700,8 @@ pub fn run() {
             get_agent_state,
             get_config,
             save_config,
+            set_preview_mode,
+            get_preview_mode,
             hide_window,
             show_window,
             confirm_action,
