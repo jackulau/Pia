@@ -74,6 +74,7 @@ let sessionStartTime = null;
 let elapsedTimer = null;
 let previousFocusElement = null;
 let hasHistory = false;
+let previousStatus = null;
 
 // Window sizes
 const COMPACT_SIZE = { width: 420, height: 280 };
@@ -341,33 +342,39 @@ function updateAgentState(state) {
 
   // Update status indicator
   statusDot.className = 'status-dot';
+  let statusLabel = 'Ready';
   switch (state.status) {
     case 'Running':
       statusDot.classList.add('running');
-      statusText.textContent = 'Running';
+      statusLabel = 'Running';
       break;
     case 'Completed':
       statusDot.classList.add('completed');
-      statusText.textContent = 'Completed';
+      statusLabel = 'Completed';
       break;
     case 'Error':
       statusDot.classList.add('error');
-      statusText.textContent = 'Error';
+      statusLabel = 'Error';
       break;
     case 'Paused':
       statusDot.classList.add('paused');
-      statusText.textContent = 'Paused';
+      statusLabel = 'Paused';
       break;
     case 'Retrying':
       statusDot.classList.add('retrying');
-      statusText.textContent = 'Retrying';
+      statusLabel = 'Retrying';
       break;
     case 'AwaitingConfirmation':
-      statusDot.classList.add('running');
-      statusText.textContent = 'Awaiting Confirmation';
+      statusDot.classList.add('awaiting');
+      statusLabel = 'Awaiting Confirmation';
       break;
-    default:
-      statusText.textContent = 'Ready';
+  }
+  statusText.textContent = statusLabel;
+
+  // Announce status changes to screen readers
+  if (state.status !== previousStatus) {
+    announceStatus(statusLabel);
+    previousStatus = state.status;
   }
 
   // Update metrics with animation
@@ -686,6 +693,17 @@ function triggerShake(element) {
   element.classList.remove('shake');
   void element.offsetWidth; // Force reflow
   element.classList.add('shake');
+}
+
+// Announce status changes to screen readers
+function announceStatus(status) {
+  const announcement = document.createElement('div');
+  announcement.setAttribute('role', 'status');
+  announcement.setAttribute('aria-live', 'polite');
+  announcement.className = 'visually-hidden';
+  announcement.textContent = `Agent status: ${status}`;
+  document.body.appendChild(announcement);
+  setTimeout(() => announcement.remove(), 1000);
 }
 
 // Toggle expanded mode
