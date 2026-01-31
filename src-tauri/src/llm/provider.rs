@@ -1,6 +1,7 @@
 use crate::agent::conversation::{ConversationHistory, Message};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -36,6 +37,190 @@ impl TokenMetrics {
 }
 
 pub type ChunkCallback = Box<dyn Fn(&str) + Send + Sync>;
+
+/// A tool definition for Claude's native tool_use protocol
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tool {
+    pub name: String,
+    pub description: String,
+    pub input_schema: Value,
+}
+
+/// A tool_use response from Claude
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolUse {
+    pub id: String,
+    pub name: String,
+    pub input: Value,
+}
+
+/// Response from an LLM provider - can be either a tool use or raw text
+#[derive(Debug, Clone)]
+pub enum LlmResponse {
+    /// Native tool use response (from Anthropic)
+    ToolUse(ToolUse),
+    /// Raw text response (fallback for JSON parsing)
+    Text(String),
+}
+
+/// Build tool definitions for all computer use actions
+pub fn build_tools() -> Vec<Tool> {
+    vec![
+        Tool {
+            name: "click".to_string(),
+            description: "Click at coordinates on screen".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "integer",
+                        "description": "X coordinate to click"
+                    },
+                    "y": {
+                        "type": "integer",
+                        "description": "Y coordinate to click"
+                    },
+                    "button": {
+                        "type": "string",
+                        "enum": ["left", "right", "middle"],
+                        "default": "left",
+                        "description": "Mouse button to click"
+                    }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "double_click".to_string(),
+            description: "Double click at coordinates on screen".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "integer",
+                        "description": "X coordinate to double-click"
+                    },
+                    "y": {
+                        "type": "integer",
+                        "description": "Y coordinate to double-click"
+                    }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "move".to_string(),
+            description: "Move mouse to coordinates without clicking".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "integer",
+                        "description": "X coordinate to move to"
+                    },
+                    "y": {
+                        "type": "integer",
+                        "description": "Y coordinate to move to"
+                    }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "type".to_string(),
+            description: "Type text using the keyboard".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Text to type"
+                    }
+                },
+                "required": ["text"]
+            }),
+        },
+        Tool {
+            name: "key".to_string(),
+            description: "Press a key with optional modifiers".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "Key to press (e.g., 'enter', 'tab', 'a', 'escape')"
+                    },
+                    "modifiers": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["ctrl", "alt", "shift", "meta"]
+                        },
+                        "default": [],
+                        "description": "Modifier keys to hold (meta is cmd on macOS)"
+                    }
+                },
+                "required": ["key"]
+            }),
+        },
+        Tool {
+            name: "scroll".to_string(),
+            description: "Scroll at a position on screen".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "integer",
+                        "description": "X coordinate to scroll at"
+                    },
+                    "y": {
+                        "type": "integer",
+                        "description": "Y coordinate to scroll at"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["up", "down", "left", "right"],
+                        "description": "Direction to scroll"
+                    },
+                    "amount": {
+                        "type": "integer",
+                        "default": 3,
+                        "description": "Number of scroll increments"
+                    }
+                },
+                "required": ["x", "y", "direction"]
+            }),
+        },
+        Tool {
+            name: "complete".to_string(),
+            description: "Mark the task as completed successfully".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Completion message describing what was accomplished"
+                    }
+                },
+                "required": ["message"]
+            }),
+        },
+        Tool {
+            name: "error".to_string(),
+            description: "Report an error or inability to proceed".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Error message describing the issue"
+                    }
+                },
+                "required": ["message"]
+            }),
+        },
+    ]
+}
 
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
@@ -113,6 +298,26 @@ pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String
         .collect()
 }
 
+/// Build system prompt for tool-based providers (simplified, tools are defined via API)
+pub fn build_system_prompt_for_tools(screen_width: u32, screen_height: u32) -> String {
+    format!(
+        r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
+
+Screen dimensions: {screen_width}x{screen_height} pixels
+
+Guidelines:
+- Analyze the screenshot carefully before acting
+- Use coordinates that match visible UI elements
+- Be precise with click locations
+- Wait for UI to update between actions (the system handles this)
+- Use the "complete" tool when the task is done
+- Use the "error" tool if you cannot proceed
+
+Use one of the provided tools to perform your next action."#
+    )
+}
+
+/// Build system prompt for JSON-based providers (includes action definitions in prompt)
 pub fn build_system_prompt(screen_width: u32, screen_height: u32) -> String {
     format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.

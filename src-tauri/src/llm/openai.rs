@@ -1,4 +1,6 @@
-use super::provider::{build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, TokenMetrics};
+use super::provider::{
+    build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics,
+};
 use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -94,7 +96,7 @@ impl LlmProvider for OpenAIProvider {
         screen_width: u32,
         screen_height: u32,
         on_chunk: ChunkCallback,
-    ) -> Result<(String, TokenMetrics), LlmError> {
+    ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
         let system_prompt = build_system_prompt(screen_width, screen_height);
 
@@ -194,7 +196,7 @@ impl LlmProvider for OpenAIProvider {
             total_duration: start.elapsed(),
         };
 
-        Ok((full_response, metrics))
+        Ok((LlmResponse::Text(full_response), metrics))
     }
 
     fn name(&self) -> &str {
