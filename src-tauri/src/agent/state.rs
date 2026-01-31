@@ -44,6 +44,9 @@ pub struct AgentState {
     pub action_history: Vec<ActionHistoryEntry>,
     pub retry_count: u32,
     pub consecutive_errors: u32,
+    pub queue_index: usize,
+    pub queue_total: usize,
+    pub queue_active: bool,
 }
 
 impl Default for AgentState {
@@ -62,6 +65,9 @@ impl Default for AgentState {
             action_history: Vec::new(),
             retry_count: 0,
             consecutive_errors: 0,
+            queue_index: 0,
+            queue_total: 0,
+            queue_active: false,
         }
     }
 }
@@ -245,5 +251,18 @@ impl AgentStateManager {
     pub async fn get_consecutive_errors(&self) -> u32 {
         let state = self.state.read().await;
         state.consecutive_errors
+    }
+
+    pub async fn set_queue_info(&self, index: usize, total: usize, active: bool) {
+        let mut state = self.state.write().await;
+        state.queue_index = index;
+        state.queue_total = total;
+        state.queue_active = active;
+    }
+
+    pub async fn update_queue_progress(&self, index: usize, total: usize) {
+        let mut state = self.state.write().await;
+        state.queue_index = index;
+        state.queue_total = total;
     }
 }

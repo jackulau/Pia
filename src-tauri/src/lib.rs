@@ -5,7 +5,7 @@ mod history;
 mod input;
 mod llm;
 
-use agent::{AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse};
+use agent::{AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse, InstructionQueue, QueueFailureMode, QueueManager};
 use config::Config;
 use history::{HistoryEntry, InstructionHistory};
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,7 @@ struct AppState {
     agent_state: AgentStateManager,
     config: Arc<RwLock<Config>>,
     history: Arc<RwLock<InstructionHistory>>,
+    queue: QueueManager,
 }
 
 #[derive(Clone, Serialize)]
@@ -36,6 +37,9 @@ struct AgentStatePayload {
     tokens_per_second: f64,
     total_input_tokens: u64,
     total_output_tokens: u64,
+    queue_index: usize,
+    queue_total: usize,
+    queue_active: bool,
 }
 
 #[tauri::command]
@@ -83,6 +87,9 @@ async fn get_agent_state(state: State<'_, AppState>) -> Result<AgentStatePayload
         tokens_per_second: s.tokens_per_second,
         total_input_tokens: s.total_input_tokens,
         total_output_tokens: s.total_output_tokens,
+        queue_index: s.queue_index,
+        queue_total: s.queue_total,
+        queue_active: s.queue_active,
     })
 }
 
@@ -412,6 +419,40 @@ async fn add_to_history(
     Ok(())
 }
 
+// Queue commands
+
+#[tauri::command]
+async fn add_to_queue(
+    instruction: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let id = state.queue.add(instruction).await;
+    Ok(id)
+}
+
+#[tauri::command]
+async fn add_multiple_to_queue(
+    instructions: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let ids = state.queue.add_multiple(instructions).await;
+    Ok(ids)
+}
+
+#[tauri::command]
+async fn remove_from_queue(
+    id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    Ok(state.queue.remove(&id).await)
+}
+
+#[tauri::command]
+async fn clear_queue(state: State<'_, AppState>) -> Result<(), String> {
+    state.queue.clear().await;
+    Ok(())
+}
+
 #[tauri::command]
 async fn unregister_global_hotkey(
     app_handle: AppHandle,
@@ -423,6 +464,64 @@ async fn unregister_global_hotkey(
     // Update config
     let mut config = state.config.write().await;
     config.general.global_hotkey = None;
+    config.save().map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn reorder_queue(
+    order: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    Ok(state.queue.reorder(order).await)
+}
+
+#[tauri::command]
+async fn get_queue(state: State<'_, AppState>) -> Result<InstructionQueue, String> {
+    Ok(state.queue.get_state().await)
+}
+
+#[tauri::command]
+async fn start_queue(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let agent_state = state.agent_state.clone();
+    let config = state.config.read().await.clone();
+    let queue = state.queue.clone();
+
+    let current_state = agent_state.get_state().await;
+    if current_state.status == AgentStatus::Running {
+        return Err("Agent is already running".to_string());
+    }
+
+    if !queue.has_pending().await {
+        return Err("Queue is empty".to_string());
+    }
+
+    let app = app_handle.clone();
+    tokio::spawn(async move {
+        let loop_runner = AgentLoop::new(agent_state, config, app).with_queue(queue);
+        if let Err(e) = loop_runner.run_queue().await {
+            log::error!("Queue processing error: {}", e);
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_queue_failure_mode(
+    mode: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let failure_mode = QueueFailureMode::from(mode.as_str());
+    state.queue.set_failure_mode(failure_mode).await;
+
+    // Also update config
+    let mut config = state.config.write().await;
+    config.general.queue_failure_mode = mode;
     config.save().map_err(|e| e.to_string())?;
 
     Ok(())
@@ -446,7 +545,6 @@ async fn remove_from_history(index: usize, state: State<'_, AppState>) -> Result
         Err("Invalid history index".to_string())
     }
 }
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = Config::load().unwrap_or_default();
@@ -471,6 +569,7 @@ pub fn run() {
                 agent_state: AgentStateManager::new(),
                 config: Arc::new(RwLock::new(config)),
                 history: Arc::new(RwLock::new(history)),
+                queue: QueueManager::new(),
             };
             app.manage(state);
 
@@ -575,6 +674,14 @@ pub fn run() {
             add_to_history,
             clear_history,
             remove_from_history,
+            add_to_queue,
+            add_multiple_to_queue,
+            remove_from_queue,
+            clear_queue,
+            reorder_queue,
+            get_queue,
+            start_queue,
+            set_queue_failure_mode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

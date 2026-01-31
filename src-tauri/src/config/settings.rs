@@ -30,10 +30,22 @@ pub struct GeneralConfig {
     pub show_coordinate_overlay: bool,
     #[serde(default = "default_global_hotkey")]
     pub global_hotkey: Option<String>,
+    #[serde(default = "default_queue_failure_mode")]
+    pub queue_failure_mode: String,
+    #[serde(default = "default_queue_delay_ms")]
+    pub queue_delay_ms: u32,
 }
 
 fn default_global_hotkey() -> Option<String> {
     Some("CmdOrCtrl+Shift+P".to_string())
+}
+
+fn default_queue_failure_mode() -> String {
+    "stop".to_string()
+}
+
+fn default_queue_delay_ms() -> u32 {
+    500
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -81,6 +93,8 @@ impl Default for Config {
                 confirm_dangerous_actions: true,
                 show_coordinate_overlay: false,
                 global_hotkey: default_global_hotkey(),
+                queue_failure_mode: "stop".to_string(),
+                queue_delay_ms: 500,
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {
