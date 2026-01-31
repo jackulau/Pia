@@ -9,6 +9,9 @@ const mainModal = document.getElementById('main-modal');
 const settingsPanel = document.getElementById('settings-panel');
 const instructionInput = document.getElementById('instruction-input');
 const submitBtn = document.getElementById('submit-btn');
+const controlButtons = document.getElementById('control-buttons');
+const pauseBtn = document.getElementById('pause-btn');
+const resumeBtn = document.getElementById('resume-btn');
 const stopBtn = document.getElementById('stop-btn');
 const exportBtn = document.getElementById('export-btn');
 const settingsBtn = document.getElementById('settings-btn');
@@ -79,6 +82,7 @@ const historyClearBtn = document.getElementById('history-clear-btn');
 
 // State
 let isRunning = false;
+let isPaused = false;
 let currentConfig = null;
 let lastIteration = 0;
 let lastTokens = 0;
@@ -253,6 +257,12 @@ function setupEventListeners() {
       submitInstruction();
     }
   });
+
+  // Pause agent
+  pauseBtn.addEventListener('click', pauseAgent);
+
+  // Resume agent
+  resumeBtn.addEventListener('click', resumeAgent);
 
   // Stop agent
   stopBtn.addEventListener('click', stopAgent);
@@ -483,6 +493,24 @@ async function submitInstruction() {
   }
 }
 
+// Pause the agent
+async function pauseAgent() {
+  try {
+    await invoke('pause_agent');
+  } catch (error) {
+    console.error('Failed to pause agent:', error);
+  }
+}
+
+// Resume the agent
+async function resumeAgent() {
+  try {
+    await invoke('resume_agent');
+  } catch (error) {
+    console.error('Failed to resume agent:', error);
+  }
+}
+
 // Stop the agent
 async function stopAgent() {
   try {
@@ -496,6 +524,7 @@ async function stopAgent() {
 function updateAgentState(state) {
   const wasRunning = isRunning;
   isRunning = state.status === 'Running';
+  isPaused = state.status === 'Paused';
 
   // Start timer when agent starts running
   if (isRunning && !wasRunning) {
@@ -514,6 +543,10 @@ function updateAgentState(state) {
     case 'Running':
       statusDot.classList.add('running');
       statusLabel = 'Running';
+      break;
+    case 'Paused':
+      statusDot.classList.add('paused');
+      statusText.textContent = 'Paused';
       break;
     case 'Completed':
       statusDot.classList.add('completed');
@@ -535,6 +568,8 @@ function updateAgentState(state) {
       statusDot.classList.add('awaiting');
       statusLabel = 'Awaiting Confirmation';
       break;
+    default:
+      statusText.textContent = 'Ready';
   }
   statusText.textContent = statusLabel;
 
@@ -619,16 +654,20 @@ function updateAgentState(state) {
     actionCount.textContent = '0 actions';
   }
 
-  // Show/hide stop button
-  stopBtn.classList.toggle('hidden', !isRunning);
+  // Show/hide control buttons based on state
+  const showControls = isRunning || isPaused;
+  controlButtons.classList.toggle('hidden', !showControls);
+  pauseBtn.classList.toggle('hidden', isPaused);
+  resumeBtn.classList.toggle('hidden', !isPaused);
 
-  // Disable input while running
-  instructionInput.disabled = isRunning;
-  submitBtn.disabled = isRunning;
+  // Disable input while running or paused
+  const inputDisabled = isRunning || isPaused;
+  instructionInput.disabled = inputDisabled;
+  submitBtn.disabled = inputDisabled;
 
   // Sync aria-disabled for screen readers
-  instructionInput.setAttribute('aria-disabled', isRunning.toString());
-  submitBtn.setAttribute('aria-disabled', isRunning.toString());
+  instructionInput.setAttribute('aria-disabled', inputDisabled.toString());
+  submitBtn.setAttribute('aria-disabled', inputDisabled.toString());
 
   // Update export button visibility
   updateHistoryCount();

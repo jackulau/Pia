@@ -74,6 +74,18 @@ async fn stop_agent(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn pause_agent(state: State<'_, AppState>) -> Result<(), String> {
+    state.agent_state.request_pause();
+    Ok(())
+}
+
+#[tauri::command]
+async fn resume_agent(state: State<'_, AppState>) -> Result<(), String> {
+    state.agent_state.resume();
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_agent_state(state: State<'_, AppState>) -> Result<AgentStatePayload, String> {
     let s = state.agent_state.get_state().await;
     Ok(AgentStatePayload {
@@ -654,6 +666,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             start_agent,
             stop_agent,
+            pause_agent,
+            resume_agent,
             get_agent_state,
             get_config,
             save_config,

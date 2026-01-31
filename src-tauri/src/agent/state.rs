@@ -75,6 +75,7 @@ impl Default for AgentState {
 pub struct AgentStateManager {
     state: Arc<RwLock<AgentState>>,
     should_stop: Arc<AtomicBool>,
+    should_pause: Arc<AtomicBool>,
     confirmation_tx: Arc<RwLock<Option<mpsc::Sender<ConfirmationResponse>>>>,
     confirmation_rx: Arc<RwLock<Option<mpsc::Receiver<ConfirmationResponse>>>>,
     history: HistoryManager,
@@ -85,6 +86,7 @@ impl Clone for AgentStateManager {
         Self {
             state: Arc::clone(&self.state),
             should_stop: Arc::clone(&self.should_stop),
+            should_pause: Arc::clone(&self.should_pause),
             confirmation_tx: Arc::clone(&self.confirmation_tx),
             confirmation_rx: Arc::clone(&self.confirmation_rx),
             history: self.history.clone(),
@@ -98,6 +100,7 @@ impl AgentStateManager {
         Self {
             state: Arc::new(RwLock::new(AgentState::default())),
             should_stop: Arc::new(AtomicBool::new(false)),
+            should_pause: Arc::new(AtomicBool::new(false)),
             confirmation_tx: Arc::new(RwLock::new(Some(tx))),
             confirmation_rx: Arc::new(RwLock::new(Some(rx))),
             history: HistoryManager::new(),
@@ -132,6 +135,7 @@ impl AgentStateManager {
         state.retry_count = 0;
         state.consecutive_errors = 0;
         self.should_stop.store(false, Ordering::SeqCst);
+        self.should_pause.store(false, Ordering::SeqCst);
         // Start a new history session
         drop(state); // Release write lock before async call
         self.history.start_session(instruction).await;
@@ -187,10 +191,23 @@ impl AgentStateManager {
         self.should_stop.load(Ordering::SeqCst)
     }
 
+    pub fn request_pause(&self) {
+        self.should_pause.store(true, Ordering::SeqCst);
+    }
+
+    pub fn should_pause(&self) -> bool {
+        self.should_pause.load(Ordering::SeqCst)
+    }
+
+    pub fn resume(&self) {
+        self.should_pause.store(false, Ordering::SeqCst);
+    }
+
     pub async fn reset(&self) {
         let mut state = self.state.write().await;
         *state = AgentState::default();
         self.should_stop.store(false, Ordering::SeqCst);
+        self.should_pause.store(false, Ordering::SeqCst);
         drop(state);
         self.history.clear().await;
     }
