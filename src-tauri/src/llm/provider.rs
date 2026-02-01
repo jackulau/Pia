@@ -397,6 +397,12 @@ Guidelines:
 - Use "complete" when the task is done
 - Use "error" if you cannot proceed
 
+Note: Actions are automatically retried up to 3 times if they fail or have no visible effect.
+If an action consistently fails, try:
+- Adjusting coordinates slightly (elements may have shifted)
+- Using a different approach (e.g., keyboard navigation instead of clicking)
+- Waiting longer for elements to load by trying again
+
 Respond with ONLY the JSON action, no other text."#
     )
 }

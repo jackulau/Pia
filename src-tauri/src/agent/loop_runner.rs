@@ -1,4 +1,4 @@
-use super::action::{execute_action, parse_llm_response, Action, ActionError};
+use super::action::{execute_action, execute_action_with_retry, parse_llm_response, Action, ActionError};
 use super::conversation::ConversationHistory;
 use super::history::ActionEntry;
 use super::queue::{QueueFailureMode, QueueManager};
@@ -6,6 +6,7 @@ use super::recovery::{
     classify_capture_error, classify_llm_error, retry_with_policy, ErrorClassification,
     RetryPolicy,
 };
+use super::retry::RetryContext;
 use super::state::{AgentStateManager, AgentStatus, ConfirmationResponse, ExecutionMode};
 use crate::capture::{capture_primary_screen, CaptureError, Screenshot};
 use crate::config::Config;
@@ -155,6 +156,13 @@ impl AgentLoop {
         // Initialize conversation history for this task
         let mut conversation = ConversationHistory::new();
         conversation.set_original_instruction(instruction.clone());
+
+        // Create retry context from config
+        let mut retry_ctx = RetryContext::new(
+            self.config.general.max_retries,
+            self.config.general.retry_delay_ms,
+            self.config.general.enable_self_correction,
+        );
 
         self.state.start_with_mode(instruction.clone(), max_iterations, mode).await;
         self.emit_state_update().await;
@@ -395,6 +403,12 @@ impl AgentLoop {
 
                     // Hide cursor indicator after action
                     self.hide_cursor_indicator().await;
+
+                    // Update retry statistics if any retries occurred
+                    if result.retry_count > 0 {
+                        self.state.update_retry_stats(result.retry_count).await;
+                        log::info!("Action succeeded after {} retries", result.retry_count);
+                    }
 
                     if result.completed {
                         self.state.complete(result.message).await;

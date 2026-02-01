@@ -1085,6 +1085,17 @@ function updateAgentState(state) {
     ? `${state.tokens_per_second.toFixed(1)} tok/s`
     : '-- tok/s';
 
+  // Update retry indicator if retries occurred
+  const retryIndicator = document.getElementById('retry-indicator');
+  if (retryIndicator) {
+    if (state.total_retries > 0) {
+      retryIndicator.textContent = `${state.total_retries} retries`;
+      retryIndicator.classList.remove('hidden');
+    } else {
+      retryIndicator.classList.add('hidden');
+    }
+  }
+
   // Update action display with preview mode awareness
   if (actionContent) {
     actionContent.classList.remove('preview-action');
@@ -1242,12 +1253,21 @@ function formatSingleAction(action) {
     case 'drag':
       return `Drag: (${action.start_x}, ${action.start_y}) → (${action.end_x}, ${action.end_y})`;
     case 'complete':
-      return `Completed: ${action.message}`;
+      actionText = `Completed: ${action.message}`;
+      break;
     case 'error':
-      return `Error: ${action.message}`;
+      actionText = `Error: ${action.message}`;
+      break;
     default:
-      return JSON.stringify(action);
+      actionText = JSON.stringify(action);
   }
+
+  // Add retry count if retries occurred
+  if (retryCount > 0) {
+    actionText += ` (${retryCount} ${retryCount === 1 ? 'retry' : 'retries'})`;
+  }
+
+  return actionText;
 }
 
 // Format action for display

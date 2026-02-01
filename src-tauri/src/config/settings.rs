@@ -59,6 +59,12 @@ pub struct GeneralConfig {
     pub queue_delay_ms: u32,
     #[serde(default)]
     pub preview_mode: bool,
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    #[serde(default = "default_retry_delay_ms")]
+    pub retry_delay_ms: u32,
+    #[serde(default = "default_enable_self_correction")]
+    pub enable_self_correction: bool,
 }
 
 fn default_global_hotkey() -> Option<String> {
@@ -71,6 +77,18 @@ fn default_queue_failure_mode() -> String {
 
 fn default_queue_delay_ms() -> u32 {
     500
+}
+
+fn default_max_retries() -> u32 {
+    3
+}
+
+fn default_retry_delay_ms() -> u32 {
+    1000
+}
+
+fn default_enable_self_correction() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -121,6 +139,9 @@ impl Default for Config {
                 queue_failure_mode: "stop".to_string(),
                 queue_delay_ms: 500,
                 preview_mode: false,
+                max_retries: default_max_retries(),
+                retry_delay_ms: default_retry_delay_ms(),
+                enable_self_correction: default_enable_self_correction(),
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {

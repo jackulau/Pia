@@ -4,6 +4,7 @@ pub mod history;
 pub mod loop_runner;
 pub mod queue;
 pub mod recovery;
+pub mod retry;
 pub mod state;
 
 pub use loop_runner::*;

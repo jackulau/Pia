@@ -73,6 +73,8 @@ pub struct AgentState {
     pub kill_switch_triggered: bool,
     pub execution_mode: ExecutionMode,
     pub recorded_actions: Vec<RecordedAction>,
+    pub last_retry_count: u32,
+    pub total_retries: u32,
 }
 
 impl Default for AgentState {
@@ -99,6 +101,8 @@ impl Default for AgentState {
             kill_switch_triggered: false,
             execution_mode: ExecutionMode::Normal,
             recorded_actions: Vec::new(),
+            last_retry_count: 0,
+            total_retries: 0,
         }
     }
 }
@@ -183,6 +187,8 @@ impl AgentStateManager {
         state.consecutive_errors = 0;
         state.execution_mode = mode;
         state.recorded_actions = Vec::new();
+        state.last_retry_count = 0;
+        state.total_retries = 0;
         self.should_stop.store(false, Ordering::SeqCst);
         self.should_pause.store(false, Ordering::SeqCst);
         self.kill_switch_triggered.store(false, Ordering::SeqCst);
@@ -256,6 +262,12 @@ impl AgentStateManager {
         state.tokens_per_second = tokens_per_sec;
         state.total_input_tokens += input_tokens;
         state.total_output_tokens += output_tokens;
+    }
+
+    pub async fn update_retry_stats(&self, retry_count: u32) {
+        let mut state = self.state.write().await;
+        state.last_retry_count = retry_count;
+        state.total_retries += retry_count;
     }
 
     pub async fn complete(&self, message: Option<String>) {
