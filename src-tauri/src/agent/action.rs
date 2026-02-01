@@ -653,6 +653,128 @@ impl Action {
                 | Action::Scroll { .. }
         )
     }
+
+    /// Check if this action can be reversed
+    pub fn is_reversible(&self) -> bool {
+        match self {
+            // Scroll can always be reversed by scrolling in the opposite direction
+            Action::Scroll { .. } => true,
+            // Type can be partially reversed (best effort with backspaces)
+            Action::Type { text } => !text.is_empty(),
+            // Key presses that are simple characters can be reversed with backspace
+            Action::Key { key, modifiers } => {
+                // Don't try to reverse undo itself or other complex key combos
+                if modifiers.iter().any(|m| m.to_lowercase() == "cmd" || m.to_lowercase() == "ctrl") {
+                    return false;
+                }
+                // Simple key presses can be reversed
+                key.len() == 1 || key.to_lowercase() == "space" || key.to_lowercase() == "enter"
+            }
+            // Move could theoretically be reversed but we'd need to track original position
+            Action::Move { .. } => false,
+            // Clicks cannot be undone
+            Action::Click { .. } => false,
+            Action::DoubleClick { .. } => false,
+            // Terminal actions
+            Action::Complete { .. } => false,
+            Action::Error { .. } => false,
+        }
+    }
+
+    /// Create an action that reverses this one, if possible
+    pub fn create_reverse(&self) -> Option<Action> {
+        match self {
+            Action::Scroll {
+                x,
+                y,
+                direction,
+                amount,
+            } => {
+                let reverse_direction = match direction.to_lowercase().as_str() {
+                    "up" => "down",
+                    "down" => "up",
+                    "left" => "right",
+                    "right" => "left",
+                    _ => return None,
+                };
+                Some(Action::Scroll {
+                    x: *x,
+                    y: *y,
+                    direction: reverse_direction.to_string(),
+                    amount: *amount,
+                })
+            }
+            Action::Type { text } => {
+                // Reverse typing by sending backspaces for each character
+                let char_count = text.chars().count();
+                if char_count == 0 {
+                    return None;
+                }
+                // We'll represent this as a series of backspace key presses
+                // For simplicity, we create a single key action that represents "delete N chars"
+                // The actual implementation will need to handle this specially
+                Some(Action::Key {
+                    key: "Backspace".to_string(),
+                    modifiers: vec![format!("repeat:{}", char_count)],
+                })
+            }
+            Action::Key { key, modifiers } => {
+                // Only reverse simple character input
+                if modifiers.iter().any(|m| m.to_lowercase() == "cmd" || m.to_lowercase() == "ctrl") {
+                    return None;
+                }
+                // Simple character or space/enter can be reversed with backspace
+                if key.len() == 1 || key.to_lowercase() == "space" || key.to_lowercase() == "enter" {
+                    Some(Action::Key {
+                        key: "Backspace".to_string(),
+                        modifiers: vec![],
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Get a human-readable description of this action
+    pub fn describe(&self) -> String {
+        match self {
+            Action::Click { x, y, button } => {
+                format!("Click {} at ({}, {})", button, x, y)
+            }
+            Action::DoubleClick { x, y } => {
+                format!("Double-click at ({}, {})", x, y)
+            }
+            Action::Move { x, y } => {
+                format!("Move to ({}, {})", x, y)
+            }
+            Action::Type { text } => {
+                format!("Type \"{}\"", truncate_string(text, 30))
+            }
+            Action::Key { key, modifiers } => {
+                if modifiers.is_empty() {
+                    format!("Press {}", key)
+                } else {
+                    format!("Press {}+{}", modifiers.join("+"), key)
+                }
+            }
+            Action::Scroll {
+                x,
+                y,
+                direction,
+                amount,
+            } => {
+                format!("Scroll {} {} times at ({}, {})", direction, amount, x, y)
+            }
+            Action::Complete { message } => {
+                format!("Completed: {}", truncate_string(message, 50))
+            }
+            Action::Error { message } => {
+                format!("Error: {}", truncate_string(message, 50))
+            }
+        }
+    }
 }
 
 /// Execute an action with retry logic.

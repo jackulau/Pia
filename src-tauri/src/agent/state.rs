@@ -76,6 +76,10 @@ pub struct AgentState {
     pub recorded_actions: Vec<RecordedAction>,
     pub last_retry_count: u32,
     pub total_retries: u32,
+    /// Whether there is an action that can be undone
+    pub can_undo: bool,
+    /// Description of the last action that can be undone
+    pub last_undoable_action: Option<String>,
 }
 
 impl Default for AgentState {
@@ -105,6 +109,8 @@ impl Default for AgentState {
             recorded_actions: Vec::new(),
             last_retry_count: 0,
             total_retries: 0,
+            can_undo: false,
+            last_undoable_action: None,
         }
     }
 }
@@ -492,5 +498,12 @@ impl AgentStateManager {
     pub async fn is_preview_mode(&self) -> bool {
         let state = self.state.read().await;
         state.preview_mode
+    }
+
+    /// Update the undo state based on action history
+    pub async fn update_undo_state(&self, can_undo: bool, last_undoable: Option<String>) {
+        let mut state = self.state.write().await;
+        state.can_undo = can_undo;
+        state.last_undoable_action = last_undoable;
     }
 }

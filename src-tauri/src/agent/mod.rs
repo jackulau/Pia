@@ -9,6 +9,7 @@ pub mod retry;
 pub mod state;
 
 pub use delay::*;
+pub use history::*;
 pub use loop_runner::*;
 pub use queue::*;
 pub use recovery::*;

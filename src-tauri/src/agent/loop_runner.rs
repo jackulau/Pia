@@ -1,7 +1,7 @@
 use super::action::{execute_action, execute_action_with_delay, execute_action_with_retry, parse_llm_response, Action, ActionError};
 use super::conversation::ConversationHistory;
 use super::delay::DelayController;
-use super::history::ActionEntry;
+use super::history::{ActionEntry, ActionHistory, ActionRecord};
 use super::queue::{QueueFailureMode, QueueManager};
 use super::recovery::{
     classify_capture_error, classify_llm_error, retry_with_policy, ErrorClassification,
@@ -17,8 +17,10 @@ use crate::llm::{
 use chrono::Utc;
 use serde::Serialize;
 use serde_json::json;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use thiserror::Error;
+use tokio::sync::RwLock;
 use tokio::time::{sleep, timeout, Duration, Instant};
 
 #[derive(Clone, Serialize)]
@@ -65,10 +67,16 @@ pub struct AgentLoop {
     app_handle: AppHandle,
     queue: Option<QueueManager>,
     preview_mode: bool,
+    action_history: Arc<RwLock<ActionHistory>>,
 }
 
 impl AgentLoop {
-    pub fn new(state: AgentStateManager, config: Config, app_handle: AppHandle) -> Self {
+    pub fn new(
+        state: AgentStateManager,
+        config: Config,
+        app_handle: AppHandle,
+        action_history: Arc<RwLock<ActionHistory>>,
+    ) -> Self {
         let preview_mode = config.general.preview_mode;
         Self {
             state,
@@ -76,6 +84,7 @@ impl AgentLoop {
             app_handle,
             queue: None,
             preview_mode,
+            action_history,
         }
     }
 
@@ -169,7 +178,14 @@ impl AgentLoop {
         // Target delay between iterations for adaptive timing
         let target_iteration_delay = delay_controller.iteration_delay();
 
+        // Clear action history for new session
+        {
+            let mut history = self.action_history.write().await;
+            history.clear();
+        }
+
         self.state.start_with_mode(instruction.clone(), max_iterations, mode).await;
+        self.state.update_undo_state(false, None).await;
         self.emit_state_update().await;
 
         let result = self.run_loop(&*provider, &instruction, max_iterations, confirm_dangerous, show_overlay, &mut conversation).await;
@@ -419,6 +435,20 @@ impl AgentLoop {
                         log::info!("Action succeeded after {} retries", result.retry_count);
                     }
 
+                    // Record successful action in history (unless it's a terminal action)
+                    if !result.completed {
+                        let record = ActionRecord::new(action.clone(), true);
+                        let mut history = self.action_history.write().await;
+                        history.push(record);
+
+                        // Update undo state
+                        let can_undo = history.can_undo();
+                        let last_undoable = history.get_last_undoable_description();
+                        drop(history);
+                        self.state.update_undo_state(can_undo, last_undoable).await;
+                        self.emit_state_update().await;
+                    }
+
                     if result.completed {
                         self.state.complete(result.message).await;
                         self.emit_state_update().await;
@@ -520,6 +550,12 @@ impl AgentLoop {
 
                     // Hide cursor indicator on error
                     self.hide_cursor_indicator().await;
+
+                    // Record failed action in undo history
+                    let record = ActionRecord::new(action.clone(), false);
+                    let mut history = self.action_history.write().await;
+                    history.push(record);
+                    drop(history);
 
                     self.state.set_error(e.to_string()).await;
                     self.emit_state_update().await;

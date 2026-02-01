@@ -22,6 +22,7 @@ const resumeBtn = document.getElementById('resume-btn');
 const recordBtn = document.getElementById('record-btn');
 const stopBtn = document.getElementById('stop-btn');
 const exportBtn = document.getElementById('export-btn');
+const undoBtn = document.getElementById('undo-btn');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
 const closeBtn = document.getElementById('close-btn');
@@ -155,6 +156,8 @@ let currentSizePreset = 'standard';
 let currentPosition = localStorage.getItem('pia-window-position') || null;
 let cachedTemplates = [];
 let killSwitchTriggered = false;
+let canUndo = false;
+let lastUndoableAction = null;
 
 // Window sizes
 const COMPACT_SIZE = { width: 420, height: 280 };
@@ -540,6 +543,17 @@ function setupEventListeners() {
 
   // Stop agent
   stopBtn.addEventListener('click', stopAgent);
+
+  // Undo last action
+  undoBtn.addEventListener('click', undoLastAction);
+
+  // Keyboard shortcut for undo (Cmd+Z on Mac, Ctrl+Z on other platforms)
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !isRunning && canUndo) {
+      e.preventDefault();
+      undoLastAction();
+    }
+  });
 
   // Settings
   settingsBtn.addEventListener('click', () => {
@@ -1025,12 +1039,27 @@ function updateProgressRing(state) {
   }
 }
 
+// Undo the last action
+async function undoLastAction() {
+  if (isRunning || !canUndo) return;
+
+  try {
+    const result = await invoke('undo_last_action');
+    showToast(result, 'success');
+  } catch (error) {
+    console.error('Failed to undo action:', error);
+    showToast(error, 'error');
+  }
+}
+
 // Update UI with agent state
 function updateAgentState(state) {
   const wasRunning = isRunning;
   isRunning = state.status === 'Running';
   isPaused = state.status === 'Paused';
   isRecording = state.status === 'Recording';
+  canUndo = state.can_undo && !isRunning;
+  lastUndoableAction = state.last_undoable_action;
 
   // Start timer when agent starts running
   if (isRunning && !wasRunning) {
@@ -1051,6 +1080,12 @@ function updateAgentState(state) {
   // Update kill switch indicator (unless it was just triggered)
   if (!killSwitchTriggered) {
     updateKillSwitchState(state.status, state.kill_switch_triggered);
+  }
+
+  // Update undo button state
+  if (undoBtn) {
+    undoBtn.disabled = !canUndo;
+    undoBtn.title = lastUndoableAction ? `Undo: ${lastUndoableAction}` : 'Nothing to undo';
   }
 
   // Update status indicator
