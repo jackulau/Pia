@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -63,13 +63,15 @@
     }
 
     .drag-handle {
-      height: 28px;
+      height: 44px;
       cursor: grab;
       background: transparent;
       display: flex;
       align-items: center;
       justify-content: center;
       transition: background 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
     }
     .drag-handle::after {
       content: '';
@@ -84,6 +86,7 @@
       width: 40px;
     }
     .drag-handle:active { cursor: grabbing; }
+    .drag-handle:active::after, .drag-handle.touch-active::after { background: rgba(255, 255, 255, 0.4); width: 44px; }
 
     /* Dragging state visual feedback */
     .modal.dragging {
@@ -229,8 +232,8 @@
     .size-btn:hover { background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.7); }
     .size-btn.active { background: rgba(10, 132, 255, 0.3); color: #0a84ff; }
     .icon-btn {
-      width: 26px;
-      height: 26px;
+      width: 44px;
+      height: 44px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -240,9 +243,11 @@
       color: rgba(255, 255, 255, 0.5);
       cursor: pointer;
       transition: all 0.15s ease, transform 0.1s ease;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
     .icon-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; transform: scale(1.05); }
-    .icon-btn:active { transform: scale(0.92); }
+    .icon-btn:active, .icon-btn.touch-active { background: rgba(255, 255, 255, 0.15); color: #fff; transform: scale(0.92); }
     .icon-btn:focus-visible {
       outline: none;
       box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.5);
@@ -324,6 +329,8 @@
       color: rgba(255, 255, 255, 0.4);
       cursor: pointer;
       transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
     .history-btn:hover { background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.8); }
     .history-btn.active { color: #0a84ff; }
@@ -405,6 +412,7 @@
     .record-btn { background: #ff9500; }
     .record-btn:hover { background: #ffaa33; transform: scale(1.02); }
     .record-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .submit-btn:active, .submit-btn.touch-active { background: #006edb; transform: scale(0.95); }
 
     .metrics-bar {
       display: flex;
@@ -813,6 +821,7 @@
       width: calc(100% - 24px);
       margin: 0 12px 12px;
       padding: 8px;
+      min-height: 44px;
       background: rgba(50, 215, 75, 0.9);
       border: none;
       border-radius: 8px;
@@ -821,8 +830,12 @@
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
     .export-btn:hover { background: #32d74b; }
+    .stop-btn:hover { background: #ff453a; }
+    .stop-btn:active, .stop-btn.touch-active { background: #cc362e; transform: scale(0.98); }
 
     .export-dialog {
       position: fixed;
@@ -960,7 +973,8 @@
     .speed-slider-value { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.8); min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
     .save-btn {
       width: 100%;
-      padding: 10px;
+      padding: 12px;
+      min-height: 44px;
       background: #0a84ff;
       border: none;
       border-radius: 8px;
@@ -970,9 +984,11 @@
       cursor: pointer;
       margin-top: 6px;
       transition: background-color 0.15s ease, transform 0.1s ease;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
     .save-btn:hover { background: #409cff; }
-    .save-btn:active { transform: scale(0.97); }
+    .save-btn:active, .save-btn.touch-active { background: #006edb; transform: scale(0.97); }
 
     .confirmation-dialog {
       position: fixed;
@@ -1007,12 +1023,14 @@
     .confirmation-content h3 { font-size: 15px; margin-bottom: 8px; }
     .confirmation-content p { font-size: 12px; color: rgba(255, 255, 255, 0.6); margin-bottom: 16px; }
     .confirmation-actions { display: flex; gap: 8px; justify-content: center; }
-    .btn { padding: 8px 16px; border-radius: 6px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; transition: background-color 0.15s ease, transform 0.1s ease; }
+    .btn { padding: 8px 16px; min-height: 44px; border-radius: 6px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: background-color 0.15s ease, transform 0.1s ease; }
     .btn:active { transform: scale(0.97); }
     .btn-cancel { background: rgba(255, 255, 255, 0.1); color: #fff; }
     .btn-cancel:hover { background: rgba(255, 255, 255, 0.15); }
+    .btn-cancel:active, .btn-cancel.touch-active { background: rgba(255, 255, 255, 0.2); transform: scale(0.98); }
     .btn-confirm { background: #0a84ff; color: #fff; }
     .btn-confirm:hover { background: #409cff; }
+    .btn-confirm:active, .btn-confirm.touch-active { background: #006edb; transform: scale(0.98); }
     .btn-confirm.danger { background: #ff453a; }
     .btn-confirm.danger:hover { background: #ff6961; }
 
@@ -1027,6 +1045,47 @@
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 2px; }
+
+    /* Touch gesture support */
+    .status-indicator {
+      padding: 8px;
+      margin: -8px;
+      border-radius: 8px;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      cursor: pointer;
+    }
+    .status-indicator.long-press-active {
+      background: rgba(255, 255, 255, 0.1);
+      transform: scale(1.05);
+    }
+    .status-indicator.long-press-triggered {
+      background: rgba(10, 132, 255, 0.2);
+    }
+
+    .action-content {
+      padding: 8px;
+      margin: -8px;
+      border-radius: 6px;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      cursor: pointer;
+    }
+    .action-content.long-press-active {
+      background: rgba(255, 255, 255, 0.08);
+      transform: scale(1.02);
+    }
+    .action-content.long-press-triggered {
+      background: rgba(50, 215, 75, 0.2);
+    }
+
+    /* Settings panel touch support */
+    .settings-panel.touch-active {
+      touch-action: pan-y;
+    }
+    .settings-panel.swipe-closing {
+      transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+    }
 
     /* Toast notifications */
     .toast {
@@ -1607,6 +1666,29 @@
     .kill-switch:hover .kill-switch-tooltip {
       opacity: 1;
       visibility: visible;
+    }
+
+    /* Prevent text selection during touch interactions */
+    .touch-no-select {
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* Long-press context hint */
+    .context-hint {
+      position: fixed;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.85);
+      border-radius: 6px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.9);
+      pointer-events: none;
+      z-index: 150;
+      animation: hint-in 0.15s ease;
+    }
+    @keyframes hint-in {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
     }
   </style>
 </head>

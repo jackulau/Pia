@@ -167,6 +167,18 @@ const POSITION_PADDING = 20;
 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0 ||
               navigator.userAgent.toUpperCase().indexOf('MAC') >= 0;
 
+// Touch state
+let touchState = {
+  startX: 0,
+  startY: 0,
+  startTime: 0,
+  isTouching: false,
+  longPressTimer: null,
+  longPressTarget: null,
+  swipeThreshold: 50,
+  longPressDelay: 500
+};
+
 // Initialize
 async function init() {
   await loadConfig();
@@ -181,6 +193,7 @@ async function init() {
   setupSizeSelector();
   setupPositionMenu();
   setupKillSwitchDisplay();
+  setupTouchListeners();
   await restoreExpandedState();
   await refreshQueue();
   await loadSavedSizePreset();
@@ -2094,6 +2107,269 @@ async function restoreSavedPosition() {
       await snapToPosition(currentPosition);
     }, 100);
   }
+}
+
+// Setup touch event listeners
+function setupTouchListeners() {
+  const dragHandle = document.querySelector('.drag-handle');
+
+  // Touch feedback for all interactive elements
+  setupTouchFeedback(submitBtn);
+  setupTouchFeedback(stopBtn);
+  setupTouchFeedback(settingsBtn);
+  setupTouchFeedback(settingsCloseBtn);
+  setupTouchFeedback(closeBtn);
+  setupTouchFeedback(saveSettingsBtn);
+  setupTouchFeedback(cancelActionBtn);
+  setupTouchFeedback(confirmActionBtn);
+
+  // Swipe down on drag handle to hide window
+  if (dragHandle) {
+    setupDragHandleSwipe(dragHandle);
+  }
+
+  // Swipe right on settings panel to close
+  setupSettingsPanelSwipe();
+
+  // Long-press on status indicator for detailed info
+  setupLongPress(statusDot.parentElement, () => {
+    showStatusDetails();
+  });
+
+  // Long-press on action content to copy
+  setupLongPress(actionContent, () => {
+    copyActionContent();
+  });
+}
+
+// Add touch feedback to interactive elements
+function setupTouchFeedback(element) {
+  if (!element) return;
+
+  let touchStarted = false;
+
+  element.addEventListener('touchstart', (e) => {
+    touchStarted = true;
+    element.classList.add('touch-active');
+  }, { passive: true });
+
+  element.addEventListener('touchend', (e) => {
+    element.classList.remove('touch-active');
+    // Prevent double-firing with click
+    if (touchStarted) {
+      touchStarted = false;
+    }
+  }, { passive: true });
+
+  element.addEventListener('touchcancel', () => {
+    element.classList.remove('touch-active');
+    touchStarted = false;
+  }, { passive: true });
+}
+
+// Swipe handling for drag handle
+function setupDragHandleSwipe(dragHandle) {
+  let startY = 0;
+  let isDragging = false;
+
+  dragHandle.addEventListener('touchstart', (e) => {
+    startY = e.touches[0].clientY;
+    isDragging = true;
+    dragHandle.classList.add('touch-active');
+  }, { passive: true });
+
+  dragHandle.addEventListener('touchmove', (e) => {
+    if (!isDragging) return;
+    const deltaY = e.touches[0].clientY - startY;
+    // Visual feedback during swipe
+    if (deltaY > 10) {
+      dragHandle.style.opacity = Math.max(0.5, 1 - deltaY / 100);
+    }
+  }, { passive: true });
+
+  dragHandle.addEventListener('touchend', async (e) => {
+    if (!isDragging) return;
+    isDragging = false;
+    dragHandle.classList.remove('touch-active');
+    dragHandle.style.opacity = '';
+
+    const endY = e.changedTouches[0].clientY;
+    const deltaY = endY - startY;
+
+    // Swipe down detected - hide window
+    if (deltaY > touchState.swipeThreshold) {
+      await invoke('hide_window');
+    }
+  }, { passive: true });
+
+  dragHandle.addEventListener('touchcancel', () => {
+    isDragging = false;
+    dragHandle.classList.remove('touch-active');
+    dragHandle.style.opacity = '';
+  }, { passive: true });
+}
+
+// Swipe handling for settings panel
+function setupSettingsPanelSwipe() {
+  let startX = 0;
+  let isSwiping = false;
+
+  settingsPanel.addEventListener('touchstart', (e) => {
+    // Only track horizontal swipes from the left edge area
+    if (e.touches[0].clientX < 50) {
+      startX = e.touches[0].clientX;
+      isSwiping = true;
+    }
+  }, { passive: true });
+
+  settingsPanel.addEventListener('touchmove', (e) => {
+    if (!isSwiping) return;
+    const deltaX = e.touches[0].clientX - startX;
+    // Visual feedback during swipe
+    if (deltaX > 10) {
+      settingsPanel.style.transform = `translateX(${Math.min(deltaX, 100)}px)`;
+      settingsPanel.style.opacity = Math.max(0.5, 1 - deltaX / 200);
+    }
+  }, { passive: true });
+
+  settingsPanel.addEventListener('touchend', (e) => {
+    if (!isSwiping) return;
+    isSwiping = false;
+
+    const endX = e.changedTouches[0].clientX;
+    const deltaX = endX - startX;
+
+    // Swipe right detected - close settings
+    if (deltaX > touchState.swipeThreshold) {
+      settingsPanel.classList.add('swipe-closing');
+      settingsPanel.style.transform = 'translateX(100%)';
+      settingsPanel.style.opacity = '0';
+
+      setTimeout(() => {
+        settingsPanel.classList.add('hidden');
+        settingsPanel.classList.remove('swipe-closing');
+        settingsPanel.style.transform = '';
+        settingsPanel.style.opacity = '';
+        mainModal.classList.remove('hidden');
+      }, 200);
+    } else {
+      // Reset position
+      settingsPanel.style.transform = '';
+      settingsPanel.style.opacity = '';
+    }
+  }, { passive: true });
+
+  settingsPanel.addEventListener('touchcancel', () => {
+    isSwiping = false;
+    settingsPanel.style.transform = '';
+    settingsPanel.style.opacity = '';
+  }, { passive: true });
+}
+
+// Long-press detection
+function setupLongPress(element, callback) {
+  if (!element) return;
+
+  let longPressTimer = null;
+  let isLongPress = false;
+
+  element.addEventListener('touchstart', (e) => {
+    isLongPress = false;
+    element.classList.add('long-press-active');
+
+    longPressTimer = setTimeout(() => {
+      isLongPress = true;
+      element.classList.remove('long-press-active');
+      element.classList.add('long-press-triggered');
+
+      // Haptic feedback if available
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+
+      callback();
+
+      setTimeout(() => {
+        element.classList.remove('long-press-triggered');
+      }, 300);
+    }, touchState.longPressDelay);
+  }, { passive: true });
+
+  element.addEventListener('touchmove', (e) => {
+    // Cancel long press if user moves finger
+    const touch = e.touches[0];
+    const rect = element.getBoundingClientRect();
+    if (touch.clientX < rect.left || touch.clientX > rect.right ||
+        touch.clientY < rect.top || touch.clientY > rect.bottom) {
+      clearTimeout(longPressTimer);
+      element.classList.remove('long-press-active');
+    }
+  }, { passive: true });
+
+  element.addEventListener('touchend', (e) => {
+    clearTimeout(longPressTimer);
+    element.classList.remove('long-press-active');
+
+    // Prevent click if it was a long press
+    if (isLongPress) {
+      e.preventDefault();
+    }
+  });
+
+  element.addEventListener('touchcancel', () => {
+    clearTimeout(longPressTimer);
+    element.classList.remove('long-press-active');
+  }, { passive: true });
+}
+
+// Show detailed status information
+function showStatusDetails() {
+  const statusInfo = `Status: ${statusText.textContent}\nIteration: ${iterationValue.textContent}\nSpeed: ${speedValue.textContent}\nTokens: ${tokensValue.textContent}`;
+
+  showContextHint(statusDot.parentElement, 'Status Details');
+  showToast(statusInfo.split('\n').join(' | '), 'info');
+}
+
+// Copy action content to clipboard
+async function copyActionContent() {
+  const text = actionContent.textContent;
+
+  try {
+    await navigator.clipboard.writeText(text);
+    showContextHint(actionContent, 'Copied!');
+    showToast('Action copied to clipboard', 'success');
+  } catch (err) {
+    // Fallback for older browsers
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+
+    showContextHint(actionContent, 'Copied!');
+    showToast('Action copied to clipboard', 'success');
+  }
+}
+
+// Show context hint near element
+function showContextHint(element, message) {
+  const hint = document.createElement('div');
+  hint.className = 'context-hint';
+  hint.textContent = message;
+
+  const rect = element.getBoundingClientRect();
+  hint.style.left = `${rect.left + rect.width / 2}px`;
+  hint.style.top = `${rect.top - 30}px`;
+  hint.style.transform = 'translateX(-50%)';
+
+  document.body.appendChild(hint);
+
+  setTimeout(() => {
+    hint.remove();
+  }, 1000);
 }
 
 // Initialize the app
