@@ -102,6 +102,7 @@ async fn start_agent_recording(
 ) -> Result<(), String> {
     let agent_state = state.agent_state.clone();
     let config = state.config.read().await.clone();
+    let action_history = state.action_history.clone();
 
     let current_state = agent_state.get_state().await;
     if current_state.status == AgentStatus::Running || current_state.status == AgentStatus::Recording {
@@ -110,7 +111,7 @@ async fn start_agent_recording(
 
     let app = app_handle.clone();
     tokio::spawn(async move {
-        let loop_runner = AgentLoop::new(agent_state, config, app);
+        let loop_runner = AgentLoop::new(agent_state, config, app, action_history);
         if let Err(e) = loop_runner.run_recording(instruction).await {
             log::error!("Agent recording loop error: {}", e);
         }
@@ -256,7 +257,7 @@ async fn undo_last_action(
     };
 
     // Execute the reverse action
-    match execute_action(&reverse_action, false) {
+    match execute_action(&reverse_action, false).await {
         Ok(_result) => {
             // Update undo state after successful undo
             let history = state.action_history.read().await;
@@ -744,6 +745,7 @@ async fn start_queue(
 ) -> Result<(), String> {
     let agent_state = state.agent_state.clone();
     let config = state.config.read().await.clone();
+    let action_history = state.action_history.clone();
     let queue = state.queue.clone();
 
     let current_state = agent_state.get_state().await;
@@ -757,7 +759,7 @@ async fn start_queue(
 
     let app = app_handle.clone();
     tokio::spawn(async move {
-        let loop_runner = AgentLoop::new(agent_state, config, app).with_queue(queue);
+        let loop_runner = AgentLoop::new(agent_state, config, app, action_history).with_queue(queue);
         if let Err(e) = loop_runner.run_queue().await {
             log::error!("Queue processing error: {}", e);
         }

@@ -398,9 +398,10 @@ pub async fn execute_action(
         confirm_dangerous,
         std::time::Duration::from_millis(50),
     )
+    .await
 }
 
-pub fn execute_action_with_delay(
+pub async fn execute_action_with_delay(
     action: &Action,
     confirm_dangerous: bool,
     click_delay: std::time::Duration,
@@ -433,9 +434,9 @@ pub fn execute_action_with_delay(
                 retry_count: 0,
                 action_type: "click".to_string(),
                 details: Some(ActionDetails::Click {
-                    x: *x,
-                    y: *y,
-                    button: button.clone(),
+                    x,
+                    y,
+                    button: button_str,
                 }),
                 tool_use_id: None,
             })
@@ -851,6 +852,13 @@ impl Action {
             // Terminal actions
             Action::Complete { .. } => false,
             Action::Error { .. } => false,
+            // Extended actions cannot be reversed
+            Action::Drag { .. } => false,
+            Action::TripleClick { .. } => false,
+            Action::RightClick { .. } => false,
+            Action::Wait { .. } => false,
+            Action::WaitForElement { .. } => false,
+            Action::Batch { .. } => false,
         }
     }
 
@@ -940,6 +948,24 @@ impl Action {
             } => {
                 format!("Scroll {} {} times at ({}, {})", direction, amount, x, y)
             }
+            Action::Drag { start_x, start_y, end_x, end_y, .. } => {
+                format!("Drag from ({}, {}) to ({}, {})", start_x, start_y, end_x, end_y)
+            }
+            Action::TripleClick { x, y } => {
+                format!("Triple-click at ({}, {})", x, y)
+            }
+            Action::RightClick { x, y } => {
+                format!("Right-click at ({}, {})", x, y)
+            }
+            Action::Wait { duration_ms } => {
+                format!("Wait {} ms", duration_ms)
+            }
+            Action::WaitForElement { description, timeout_ms } => {
+                format!("Wait for: {} (timeout: {} ms)", description, timeout_ms.unwrap_or(5000))
+            }
+            Action::Batch { actions } => {
+                format!("Batch of {} actions", actions.len())
+            }
             Action::Complete { message } => {
                 format!("Completed: {}", truncate_string(message, 50))
             }
@@ -953,7 +979,7 @@ impl Action {
 /// Execute an action with retry logic.
 /// Automatically retries failed actions or actions that don't produce
 /// visible screen changes.
-pub fn execute_action_with_retry(
+pub async fn execute_action_with_retry(
     action: &Action,
     confirm_dangerous: bool,
     retry_ctx: &mut RetryContext,
@@ -968,7 +994,7 @@ pub fn execute_action_with_retry(
         }
 
         // Execute the action
-        let mut result = execute_action(action, confirm_dangerous)?;
+        let mut result = execute_action(action, confirm_dangerous).await?;
 
         // If action failed and we can retry
         if !result.success {

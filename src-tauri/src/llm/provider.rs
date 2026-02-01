@@ -310,16 +310,19 @@ pub trait LlmProvider: Send + Sync {
     }
 
     /// Send a message with tools enabled and get a structured response
-    /// Returns the response with potential tool_use blocks
+    /// Returns the response with potential tool_use blocks.
+    /// Default implementation returns an error since most providers don't support native tools.
     async fn send_with_tools(
         &self,
-        instruction: &str,
-        image_base64: &str,
-        screen_width: u32,
-        screen_height: u32,
-        tool_results: Option<Vec<ToolResult>>,
-        on_chunk: ChunkCallback,
-    ) -> Result<LlmResponse, LlmError>;
+        _instruction: &str,
+        _image_base64: &str,
+        _screen_width: u32,
+        _screen_height: u32,
+        _tool_results: Option<Vec<ToolResult>>,
+        _on_chunk: ChunkCallback,
+    ) -> Result<LlmResponse, LlmError> {
+        Err(LlmError::ApiError("Provider does not support native tool use".to_string()))
+    }
 
     /// Check if this provider supports native tool use
     fn supports_tools(&self) -> bool {

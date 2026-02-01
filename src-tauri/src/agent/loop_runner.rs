@@ -211,6 +211,11 @@ impl AgentLoop {
         show_overlay: bool,
         conversation: &mut ConversationHistory,
     ) -> Result<(), LoopError> {
+        // Initialize delay controller and target iteration delay
+        let speed_multiplier = self.config.general.speed_multiplier;
+        let delay_controller = DelayController::new(speed_multiplier);
+        let target_iteration_delay = delay_controller.iteration_delay();
+
         loop {
             // Check if should stop
             if self.state.should_stop() {
@@ -620,6 +625,7 @@ impl AgentLoop {
             Action::Complete { .. } => "complete".to_string(),
             Action::Error { .. } => "error".to_string(),
             Action::Batch { .. } => "batch".to_string(),
+            Action::WaitForElement { .. } => "wait_for_element".to_string(),
         }
     }
 
@@ -810,6 +816,42 @@ impl AgentLoop {
                 "y": y,
                 "direction": direction,
                 "label": format!("scroll {}", direction)
+            }),
+            Action::Drag { start_x, start_y, end_x, end_y, .. } => serde_json::json!({
+                "action": "drag",
+                "start_x": start_x,
+                "start_y": start_y,
+                "end_x": end_x,
+                "end_y": end_y,
+                "label": "drag"
+            }),
+            Action::TripleClick { x, y } => serde_json::json!({
+                "action": "triple_click",
+                "x": x,
+                "y": y,
+                "label": "triple click"
+            }),
+            Action::RightClick { x, y } => serde_json::json!({
+                "action": "right_click",
+                "x": x,
+                "y": y,
+                "label": "right click"
+            }),
+            Action::Wait { duration_ms } => serde_json::json!({
+                "action": "wait",
+                "duration_ms": duration_ms,
+                "label": "wait"
+            }),
+            Action::WaitForElement { timeout_ms, description } => serde_json::json!({
+                "action": "wait_for_element",
+                "timeout_ms": timeout_ms,
+                "description": description,
+                "label": format!("wait for: {}", description)
+            }),
+            Action::Batch { actions } => serde_json::json!({
+                "action": "batch",
+                "count": actions.len(),
+                "label": format!("batch ({} actions)", actions.len())
             }),
             Action::Complete { .. } | Action::Error { .. } => return,
         };
