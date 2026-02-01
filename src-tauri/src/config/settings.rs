@@ -69,6 +69,12 @@ pub struct GeneralConfig {
     pub enable_self_correction: bool,
     #[serde(default = "default_speed_multiplier")]
     pub speed_multiplier: f32,
+    #[serde(default = "default_true")]
+    pub voice_input_enabled: bool,
+    #[serde(default)]
+    pub voice_auto_submit: bool,
+    #[serde(default = "default_voice_language")]
+    pub voice_language: String,
 }
 
 fn default_global_hotkey() -> Option<String> {
@@ -101,6 +107,14 @@ fn default_speed_multiplier() -> f32 {
 
 fn default_show_visual_feedback() -> bool {
     true
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_voice_language() -> String {
+    "en-US".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -156,6 +170,9 @@ impl Default for Config {
                 retry_delay_ms: default_retry_delay_ms(),
                 enable_self_correction: default_enable_self_correction(),
                 speed_multiplier: 1.0,
+                voice_input_enabled: true,
+                voice_auto_submit: false,
+                voice_language: "en-US".to_string(),
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {
