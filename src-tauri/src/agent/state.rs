@@ -48,6 +48,7 @@ pub struct AgentState {
     pub queue_total: usize,
     pub queue_active: bool,
     pub preview_mode: bool,
+    pub last_screenshot: Option<String>,
 }
 
 impl Default for AgentState {
@@ -70,6 +71,7 @@ impl Default for AgentState {
             queue_total: 0,
             queue_active: false,
             preview_mode: false,
+            last_screenshot: None,
         }
     }
 }
@@ -168,6 +170,11 @@ impl AgentStateManager {
             timestamp: Utc::now().to_rfc3339(),
             is_error: true,
         });
+    }
+
+    pub async fn set_last_screenshot(&self, screenshot: String) {
+        let mut state = self.state.write().await;
+        state.last_screenshot = Some(screenshot);
     }
 
     pub async fn update_metrics(&self, tokens_per_sec: f64, input_tokens: u64, output_tokens: u64) {

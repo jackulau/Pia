@@ -57,6 +57,9 @@ const speedValue = document.getElementById('speed-value');
 const tokensValue = document.getElementById('tokens-value');
 const timelineList = document.getElementById('timeline-list');
 const actionCount = document.getElementById('action-count');
+const actionContent = document.getElementById('action-content');
+const screenshotThumbnail = document.getElementById('screenshot-thumbnail');
+const previewPlaceholder = document.getElementById('preview-placeholder');
 
 // Settings elements
 const providerSelect = document.getElementById('provider-select');
@@ -744,6 +747,16 @@ function updateAgentState(state) {
         }
       }
     }
+  }
+
+  // Update screenshot thumbnail
+  if (state.last_screenshot) {
+    screenshotThumbnail.src = `data:image/png;base64,${state.last_screenshot}`;
+    screenshotThumbnail.classList.add('visible');
+    previewPlaceholder.classList.add('hidden');
+  } else {
+    screenshotThumbnail.classList.remove('visible');
+    previewPlaceholder.classList.remove('hidden');
   }
 
   // Update action timeline

@@ -63,6 +63,18 @@ pub enum LlmResponse {
     Text(String),
 }
 
+impl LlmResponse {
+    /// Convert to a string representation for logging/conversation history
+    pub fn to_string_repr(&self) -> String {
+        match self {
+            LlmResponse::ToolUse(tool_use) => {
+                serde_json::to_string(tool_use).unwrap_or_else(|_| format!("{:?}", tool_use))
+            }
+            LlmResponse::Text(text) => text.clone(),
+        }
+    }
+}
+
 /// Build tool definitions for all computer use actions
 pub fn build_tools() -> Vec<Tool> {
     vec![
@@ -232,7 +244,7 @@ pub trait LlmProvider: Send + Sync {
         screen_width: u32,
         screen_height: u32,
         on_chunk: ChunkCallback,
-    ) -> Result<(String, TokenMetrics), LlmError>;
+    ) -> Result<(LlmResponse, TokenMetrics), LlmError>;
 
     /// Legacy method for sending a single image with instruction.
     /// Kept for backwards compatibility but delegates to send_with_history.
@@ -243,7 +255,7 @@ pub trait LlmProvider: Send + Sync {
         screen_width: u32,
         screen_height: u32,
         on_chunk: ChunkCallback,
-    ) -> Result<(String, TokenMetrics), LlmError> {
+    ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         // Create a temporary conversation history with just this message
         let mut history = ConversationHistory::new();
         history.add_user_message(

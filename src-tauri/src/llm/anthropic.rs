@@ -154,6 +154,7 @@ impl LlmProvider for AnthropicProvider {
             max_tokens: 1024,
             system: system_prompt,
             messages,
+            tools,
             stream: true,
         };
 

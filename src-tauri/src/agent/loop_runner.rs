@@ -1,4 +1,4 @@
-use super::action::{execute_action, parse_action, parse_llm_response, Action, ActionError};
+use super::action::{execute_action, parse_llm_response, Action, ActionError};
 use super::conversation::ConversationHistory;
 use super::history::ActionEntry;
 use super::queue::{QueueFailureMode, QueueManager};
@@ -246,6 +246,12 @@ impl AgentLoop {
                 Some(screenshot.height),
             );
 
+            // Store screenshot in state for frontend preview
+            self.state
+                .set_last_screenshot(screenshot.base64.clone())
+                .await;
+            self.emit_state_update().await;
+
             // Create callback for chunk streaming
             let app_handle = self.app_handle.clone();
             let on_chunk: Box<dyn Fn(&str) + Send + Sync> = Box::new(move |chunk: &str| {
@@ -286,7 +292,8 @@ impl AgentLoop {
             };
 
             // Add assistant response to conversation
-            conversation.add_assistant_message(&response);
+            let response_str = response.to_string_repr();
+            conversation.add_assistant_message(&response_str);
 
             // Update metrics
             self.state
@@ -300,7 +307,7 @@ impl AgentLoop {
             self.emit_state_update().await;
 
             // Parse action - on parse error, send feedback to LLM
-            let action = match parse_action(&response) {
+            let action = match parse_llm_response(&response) {
                 Ok(a) => a,
                 Err(parse_err) => {
                     self.state.increment_consecutive_errors().await;
@@ -368,7 +375,7 @@ impl AgentLoop {
                         action_type: action_type.clone(),
                         action_details: action_details.clone(),
                         screenshot_base64: Some(screenshot.base64.clone()),
-                        llm_response: response.clone(),
+                        llm_response: response_str.clone(),
                         success: true,
                         error_message: None,
                         result_message: result.message.clone(),
@@ -388,7 +395,7 @@ impl AgentLoop {
                         let _ = self.app_handle.emit(
                             "instruction-completed",
                             HistoryEvent {
-                                instruction: instruction.clone(),
+                                instruction: instruction.to_string(),
                                 success: true,
                             },
                         );
@@ -410,7 +417,7 @@ impl AgentLoop {
                         action_type: action_type.clone(),
                         action_details: action_details.clone(),
                         screenshot_base64: Some(screenshot.base64.clone()),
-                        llm_response: response.clone(),
+                        llm_response: response_str.clone(),
                         success: false,
                         error_message: Some(format!("Requires confirmation: {}", msg)),
                         result_message: None,
@@ -470,7 +477,7 @@ impl AgentLoop {
                         action_type: action_type.clone(),
                         action_details: action_details.clone(),
                         screenshot_base64: Some(screenshot.base64.clone()),
-                        llm_response: response.clone(),
+                        llm_response: response_str.clone(),
                         success: false,
                         error_message: Some(e.to_string()),
                         result_message: None,
@@ -490,7 +497,7 @@ impl AgentLoop {
                     let _ = self.app_handle.emit(
                         "instruction-completed",
                         HistoryEvent {
-                            instruction: instruction.clone(),
+                            instruction: instruction.to_string(),
                             success: false,
                         },
                     );
@@ -590,7 +597,7 @@ impl AgentLoop {
                 QueueProgressEvent {
                     current_index,
                     total,
-                    current_instruction: instruction.clone(),
+                    current_instruction: instruction.to_string(),
                     status: "running".to_string(),
                 },
             );
