@@ -516,13 +516,6 @@ async function deleteTemplate(id) {
   }
 }
 
-// Escape HTML to prevent XSS
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
 // Setup DOM event listeners
 function setupEventListeners() {
   // Submit instruction
@@ -1245,7 +1238,7 @@ function updateAgentState(state) {
 
         const time = document.createElement('span');
         time.className = 'timeline-time';
-        time.textContent = formatTimestamp(entry.timestamp);
+        time.textContent = formatTimeOnly(entry.timestamp);
 
         const actionContainer = document.createElement('span');
         actionContainer.className = 'timeline-action';
@@ -1395,8 +1388,8 @@ function renderActionWithIcon(container, actionType, text) {
   container.appendChild(textEl);
 }
 
-// Format timestamp for timeline display
-function formatTimestamp(isoString) {
+// Format timestamp for timeline display (HH:MM:SS format)
+function formatTimeOnly(isoString) {
   const date = new Date(isoString);
   return date.toLocaleTimeString('en-US', {
     hour: '2-digit',
@@ -1952,13 +1945,6 @@ function updateQueueItemStatus(index, status) {
     queueItems[index].status = status.charAt(0).toUpperCase() + status.slice(1);
     renderQueue();
   }
-}
-
-// Escape HTML for safe display
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 // Expose removeQueueItem to window for inline onclick handlers
