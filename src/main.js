@@ -113,6 +113,11 @@ const positionBtn = document.getElementById('position-btn');
 const positionDropdown = document.getElementById('position-dropdown');
 const positionOptions = document.querySelectorAll('.position-option');
 
+// Kill switch elements
+const killSwitch = document.getElementById('kill-switch');
+const killSwitchShortcut = document.getElementById('kill-switch-shortcut');
+const killSwitchTooltip = document.getElementById('kill-switch-tooltip');
+
 // State
 let isRunning = false;
 let isPaused = false;
@@ -135,6 +140,7 @@ let resizeDebounceTimer = null;
 let currentSizePreset = 'standard';
 let currentPosition = localStorage.getItem('pia-window-position') || null;
 let cachedTemplates = [];
+let killSwitchTriggered = false;
 
 // Window sizes
 const COMPACT_SIZE = { width: 420, height: 280 };
@@ -142,6 +148,10 @@ const EXPANDED_SIZE = { width: 500, height: 450 };
 
 // Position constants
 const POSITION_PADDING = 20;
+
+// Platform detection
+const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0 ||
+              navigator.userAgent.toUpperCase().indexOf('MAC') >= 0;
 
 // Initialize
 async function init() {
@@ -156,6 +166,7 @@ async function init() {
   setupResizeListener();
   setupSizeSelector();
   setupPositionMenu();
+  setupKillSwitchDisplay();
   await restoreExpandedState();
   await refreshQueue();
   await loadSavedSizePreset();
@@ -740,6 +751,47 @@ async function setupTauriListeners() {
   await listen('queue-item-failed', (event) => {
     updateQueueItemStatus(event.payload.current_index, 'failed');
   });
+
+  // Kill switch triggered
+  await listen('kill-switch-triggered', () => {
+    handleKillSwitchTriggered();
+  });
+}
+
+// Setup kill switch display based on platform
+function setupKillSwitchDisplay() {
+  if (isMac) {
+    killSwitchShortcut.textContent = '⌘⇧⎋';
+    killSwitchTooltip.textContent = 'Emergency Stop: Press ⌘+Shift+Escape to stop';
+  } else {
+    killSwitchShortcut.textContent = 'Ctrl+Shift+Esc';
+    killSwitchTooltip.textContent = 'Emergency Stop: Press Ctrl+Shift+Escape to stop';
+  }
+}
+
+// Update kill switch indicator state
+function updateKillSwitchState(status, triggered) {
+  killSwitch.className = 'kill-switch';
+
+  if (triggered) {
+    killSwitch.classList.add('kill-switch--triggered');
+    killSwitchTriggered = true;
+
+    // Reset to idle after animation completes
+    setTimeout(() => {
+      killSwitchTriggered = false;
+      updateKillSwitchState('Idle', false);
+    }, 1500);
+  } else if (status === 'Running') {
+    killSwitch.classList.add('kill-switch--armed');
+  } else {
+    killSwitch.classList.add('kill-switch--idle');
+  }
+}
+
+// Handle kill switch triggered event
+function handleKillSwitchTriggered() {
+  updateKillSwitchState('Idle', true);
 }
 
 // Submit instruction to agent
@@ -841,6 +893,11 @@ function updateAgentState(state) {
   if (state.preview_mode !== previewMode) {
     previewMode = state.preview_mode;
     updatePreviewModeUI();
+  }
+
+  // Update kill switch indicator (unless it was just triggered)
+  if (!killSwitchTriggered) {
+    updateKillSwitchState(state.status, state.kill_switch_triggered);
   }
 
   // Update status indicator

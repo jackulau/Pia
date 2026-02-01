@@ -41,6 +41,7 @@ struct AgentStatePayload {
     queue_total: usize,
     queue_active: bool,
     preview_mode: bool,
+    kill_switch_triggered: bool,
 }
 
 #[tauri::command]
@@ -104,6 +105,7 @@ async fn get_agent_state(state: State<'_, AppState>) -> Result<AgentStatePayload
         queue_total: s.queue_total,
         queue_active: s.queue_active,
         preview_mode: s.preview_mode,
+        kill_switch_triggered: s.kill_switch_triggered,
     })
 }
 
@@ -744,6 +746,29 @@ pub fn run() {
                     Err(e) => println!("Failed to register global hotkey '{}': {}", shortcut_str, e),
                 }
             }
+
+            // Register kill switch global shortcut
+            // Cmd+Shift+Escape on macOS, Ctrl+Shift+Escape on Windows/Linux
+            let kill_switch_shortcut = if cfg!(target_os = "macos") {
+                Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::Escape)
+            } else {
+                Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Escape)
+            };
+
+            let app_handle = app.handle().clone();
+            app.global_shortcut().on_shortcut(kill_switch_shortcut, move |_app, shortcut, event| {
+                if event.state == ShortcutState::Pressed {
+                    println!("Kill switch triggered! Shortcut: {:?}", shortcut);
+
+                    // Get the agent state and trigger the kill switch
+                    if let Some(app_state) = app_handle.try_state::<AppState>() {
+                        app_state.agent_state.trigger_kill_switch();
+
+                        // Emit event to frontend for visual feedback
+                        let _ = app_handle.emit("kill-switch-triggered", ());
+                    }
+                }
+            })?;
 
             // Show main window on startup
             if let Some(window) = app.get_webview_window("main") {

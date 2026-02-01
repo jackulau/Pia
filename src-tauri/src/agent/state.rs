@@ -49,6 +49,7 @@ pub struct AgentState {
     pub queue_active: bool,
     pub preview_mode: bool,
     pub last_screenshot: Option<String>,
+    pub kill_switch_triggered: bool,
 }
 
 impl Default for AgentState {
@@ -72,6 +73,7 @@ impl Default for AgentState {
             queue_active: false,
             preview_mode: false,
             last_screenshot: None,
+            kill_switch_triggered: false,
         }
     }
 }
@@ -83,6 +85,7 @@ pub struct AgentStateManager {
     confirmation_tx: Arc<RwLock<Option<mpsc::Sender<ConfirmationResponse>>>>,
     confirmation_rx: Arc<RwLock<Option<mpsc::Receiver<ConfirmationResponse>>>>,
     history: HistoryManager,
+    kill_switch_triggered: Arc<AtomicBool>,
 }
 
 impl Clone for AgentStateManager {
@@ -94,6 +97,7 @@ impl Clone for AgentStateManager {
             confirmation_tx: Arc::clone(&self.confirmation_tx),
             confirmation_rx: Arc::clone(&self.confirmation_rx),
             history: self.history.clone(),
+            kill_switch_triggered: Arc::clone(&self.kill_switch_triggered),
         }
     }
 }
@@ -108,6 +112,7 @@ impl AgentStateManager {
             confirmation_tx: Arc::new(RwLock::new(Some(tx))),
             confirmation_rx: Arc::new(RwLock::new(Some(rx))),
             history: HistoryManager::new(),
+            kill_switch_triggered: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -116,7 +121,9 @@ impl AgentStateManager {
     }
 
     pub async fn get_state(&self) -> AgentState {
-        self.state.read().await.clone()
+        let mut state = self.state.read().await.clone();
+        state.kill_switch_triggered = self.kill_switch_triggered.load(Ordering::SeqCst);
+        state
     }
 
     pub async fn set_status(&self, status: AgentStatus) {
@@ -140,6 +147,7 @@ impl AgentStateManager {
         state.consecutive_errors = 0;
         self.should_stop.store(false, Ordering::SeqCst);
         self.should_pause.store(false, Ordering::SeqCst);
+        self.kill_switch_triggered.store(false, Ordering::SeqCst);
         // Start a new history session
         drop(state); // Release write lock before async call
         self.history.start_session(instruction).await;
@@ -196,6 +204,19 @@ impl AgentStateManager {
         self.should_stop.store(true, Ordering::SeqCst);
     }
 
+    pub fn trigger_kill_switch(&self) {
+        self.kill_switch_triggered.store(true, Ordering::SeqCst);
+        self.should_stop.store(true, Ordering::SeqCst);
+    }
+
+    pub fn clear_kill_switch(&self) {
+        self.kill_switch_triggered.store(false, Ordering::SeqCst);
+    }
+
+    pub fn is_kill_switch_triggered(&self) -> bool {
+        self.kill_switch_triggered.load(Ordering::SeqCst)
+    }
+
     pub fn should_stop(&self) -> bool {
         self.should_stop.load(Ordering::SeqCst)
     }
@@ -217,6 +238,7 @@ impl AgentStateManager {
         *state = AgentState::default();
         self.should_stop.store(false, Ordering::SeqCst);
         self.should_pause.store(false, Ordering::SeqCst);
+        self.kill_switch_triggered.store(false, Ordering::SeqCst);
         drop(state);
         self.history.clear().await;
     }
