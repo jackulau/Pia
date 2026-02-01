@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getActionIcon } from './icons/action-icons.js';
-import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalSize, PhysicalPosition, PhysicalSize, availableMonitors, currentMonitor } from '@tauri-apps/api/window';
 // CSS is inlined in index.html for transparent window support
 
 // Size presets configuration
@@ -96,6 +96,11 @@ const sizeMiniBtn = document.getElementById('size-mini');
 const sizeStandardBtn = document.getElementById('size-standard');
 const sizeDetailedBtn = document.getElementById('size-detailed');
 
+// Position menu elements
+const positionBtn = document.getElementById('position-btn');
+const positionDropdown = document.getElementById('position-dropdown');
+const positionOptions = document.querySelectorAll('.position-option');
+
 // State
 let isRunning = false;
 let isPaused = false;
@@ -116,10 +121,14 @@ let queueItems = [];
 let previewMode = false;
 let resizeDebounceTimer = null;
 let currentSizePreset = 'standard';
+let currentPosition = localStorage.getItem('pia-window-position') || null;
 
 // Window sizes
 const COMPACT_SIZE = { width: 420, height: 280 };
 const EXPANDED_SIZE = { width: 500, height: 450 };
+
+// Position constants
+const POSITION_PADDING = 20;
 
 // Initialize
 async function init() {
@@ -132,9 +141,11 @@ async function init() {
   setupKeyboardNavigation();
   setupResizeListener();
   setupSizeSelector();
+  setupPositionMenu();
   await restoreExpandedState();
   await refreshQueue();
   await loadSavedSizePreset();
+  await restoreSavedPosition();
 
   // Auto-focus input on app start
   instructionInput.focus();
@@ -1519,6 +1530,120 @@ function setupSizeSelector() {
   sizeMiniBtn.addEventListener('click', () => applySizePreset('mini'));
   sizeStandardBtn.addEventListener('click', () => applySizePreset('standard'));
   sizeDetailedBtn.addEventListener('click', () => applySizePreset('detailed'));
+}
+
+// Setup position menu
+function setupPositionMenu() {
+  // Toggle dropdown
+  positionBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    positionDropdown.classList.toggle('visible');
+    positionDropdown.classList.remove('hidden');
+  });
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!positionDropdown.contains(e.target) && e.target !== positionBtn) {
+      positionDropdown.classList.remove('visible');
+    }
+  });
+
+  // Position option clicks
+  positionOptions.forEach(option => {
+    option.addEventListener('click', async () => {
+      const position = option.dataset.position;
+      await snapToPosition(position);
+      positionDropdown.classList.remove('visible');
+    });
+  });
+
+  // Update active state based on saved position
+  updatePositionActiveState();
+}
+
+// Update active state in dropdown
+function updatePositionActiveState() {
+  positionOptions.forEach(option => {
+    option.classList.toggle('active', option.dataset.position === currentPosition);
+  });
+}
+
+// Calculate snap positions
+async function calculateSnapPositions() {
+  const appWindow = getCurrentWindow();
+  const monitor = await currentMonitor();
+
+  if (!monitor) {
+    console.error('No monitor found');
+    return null;
+  }
+
+  const windowSize = await appWindow.innerSize();
+  const screenSize = monitor.size;
+  const screenPosition = monitor.position;
+
+  const windowWidth = windowSize.width;
+  const windowHeight = windowSize.height;
+  const screenWidth = screenSize.width;
+  const screenHeight = screenSize.height;
+  const screenX = screenPosition.x;
+  const screenY = screenPosition.y;
+
+  return {
+    'top-left': {
+      x: screenX + POSITION_PADDING,
+      y: screenY + POSITION_PADDING
+    },
+    'top-right': {
+      x: screenX + screenWidth - windowWidth - POSITION_PADDING,
+      y: screenY + POSITION_PADDING
+    },
+    'bottom-left': {
+      x: screenX + POSITION_PADDING,
+      y: screenY + screenHeight - windowHeight - POSITION_PADDING
+    },
+    'bottom-right': {
+      x: screenX + screenWidth - windowWidth - POSITION_PADDING,
+      y: screenY + screenHeight - windowHeight - POSITION_PADDING
+    },
+    'center': {
+      x: screenX + Math.floor((screenWidth - windowWidth) / 2),
+      y: screenY + Math.floor((screenHeight - windowHeight) / 2)
+    }
+  };
+}
+
+// Snap window to position
+async function snapToPosition(position) {
+  try {
+    const positions = await calculateSnapPositions();
+    if (!positions || !positions[position]) {
+      console.error('Invalid position:', position);
+      return;
+    }
+
+    const appWindow = getCurrentWindow();
+    const { x, y } = positions[position];
+
+    await appWindow.setPosition(new PhysicalPosition(x, y));
+
+    // Save position preference
+    currentPosition = position;
+    localStorage.setItem('pia-window-position', position);
+    updatePositionActiveState();
+  } catch (error) {
+    console.error('Failed to snap to position:', error);
+  }
+}
+
+// Restore saved position on startup
+async function restoreSavedPosition() {
+  if (currentPosition) {
+    // Small delay to ensure window is ready
+    setTimeout(async () => {
+      await snapToPosition(currentPosition);
+    }, 100);
+  }
 }
 
 // Initialize the app

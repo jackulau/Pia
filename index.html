@@ -1195,6 +1195,52 @@
       .action-content { font-size: 12px; line-height: 1.5; }
       .stop-btn { font-size: 13px; padding: 10px; margin: 0 16px 14px; width: calc(100% - 32px); }
     }
+
+    /* Position Menu */
+    .position-menu-container { position: relative; }
+    .position-dropdown {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 4px;
+      min-width: 140px;
+      background: rgba(40, 40, 42, 0.98);
+      -webkit-backdrop-filter: blur(30px);
+      backdrop-filter: blur(30px);
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      padding: 4px;
+      z-index: 50;
+      opacity: 0;
+      transform: translateY(-4px) scale(0.96);
+      pointer-events: none;
+      transition: opacity 0.15s, transform 0.15s;
+    }
+    .position-dropdown.visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+    .position-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 10px;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.12s;
+      text-align: left;
+    }
+    .position-option:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+    .position-option.active { background: rgba(10, 132, 255, 0.3); color: #fff; }
+    .position-option svg { opacity: 0.6; flex-shrink: 0; }
+    .position-option:hover svg, .position-option.active svg { opacity: 1; }
   </style>
 </head>
 <body>
@@ -1218,6 +1264,38 @@
             <button class="size-btn" id="size-mini" title="Mini view" aria-label="Mini view">S</button>
             <button class="size-btn active" id="size-standard" title="Standard view" aria-label="Standard view">M</button>
             <button class="size-btn" id="size-detailed" title="Detailed view" aria-label="Detailed view">L</button>
+          </div>
+          <div class="position-menu-container">
+            <button class="icon-btn" id="position-btn" title="Snap Position" aria-label="Snap to corner">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+            </button>
+            <div class="position-dropdown hidden" id="position-dropdown" role="menu">
+              <button class="position-option" data-position="top-left" role="menuitem">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="2" y="2" width="8" height="8" rx="1"></rect></svg>
+                <span>Top Left</span>
+              </button>
+              <button class="position-option" data-position="top-right" role="menuitem">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="14" y="2" width="8" height="8" rx="1"></rect></svg>
+                <span>Top Right</span>
+              </button>
+              <button class="position-option" data-position="bottom-left" role="menuitem">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="2" y="14" width="8" height="8" rx="1"></rect></svg>
+                <span>Bottom Left</span>
+              </button>
+              <button class="position-option" data-position="bottom-right" role="menuitem">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="14" y="14" width="8" height="8" rx="1"></rect></svg>
+                <span>Bottom Right</span>
+              </button>
+              <button class="position-option" data-position="center" role="menuitem">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="8" y="8" width="8" height="8" rx="1"></rect></svg>
+                <span>Center</span>
+              </button>
+            </div>
           </div>
           <button class="icon-btn" id="expand-btn" title="Expand" aria-label="Expand/collapse window">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
