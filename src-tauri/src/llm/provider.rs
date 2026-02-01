@@ -234,6 +234,47 @@ pub fn build_tools() -> Vec<Tool> {
     ]
 }
 
+/// Represents a tool result to be sent back to the LLM
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolResult {
+    /// The ID of the tool_use block this result corresponds to
+    pub tool_use_id: String,
+    /// Whether this result represents an error
+    pub is_error: bool,
+    /// The content/output of the tool execution
+    pub content: String,
+}
+
+impl ToolResult {
+    /// Create a successful tool result
+    pub fn success(tool_use_id: String, content: String) -> Self {
+        Self {
+            tool_use_id,
+            is_error: false,
+            content,
+        }
+    }
+
+    /// Create an error tool result
+    pub fn error(tool_use_id: String, error_message: String) -> Self {
+        Self {
+            tool_use_id,
+            is_error: true,
+            content: error_message,
+        }
+    }
+
+    /// Convert to JSON format for API
+    pub fn to_json(&self) -> serde_json::Value {
+        json!({
+            "type": "tool_result",
+            "tool_use_id": self.tool_use_id,
+            "is_error": self.is_error,
+            "content": self.content,
+        })
+    }
+}
+
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
     /// Sends a message with conversation history to the LLM.
@@ -266,6 +307,23 @@ pub trait LlmProvider: Send + Sync {
         );
         self.send_with_history(&history, screen_width, screen_height, on_chunk)
             .await
+    }
+
+    /// Send a message with tools enabled and get a structured response
+    /// Returns the response with potential tool_use blocks
+    async fn send_with_tools(
+        &self,
+        instruction: &str,
+        image_base64: &str,
+        screen_width: u32,
+        screen_height: u32,
+        tool_results: Option<Vec<ToolResult>>,
+        on_chunk: ChunkCallback,
+    ) -> Result<LlmResponse, LlmError>;
+
+    /// Check if this provider supports native tool use
+    fn supports_tools(&self) -> bool {
+        false
     }
 
     fn name(&self) -> &str;

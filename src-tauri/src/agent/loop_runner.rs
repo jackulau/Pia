@@ -1,4 +1,4 @@
-use super::action::{execute_action, execute_action_with_delay, execute_action_with_retry, parse_llm_response, Action, ActionError};
+use super::action::{execute_action, execute_action_with_delay, execute_action_with_retry, parse_llm_response, Action, ActionError, ActionResult};
 use super::conversation::ConversationHistory;
 use super::delay::DelayController;
 use super::history::{ActionEntry, ActionHistory, ActionRecord};
@@ -12,7 +12,7 @@ use super::state::{AgentStateManager, AgentStatus, ConfirmationResponse, Executi
 use crate::capture::{capture_primary_screen, CaptureError, Screenshot};
 use crate::config::Config;
 use crate::llm::{
-    AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider,
+    AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider, ToolResult,
 };
 use chrono::Utc;
 use serde::Serialize;

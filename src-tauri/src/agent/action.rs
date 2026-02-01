@@ -5,7 +5,7 @@ use crate::input::{
 use crate::llm::provider::{LlmResponse, ToolUse};
 use super::retry::{RetryContext, RetryError};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::thread;
 use std::time::Duration;
 use thiserror::Error;
@@ -110,6 +110,45 @@ fn default_wait_duration() -> u64 {
     1000
 }
 
+/// Details specific to each action type, used for rich feedback
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ActionDetails {
+    Click {
+        x: i32,
+        y: i32,
+        button: String,
+    },
+    DoubleClick {
+        x: i32,
+        y: i32,
+    },
+    Move {
+        x: i32,
+        y: i32,
+    },
+    Type {
+        text_length: usize,
+        preview: String,
+    },
+    Key {
+        key: String,
+        modifiers: Vec<String>,
+    },
+    Scroll {
+        x: i32,
+        y: i32,
+        direction: String,
+        amount: i32,
+    },
+    Complete {
+        message: String,
+    },
+    Error {
+        message: String,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionResult {
     pub success: bool,
@@ -117,6 +156,37 @@ pub struct ActionResult {
     pub message: Option<String>,
     #[serde(default)]
     pub retry_count: u32,
+    /// The type of action that was executed
+    #[serde(default)]
+    pub action_type: String,
+    /// Detailed information about the executed action
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<ActionDetails>,
+    /// The tool_use_id this result corresponds to (set by caller)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_use_id: Option<String>,
+}
+
+impl ActionResult {
+    /// Convert this ActionResult to a tool_result content string for the Anthropic API
+    pub fn to_tool_result_content(&self) -> String {
+        let status = if self.success { "success" } else { "error" };
+        let result = json!({
+            "status": status,
+            "action": self.action_type,
+            "message": self.message,
+            "details": self.details,
+        });
+        serde_json::to_string(&result).unwrap_or_else(|_| {
+            format!("Action {} {}", self.action_type, status)
+        })
+    }
+
+    /// Set the tool_use_id for this result
+    pub fn with_tool_use_id(mut self, id: String) -> Self {
+        self.tool_use_id = Some(id);
+        self
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -357,6 +427,13 @@ pub fn execute_action_with_delay(
                 completed: false,
                 message: Some(format!("Clicked {} at ({}, {})", button_str, x, y)),
                 retry_count: 0,
+                action_type: "click".to_string(),
+                details: Some(ActionDetails::Click {
+                    x: *x,
+                    y: *y,
+                    button: button.clone(),
+                }),
+                tool_use_id: None,
             })
         }
 
@@ -371,6 +448,9 @@ pub fn execute_action_with_delay(
                 completed: false,
                 message: Some(format!("Double-clicked at ({}, {})", x, y)),
                 retry_count: 0,
+                action_type: "double_click".to_string(),
+                details: Some(ActionDetails::DoubleClick { x: *x, y: *y }),
+                tool_use_id: None,
             })
         }
 
@@ -383,6 +463,9 @@ pub fn execute_action_with_delay(
                 completed: false,
                 message: Some(format!("Moved mouse to ({}, {})", x, y)),
                 retry_count: 0,
+                action_type: "move".to_string(),
+                details: Some(ActionDetails::Move { x: *x, y: *y }),
+                tool_use_id: None,
             })
         }
 
@@ -395,6 +478,12 @@ pub fn execute_action_with_delay(
                 completed: false,
                 message: Some(format!("Typed: {}", truncate_string(text, 50))),
                 retry_count: 0,
+                action_type: "type".to_string(),
+                details: Some(ActionDetails::Type {
+                    text_length: text.len(),
+                    preview: truncate_string(text, 50),
+                }),
+                tool_use_id: None,
             })
         }
 
@@ -426,6 +515,12 @@ pub fn execute_action_with_delay(
                 completed: false,
                 message: Some(format!("Pressed key: {} with modifiers: {:?}", key, modifiers)),
                 retry_count: 0,
+                action_type: "key".to_string(),
+                details: Some(ActionDetails::Key {
+                    key: key.clone(),
+                    modifiers: modifiers.clone(),
+                }),
+                tool_use_id: None,
             })
         }
 
@@ -463,6 +558,14 @@ pub fn execute_action_with_delay(
                 completed: false,
                 message: Some(format!("Scrolled {} {} times at ({}, {})", direction_str, amount, x, y)),
                 retry_count: 0,
+                action_type: "scroll".to_string(),
+                details: Some(ActionDetails::Scroll {
+                    x,
+                    y,
+                    direction: direction_str.clone(),
+                    amount,
+                }),
+                tool_use_id: None,
             })
         }
 
@@ -505,6 +608,9 @@ pub fn execute_action_with_delay(
                     start_x, start_y, end_x, end_y
                 )),
                 retry_count: 0,
+                action_type: "drag".to_string(),
+                details: None,
+                tool_use_id: None,
             })
         }
 
@@ -518,6 +624,9 @@ pub fn execute_action_with_delay(
                 completed: false,
                 message: Some(format!("Triple-clicked at ({}, {})", x, y)),
                 retry_count: 0,
+                action_type: "triple_click".to_string(),
+                details: None,
+                tool_use_id: None,
             })
         }
 
@@ -530,6 +639,9 @@ pub fn execute_action_with_delay(
                 completed: false,
                 message: Some(format!("Right-clicked at ({}, {})", x, y)),
                 retry_count: 0,
+                action_type: "right_click".to_string(),
+                details: None,
+                tool_use_id: None,
             })
         }
 
@@ -541,6 +653,9 @@ pub fn execute_action_with_delay(
                 completed: false,
                 message: Some(format!("Waited {} ms", duration_ms)),
                 retry_count: 0,
+                action_type: "wait".to_string(),
+                details: None,
+                tool_use_id: None,
             })
         }
 
@@ -549,6 +664,11 @@ pub fn execute_action_with_delay(
             completed: true,
             message: Some(message.clone()),
             retry_count: 0,
+            action_type: "complete".to_string(),
+            details: Some(ActionDetails::Complete {
+                message: message.clone(),
+            }),
+            tool_use_id: None,
         }),
 
         Action::Error { message } => Ok(ActionResult {
@@ -556,6 +676,11 @@ pub fn execute_action_with_delay(
             completed: true,
             message: Some(message.clone()),
             retry_count: 0,
+            action_type: "error".to_string(),
+            details: Some(ActionDetails::Error {
+                message: message.clone(),
+            }),
+            tool_use_id: None,
         }),
 
         Action::Batch { actions } => {
