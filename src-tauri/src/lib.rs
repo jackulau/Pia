@@ -474,11 +474,27 @@ async fn show_cursor_indicator(
 }
 
 #[tauri::command]
+async fn show_overlay(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(overlay) = app_handle.get_webview_window("overlay") {
+        overlay.show().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn hide_cursor_indicator(app_handle: AppHandle) -> Result<(), String> {
     if let Some(overlay) = app_handle.get_webview_window("cursor-overlay") {
         overlay.emit("hide-cursor-indicator", ()).map_err(|e| e.to_string())?;
         // Hide after a short delay for animation
         tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+        overlay.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn hide_overlay(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(overlay) = app_handle.get_webview_window("overlay") {
         overlay.hide().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -784,6 +800,7 @@ async fn remove_from_history(index: usize, state: State<'_, AppState>) -> Result
         Err("Invalid history index".to_string())
     }
 }
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = Config::load().unwrap_or_default();
@@ -914,10 +931,34 @@ pub fn run() {
                 println!("ERROR: No window found!");
             }
 
-            // Show overlay window if enabled in config
+            // Show coordinate overlay window if enabled in config
             if show_overlay_at_startup {
                 if let Some(overlay) = app.get_webview_window("overlay") {
                     let _ = overlay.show();
+                }
+            }
+
+            // Setup visual feedback overlay window if enabled
+            let show_visual_feedback = {
+                let app_state: tauri::State<AppState> = app.state();
+                let config = app_state.config.blocking_read();
+                config.general.show_visual_feedback
+            };
+
+            if show_visual_feedback {
+                if let Some(overlay) = app.get_webview_window("overlay") {
+                    // Make window click-through on macOS
+                    #[cfg(target_os = "macos")]
+                    {
+                        if let Err(e) = overlay.set_ignore_cursor_events(true) {
+                            log::warn!("Failed to set overlay click-through: {}", e);
+                        }
+                    }
+
+                    let _ = overlay.show();
+                    println!("Overlay window initialized");
+                } else {
+                    println!("WARN: Overlay window not found");
                 }
             }
 
@@ -944,6 +985,8 @@ pub fn run() {
             deny_action,
             show_cursor_indicator,
             hide_cursor_indicator,
+            show_overlay,
+            hide_overlay,
             get_current_hotkey,
             set_global_hotkey,
             unregister_global_hotkey,

@@ -35,9 +35,9 @@
         "skipTaskbar": true
       },
       {
-        "title": "Coordinate Overlay",
+        "title": "Pia Overlay",
         "label": "overlay",
-        "url": "overlay.html",
+        "url": "src/overlay.html",
         "transparent": true,
         "decorations": false,
         "alwaysOnTop": true,

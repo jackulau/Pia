@@ -394,6 +394,9 @@ impl AgentLoop {
                 self.emit_coordinate(&action);
             }
 
+            // Emit visual feedback indicator
+            self.emit_action_indicator(&action);
+
             // Show cursor indicator before executing action
             self.show_cursor_indicator(&action).await;
 
@@ -770,6 +773,48 @@ impl AgentLoop {
                 "action_type": action_type
             }),
         );
+    }
+
+    fn emit_action_indicator(&self, action: &Action) {
+        let payload = match action {
+            Action::Click { x, y, button } => serde_json::json!({
+                "action": button.to_lowercase(),
+                "x": x,
+                "y": y,
+                "label": format!("{} click", button)
+            }),
+            Action::DoubleClick { x, y } => serde_json::json!({
+                "action": "double_click",
+                "x": x,
+                "y": y,
+                "label": "double click"
+            }),
+            Action::Move { x, y } => serde_json::json!({
+                "action": "move",
+                "x": x,
+                "y": y,
+                "label": "move"
+            }),
+            Action::Type { text } => serde_json::json!({
+                "action": "type",
+                "text": text
+            }),
+            Action::Key { key, modifiers } => serde_json::json!({
+                "action": "key",
+                "key": key,
+                "modifiers": modifiers
+            }),
+            Action::Scroll { x, y, direction, amount: _ } => serde_json::json!({
+                "action": "scroll",
+                "x": x,
+                "y": y,
+                "direction": direction,
+                "label": format!("scroll {}", direction)
+            }),
+            Action::Complete { .. } | Action::Error { .. } => return,
+        };
+
+        let _ = self.app_handle.emit("show-action-indicator", payload);
     }
 
     async fn show_cursor_indicator(&self, action: &Action) {

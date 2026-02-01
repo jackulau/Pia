@@ -51,6 +51,8 @@ pub struct GeneralConfig {
     pub confirm_dangerous_actions: bool,
     #[serde(default)]
     pub show_coordinate_overlay: bool,
+    #[serde(default = "default_show_visual_feedback")]
+    pub show_visual_feedback: bool,
     #[serde(default = "default_global_hotkey")]
     pub global_hotkey: Option<String>,
     #[serde(default = "default_queue_failure_mode")]
@@ -97,6 +99,10 @@ fn default_speed_multiplier() -> f32 {
     1.0
 }
 
+fn default_show_visual_feedback() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProvidersConfig {
     #[serde(default)]
@@ -141,6 +147,7 @@ impl Default for Config {
                 max_iterations: 50,
                 confirm_dangerous_actions: true,
                 show_coordinate_overlay: false,
+                show_visual_feedback: true,
                 global_hotkey: default_global_hotkey(),
                 queue_failure_mode: "stop".to_string(),
                 queue_delay_ms: 500,

@@ -75,6 +75,7 @@ const thinkingContent = document.getElementById('thinking-content');
 const providerSelect = document.getElementById('provider-select');
 const confirmDangerous = document.getElementById('confirm-dangerous');
 const showOverlay = document.getElementById('show-overlay');
+const visualFeedback = document.getElementById('visual-feedback');
 const globalHotkeyInput = document.getElementById('global-hotkey-input');
 const clearHotkeyBtn = document.getElementById('clear-hotkey-btn');
 const hotkeyError = document.getElementById('hotkey-error');
@@ -330,6 +331,11 @@ function updateSettingsUI() {
   // Set debug settings
   if (showOverlay) {
     showOverlay.checked = currentConfig.general.show_coordinate_overlay || false;
+  }
+
+  // Set visual feedback setting
+  if (visualFeedback) {
+    visualFeedback.checked = currentConfig.general.show_visual_feedback !== false;
   }
 
   // Set global hotkey
@@ -1442,6 +1448,7 @@ async function saveSettings() {
         max_iterations: maxIterations,
         confirm_dangerous_actions: confirmDangerous.checked,
         show_coordinate_overlay: showOverlay ? showOverlay.checked : false,
+        show_visual_feedback: visualFeedback ? visualFeedback.checked : true,
         global_hotkey: newHotkey,
         queue_failure_mode: queueFailureMode ? queueFailureMode.value : 'stop',
         queue_delay_ms: queueDelay ? parseInt(queueDelay.value, 10) || 500 : 500,
@@ -1470,6 +1477,14 @@ async function saveSettings() {
     await invoke('save_config', { config });
     currentConfig = config;
     agentSpeedValue.textContent = `${config.general.speed_multiplier.toFixed(1)}x`;
+
+    // Toggle overlay visibility based on setting
+    if (config.general.show_visual_feedback) {
+      await invoke('show_overlay');
+    } else {
+      await invoke('hide_overlay');
+    }
+
     showToast('Settings saved', 'success');
 
     // Return to main view
