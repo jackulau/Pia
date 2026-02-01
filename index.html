@@ -947,6 +947,12 @@
     .setting-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-top: 4px; }
     .provider-settings { padding: 10px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; margin-bottom: 14px; }
     .provider-settings .setting-group:last-child { margin-bottom: 0; }
+    .speed-slider-container { display: flex; align-items: center; gap: 10px; }
+    .speed-slider { flex: 1; height: 6px; -webkit-appearance: none; appearance: none; background: rgba(255, 255, 255, 0.15); border-radius: 3px; outline: none; }
+    .speed-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; background: #0a84ff; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
+    .speed-slider::-webkit-slider-thumb:hover { transform: scale(1.1); }
+    .speed-slider::-moz-range-thumb { width: 16px; height: 16px; background: #0a84ff; border: none; border-radius: 50%; cursor: pointer; }
+    .speed-slider-value { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.8); min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
     .save-btn {
       width: 100%;
       padding: 10px;
@@ -1748,7 +1754,11 @@
           <span class="metric-value" id="iteration-value" aria-labelledby="iteration-label">0/50</span>
         </div>
         <div class="metric">
-          <span class="metric-label" id="speed-label">Speed</span>
+          <span class="metric-label">Agent</span>
+          <span class="metric-value" id="agent-speed-value">1.0x</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label" id="speed-label">LLM</span>
           <span class="metric-value" id="speed-value" aria-labelledby="speed-label">--</span>
         </div>
         <div class="metric">
@@ -1923,6 +1933,14 @@
           </div>
           <p class="setting-hint">Summon Pia from anywhere (e.g., CmdOrCtrl+Shift+P)</p>
           <p class="setting-hint" id="hotkey-error" style="color: #ff453a; display: none;"></p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Speed</label>
+          <div class="speed-slider-container">
+            <input type="range" id="speed-slider" class="speed-slider" min="0.25" max="3" step="0.25" value="1">
+            <span class="speed-slider-value" id="speed-slider-value">1.0x</span>
+          </div>
+          <p class="setting-hint">Adjust agent action speed (0.25x slow - 3x fast)</p>
         </div>
         <div class="setting-group">
           <label class="setting-checkbox">

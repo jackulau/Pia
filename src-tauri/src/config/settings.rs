@@ -65,6 +65,8 @@ pub struct GeneralConfig {
     pub retry_delay_ms: u32,
     #[serde(default = "default_enable_self_correction")]
     pub enable_self_correction: bool,
+    #[serde(default = "default_speed_multiplier")]
+    pub speed_multiplier: f32,
 }
 
 fn default_global_hotkey() -> Option<String> {
@@ -89,6 +91,10 @@ fn default_retry_delay_ms() -> u32 {
 
 fn default_enable_self_correction() -> bool {
     true
+}
+
+fn default_speed_multiplier() -> f32 {
+    1.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -142,6 +148,7 @@ impl Default for Config {
                 max_retries: default_max_retries(),
                 retry_delay_ms: default_retry_delay_ms(),
                 enable_self_correction: default_enable_self_correction(),
+                speed_multiplier: 1.0,
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {

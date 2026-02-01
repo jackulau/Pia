@@ -78,6 +78,9 @@ const clearHotkeyBtn = document.getElementById('clear-hotkey-btn');
 const hotkeyError = document.getElementById('hotkey-error');
 const queueFailureMode = document.getElementById('queue-failure-mode');
 const queueDelay = document.getElementById('queue-delay');
+const speedSlider = document.getElementById('speed-slider');
+const speedSliderValue = document.getElementById('speed-slider-value');
+const agentSpeedValue = document.getElementById('agent-speed-value');
 
 // Template elements
 const templateSelect = document.getElementById('template-select');
@@ -293,6 +296,16 @@ function updateSettingsUI() {
 
   // Set max iterations
   document.getElementById('max-iterations').value = currentConfig.general.max_iterations || 50;
+
+  // Set speed multiplier
+  const speedMultiplier = currentConfig.general.speed_multiplier || 1.0;
+  if (speedSlider) {
+    speedSlider.value = speedMultiplier;
+    speedSliderValue.textContent = `${speedMultiplier.toFixed(2)}x`;
+  }
+  if (agentSpeedValue) {
+    agentSpeedValue.textContent = `${speedMultiplier.toFixed(1)}x`;
+  }
 
   // Set safety settings
   confirmDangerous.checked = currentConfig.general.confirm_dangerous_actions;
@@ -526,6 +539,12 @@ function setupEventListeners() {
   // Provider selection
   providerSelect.addEventListener('change', (e) => {
     showProviderSettings(e.target.value);
+  });
+
+  // Speed slider
+  speedSlider.addEventListener('input', (e) => {
+    const value = parseFloat(e.target.value);
+    speedSliderValue.textContent = `${value.toFixed(2)}x`;
   });
 
   // Save settings
@@ -1359,6 +1378,7 @@ async function saveSettings() {
         global_hotkey: newHotkey,
         queue_failure_mode: queueFailureMode ? queueFailureMode.value : 'stop',
         queue_delay_ms: queueDelay ? parseInt(queueDelay.value, 10) || 500 : 500,
+        speed_multiplier: speedSlider ? parseFloat(speedSlider.value) : 1.0,
       },
       providers: {
         ollama: {
@@ -1382,6 +1402,7 @@ async function saveSettings() {
 
     await invoke('save_config', { config });
     currentConfig = config;
+    agentSpeedValue.textContent = `${config.general.speed_multiplier.toFixed(1)}x`;
     showToast('Settings saved', 'success');
 
     // Return to main view

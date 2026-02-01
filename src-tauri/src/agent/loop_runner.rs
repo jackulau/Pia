@@ -1,5 +1,6 @@
-use super::action::{execute_action, execute_action_with_retry, parse_llm_response, Action, ActionError};
+use super::action::{execute_action, execute_action_with_delay, execute_action_with_retry, parse_llm_response, Action, ActionError};
 use super::conversation::ConversationHistory;
+use super::delay::DelayController;
 use super::history::ActionEntry;
 use super::queue::{QueueFailureMode, QueueManager};
 use super::recovery::{
@@ -152,6 +153,7 @@ impl AgentLoop {
         let max_iterations = self.config.general.max_iterations;
         let confirm_dangerous = self.config.general.confirm_dangerous_actions;
         let show_overlay = self.config.general.show_coordinate_overlay;
+        let delay_controller = DelayController::new(self.config.general.speed_multiplier);
 
         // Initialize conversation history for this task
         let mut conversation = ConversationHistory::new();
@@ -379,7 +381,7 @@ impl AgentLoop {
             let action_type = Self::get_action_type(&action);
             let action_details = serde_json::to_value(&action).unwrap_or_default();
 
-            match execute_action(&action, confirm_dangerous).await {
+            match execute_action_with_delay(&action, confirm_dangerous, delay_controller.click_delay()).await {
                 Ok(result) => {
                     // Add successful tool result to conversation
                     conversation.add_tool_result(true, result.message.clone(), None);
@@ -529,8 +531,8 @@ impl AgentLoop {
                 }
             }
 
-            // Small delay between iterations
-            sleep(Duration::from_millis(500)).await;
+            // Delay between iterations based on speed multiplier
+            sleep(delay_controller.iteration_delay()).await;
         }
     }
 

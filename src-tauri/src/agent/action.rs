@@ -269,6 +269,18 @@ pub async fn execute_action(
     action: &Action,
     confirm_dangerous: bool,
 ) -> Result<ActionResult, ActionError> {
+    execute_action_with_delay(
+        action,
+        confirm_dangerous,
+        std::time::Duration::from_millis(50),
+    )
+}
+
+pub fn execute_action_with_delay(
+    action: &Action,
+    confirm_dangerous: bool,
+    click_delay: std::time::Duration,
+) -> Result<ActionResult, ActionError> {
     match action {
         Action::Click { x, y, button } => {
             let btn = match button.to_lowercase().as_str() {
@@ -281,10 +293,11 @@ pub async fn execute_action(
             let x = *x;
             let y = *y;
             let button_str = button.clone();
+            let delay = click_delay;
 
             tokio::task::spawn_blocking(move || {
                 let mut mouse = MouseController::new()?;
-                mouse.click_at(x, y, btn)
+                mouse.click_at_with_delay(x, y, btn, delay)
             })
             .await
             .map_err(|e| ActionError::MouseError(crate::input::MouseError::ActionError(e.to_string())))??;
@@ -300,6 +313,7 @@ pub async fn execute_action(
         Action::DoubleClick { x, y } => {
             let mut mouse = MouseController::new()?;
             mouse.move_to(*x, *y)?;
+            std::thread::sleep(click_delay);
             mouse.double_click(MouseButton::Left)?;
 
             Ok(ActionResult {
@@ -383,11 +397,12 @@ pub async fn execute_action(
             let y = *y;
             let amount = *amount;
             let direction_str = direction.clone();
+            let delay = click_delay;
 
             tokio::task::spawn_blocking(move || {
                 let mut mouse = MouseController::new()?;
                 mouse.move_to(x, y)?;
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                std::thread::sleep(delay);
                 mouse.scroll(dir, amount)
             })
             .await

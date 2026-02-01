@@ -5,7 +5,7 @@ mod history;
 mod input;
 mod llm;
 
-use agent::{AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse, InstructionQueue, QueueFailureMode, QueueManager, RecordedAction};
+use agent::{validate_speed_multiplier, AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse, InstructionQueue, QueueFailureMode, QueueManager, RecordedAction};
 use config::{Config, TaskTemplate};
 use history::{HistoryEntry, InstructionHistory};
 use serde::{Deserialize, Serialize};
@@ -204,6 +204,20 @@ async fn set_preview_mode(enabled: bool, state: State<'_, AppState>) -> Result<(
 #[tauri::command]
 async fn get_preview_mode(state: State<'_, AppState>) -> Result<bool, String> {
     Ok(state.agent_state.is_preview_mode().await)
+}
+
+#[tauri::command]
+async fn set_speed_multiplier(multiplier: f32, state: State<'_, AppState>) -> Result<(), String> {
+    let validated = validate_speed_multiplier(multiplier)?;
+    let mut config = state.config.write().await;
+    config.general.speed_multiplier = validated;
+    config.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_speed_multiplier(state: State<'_, AppState>) -> Result<f32, String> {
+    Ok(state.config.read().await.general.speed_multiplier)
 }
 
 #[tauri::command]
@@ -841,6 +855,8 @@ pub fn run() {
             save_config,
             set_preview_mode,
             get_preview_mode,
+            set_speed_multiplier,
+            get_speed_multiplier,
             hide_window,
             show_window,
             confirm_action,

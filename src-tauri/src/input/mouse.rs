@@ -97,8 +97,18 @@ impl MouseController {
     }
 
     pub fn click_at(&mut self, x: i32, y: i32, button: MouseButton) -> Result<(), MouseError> {
+        self.click_at_with_delay(x, y, button, std::time::Duration::from_millis(50))
+    }
+
+    pub fn click_at_with_delay(
+        &mut self,
+        x: i32,
+        y: i32,
+        button: MouseButton,
+        delay: std::time::Duration,
+    ) -> Result<(), MouseError> {
         self.move_to(x, y)?;
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(delay);
         self.click(button)
     }
 
