@@ -561,6 +561,115 @@
       display: none;
     }
 
+    /* Template selector */
+    .template-row {
+      display: flex;
+      gap: 8px;
+      padding: 0 12px 8px;
+    }
+    .template-select {
+      flex: 1;
+      height: 32px;
+      padding: 0 10px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 12px;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+    }
+    .template-select:focus { border-color: rgba(10, 132, 255, 0.5); background: rgba(255, 255, 255, 0.1); }
+    .template-select option { background: #2a2a2a; color: #fff; }
+    .save-template-btn {
+      height: 32px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .save-template-btn:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+    .save-template-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Template management in settings */
+    .templates-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+    .templates-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .templates-header h3 { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.8); }
+    .template-list { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+    .template-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 6px;
+    }
+    .template-item-info { flex: 1; min-width: 0; }
+    .template-item-name { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.9); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .template-item-preview { font-size: 10px; color: rgba(255, 255, 255, 0.4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .template-item-actions { display: flex; gap: 4px; margin-left: 8px; }
+    .template-delete-btn {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: rgba(255, 69, 58, 0.7);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .template-delete-btn:hover { background: rgba(255, 69, 58, 0.2); color: #ff453a; }
+    .no-templates { font-size: 11px; color: rgba(255, 255, 255, 0.4); text-align: center; padding: 20px 0; }
+
+    /* Save template modal */
+    .save-template-dialog {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .save-template-content {
+      background: rgba(40, 40, 40, 0.95);
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 20px;
+      width: 280px;
+    }
+    .save-template-content h3 { font-size: 15px; margin-bottom: 12px; }
+    .save-template-content input {
+      width: 100%;
+      height: 36px;
+      padding: 0 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+      margin-bottom: 4px;
+    }
+    .save-template-content input:focus { border-color: rgba(10, 132, 255, 0.5); background: rgba(255, 255, 255, 0.12); }
+    .save-template-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-bottom: 16px; }
+    .save-template-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
     .action-display { padding: 10px 12px; }
     .action-content { font-size: 11px; color: rgba(255, 255, 255, 0.6); line-height: 1.4; max-height: 40px; overflow-y: auto; }
 
@@ -1386,6 +1495,19 @@
         <span class="preview-toggle-label">Preview Mode</span>
         <div class="preview-toggle" id="preview-toggle" title="When enabled, actions are shown but not executed"></div>
       </div>
+      <div class="template-row">
+        <select id="template-select" class="template-select" aria-label="Select template">
+          <option value="">Select a template...</option>
+        </select>
+        <button class="save-template-btn" id="save-template-btn" aria-label="Save template">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+            <polyline points="7 3 7 8 15 8"></polyline>
+          </svg>
+          Save
+        </button>
+      </div>
       <div class="input-area">
         <label for="instruction-input" class="visually-hidden">Enter instruction for the agent</label>
         <div class="input-wrapper">
@@ -1613,6 +1735,27 @@
           <p class="setting-hint">Delay between queue items</p>
         </div>
         <button class="save-btn" id="save-settings-btn">Save</button>
+
+        <div class="templates-section">
+          <div class="templates-header">
+            <h3>Task Templates</h3>
+          </div>
+          <div class="template-list" id="template-list">
+            <div class="no-templates">No templates saved yet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="save-template-dialog hidden" id="save-template-dialog">
+      <div class="save-template-content">
+        <h3>Save as Template</h3>
+        <input type="text" id="template-name-input" placeholder="Template name" maxlength="50" autocomplete="off">
+        <div class="save-template-hint">Max 50 characters</div>
+        <div class="save-template-actions">
+          <button class="btn btn-cancel" id="cancel-template-btn">Cancel</button>
+          <button class="btn btn-confirm" id="confirm-template-btn">Save</button>
+        </div>
       </div>
     </div>
 

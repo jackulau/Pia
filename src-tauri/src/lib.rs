@@ -6,7 +6,7 @@ mod input;
 mod llm;
 
 use agent::{AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse, InstructionQueue, QueueFailureMode, QueueManager};
-use config::Config;
+use config::{Config, TaskTemplate};
 use history::{HistoryEntry, InstructionHistory};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -201,6 +201,77 @@ async fn get_session_history_count(state: State<'_, AppState>) -> Result<usize, 
 async fn clear_session_history(state: State<'_, AppState>) -> Result<(), String> {
     state.agent_state.history().clear().await;
     Ok(())
+}
+
+#[tauri::command]
+async fn get_templates(state: State<'_, AppState>) -> Result<Vec<TaskTemplate>, String> {
+    Ok(state.config.read().await.templates.clone())
+}
+
+#[tauri::command]
+async fn save_template(
+    name: String,
+    instruction: String,
+    state: State<'_, AppState>,
+) -> Result<TaskTemplate, String> {
+    if name.len() > 50 {
+        return Err("Template name must be 50 characters or less".to_string());
+    }
+
+    if instruction.trim().is_empty() {
+        return Err("Instruction cannot be empty".to_string());
+    }
+
+    let template = TaskTemplate::new(name, instruction);
+    let mut config = state.config.write().await;
+    config.templates.push(template.clone());
+    config.save().map_err(|e| e.to_string())?;
+
+    Ok(template)
+}
+
+#[tauri::command]
+async fn delete_template(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let mut config = state.config.write().await;
+    let original_len = config.templates.len();
+    config.templates.retain(|t| t.id != id);
+
+    if config.templates.len() == original_len {
+        return Err("Template not found".to_string());
+    }
+
+    config.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn update_template(
+    id: String,
+    name: String,
+    instruction: String,
+    state: State<'_, AppState>,
+) -> Result<TaskTemplate, String> {
+    if name.len() > 50 {
+        return Err("Template name must be 50 characters or less".to_string());
+    }
+
+    if instruction.trim().is_empty() {
+        return Err("Instruction cannot be empty".to_string());
+    }
+
+    let mut config = state.config.write().await;
+    let template = config
+        .templates
+        .iter_mut()
+        .find(|t| t.id == id)
+        .ok_or_else(|| "Template not found".to_string())?;
+
+    template.name = name;
+    template.instruction = instruction;
+    let updated = template.clone();
+
+    config.save().map_err(|e| e.to_string())?;
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -727,6 +798,10 @@ pub fn run() {
             get_queue,
             start_queue,
             set_queue_failure_mode,
+            get_templates,
+            save_template,
+            delete_template,
+            update_template,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
