@@ -1344,6 +1344,8 @@ function formatSingleAction(action) {
       return `Scroll ${action.direction} at (${action.x}, ${action.y})`;
     case 'drag':
       return `Drag: (${action.start_x}, ${action.start_y}) → (${action.end_x}, ${action.end_y})`;
+    case 'wait_for_element':
+      return `⏳ Wait: ${action.description} (${action.timeout_ms || 5000}ms)`;
     case 'complete':
       actionText = `Completed: ${action.message}`;
       break;

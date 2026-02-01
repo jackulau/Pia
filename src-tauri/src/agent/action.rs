@@ -89,6 +89,10 @@ pub enum Action {
     Batch {
         actions: Vec<Action>,
     },
+    WaitForElement {
+        timeout_ms: Option<u32>,
+        description: String,
+    },
 }
 
 fn default_button() -> String {
@@ -689,6 +693,10 @@ pub fn execute_action_with_delay(
                     success: true,
                     completed: false,
                     message: Some("Empty batch, nothing to execute".into()),
+                    retry_count: 0,
+                    action_type: "batch".to_string(),
+                    details: None,
+                    tool_use_id: None,
                 });
             }
 
@@ -701,6 +709,10 @@ pub fn execute_action_with_delay(
                         actions.len(),
                         MAX_BATCH_SIZE
                     )),
+                    retry_count: 0,
+                    action_type: "batch".to_string(),
+                    details: None,
+                    tool_use_id: None,
                 });
             }
 
@@ -711,6 +723,10 @@ pub fn execute_action_with_delay(
                         success: false,
                         completed: false,
                         message: Some("Nested batches are not allowed".into()),
+                        retry_count: 0,
+                        action_type: "batch".to_string(),
+                        details: None,
+                        tool_use_id: None,
                     });
                 }
 
@@ -726,6 +742,10 @@ pub fn execute_action_with_delay(
                             actions.len(),
                             result.message.unwrap_or_default()
                         )),
+                        retry_count: 0,
+                        action_type: "batch".to_string(),
+                        details: None,
+                        tool_use_id: None,
                     });
                 }
 
@@ -739,6 +759,10 @@ pub fn execute_action_with_delay(
                             actions.len(),
                             result.message.unwrap_or_default()
                         )),
+                        retry_count: 0,
+                        action_type: "batch".to_string(),
+                        details: None,
+                        tool_use_id: None,
                     });
                 }
 
@@ -752,6 +776,30 @@ pub fn execute_action_with_delay(
                 success: true,
                 completed: false,
                 message: Some(format!("Batch completed: {} actions executed", actions.len())),
+                retry_count: 0,
+                action_type: "batch".to_string(),
+                details: None,
+                tool_use_id: None,
+            })
+        }
+
+        Action::WaitForElement {
+            timeout_ms,
+            description,
+        } => {
+            let timeout = timeout_ms.unwrap_or(5000).min(10000);
+            log::info!("Waiting for: {} (timeout: {}ms)", description, timeout);
+
+            std::thread::sleep(std::time::Duration::from_millis(timeout as u64));
+
+            Ok(ActionResult {
+                success: true,
+                completed: false,
+                message: Some(format!("Waited for: {}", description)),
+                retry_count: 0,
+                action_type: "wait_for_element".to_string(),
+                details: None,
+                tool_use_id: None,
             })
         }
     }
