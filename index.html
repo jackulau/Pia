@@ -674,7 +674,12 @@
     .save-template-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-bottom: 16px; }
     .save-template-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
-    .action-display { padding: 10px 12px; }
+    .thinking-display { padding: 10px 12px 6px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+    .thinking-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+    .thinking-content { font-size: 11px; color: rgba(255, 255, 255, 0.5); line-height: 1.4; max-height: 48px; overflow-y: auto; font-style: italic; }
+
+    .action-display { padding: 6px 12px 10px; }
+    .action-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
     .action-content { font-size: 11px; color: rgba(255, 255, 255, 0.6); line-height: 1.4; max-height: 40px; overflow-y: auto; }
 
     .action-icon {
@@ -1787,6 +1792,14 @@
             <span>No screenshot</span>
           </div>
         </div>
+      </div>
+      <div class="thinking-display">
+        <div class="thinking-label">Agent Thinking</div>
+        <div class="thinking-content" id="thinking-content">Waiting for task...</div>
+      </div>
+      <div class="action-display">
+        <div class="action-label">Last Action</div>
+        <div class="action-content" id="action-content">Waiting for instruction...</div>
       </div>
       <div class="action-timeline" aria-live="polite" aria-atomic="true">
         <div class="timeline-header">

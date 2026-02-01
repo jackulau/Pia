@@ -119,10 +119,30 @@ pub struct ActionResult {
     pub retry_count: u32,
 }
 
+#[derive(Debug, Clone)]
+pub struct ParsedResponse {
+    pub action: Action,
+    pub reasoning: Option<String>,
+}
+
 /// Parse an action from an LLM response (either tool_use or text)
 pub fn parse_llm_response(response: &LlmResponse) -> Result<Action, ActionError> {
     match response {
         LlmResponse::ToolUse(tool_use) => from_tool_use(tool_use),
+        LlmResponse::Text(text) => {
+            let parsed = parse_action(text)?;
+            Ok(parsed.action)
+        }
+    }
+}
+
+/// Parse an action from an LLM response with reasoning extraction
+pub fn parse_llm_response_with_reasoning(response: &LlmResponse) -> Result<ParsedResponse, ActionError> {
+    match response {
+        LlmResponse::ToolUse(tool_use) => {
+            let action = from_tool_use(tool_use)?;
+            Ok(ParsedResponse { action, reasoning: None })
+        }
         LlmResponse::Text(text) => parse_action(text),
     }
 }
@@ -227,12 +247,42 @@ fn get_string_array_or_default(value: &Value, key: &str) -> Vec<String> {
 }
 
 /// Parse an action from raw JSON text (fallback for non-tool providers)
-pub fn parse_action(response: &str) -> Result<Action, ActionError> {
+pub fn parse_action(response: &str) -> Result<ParsedResponse, ActionError> {
+    // Extract reasoning (text before the JSON block)
+    let reasoning = extract_reasoning(response);
+
     // Try to find JSON in the response
     let json_str = extract_json(response)?;
 
-    serde_json::from_str(&json_str)
-        .map_err(|e| ActionError::ParseError(format!("Invalid JSON: {} in '{}'", e, json_str)))
+    let action = serde_json::from_str(&json_str)
+        .map_err(|e| ActionError::ParseError(format!("Invalid JSON: {} in '{}'", e, json_str)))?;
+
+    Ok(ParsedResponse { action, reasoning })
+}
+
+fn extract_reasoning(text: &str) -> Option<String> {
+    // Find the start of JSON
+    let json_start = text.find('{')?;
+
+    // Get text before the JSON
+    let before_json = text[..json_start].trim();
+
+    if before_json.is_empty() {
+        return None;
+    }
+
+    // Clean up the reasoning text
+    // Remove markdown code block markers if present
+    let cleaned = before_json
+        .trim_end_matches("```json")
+        .trim_end_matches("```")
+        .trim();
+
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned.to_string())
+    }
 }
 
 fn extract_json(text: &str) -> Result<String, ActionError> {

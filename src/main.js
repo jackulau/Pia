@@ -68,6 +68,7 @@ const actionCount = document.getElementById('action-count');
 const actionContent = document.getElementById('action-content');
 const screenshotThumbnail = document.getElementById('screenshot-thumbnail');
 const previewPlaceholder = document.getElementById('preview-placeholder');
+const thinkingContent = document.getElementById('thinking-content');
 
 // Settings elements
 const providerSelect = document.getElementById('provider-select');
@@ -1115,6 +1116,17 @@ function updateAgentState(state) {
     }
   }
 
+  // Update thinking display
+  if (thinkingContent) {
+    if (state.last_reasoning) {
+      thinkingContent.textContent = truncateText(state.last_reasoning, 150);
+    } else if (state.status === 'Running') {
+      thinkingContent.textContent = 'Analyzing screen...';
+    } else if (state.status === 'Idle') {
+      thinkingContent.textContent = 'Waiting for task...';
+    }
+  }
+
   // Update action display with preview mode awareness
   if (actionContent) {
     actionContent.classList.remove('preview-action');
@@ -1250,6 +1262,13 @@ function updateAgentState(state) {
 
   // Update export button visibility
   updateHistoryCount();
+}
+
+// Truncate text with ellipsis
+function truncateText(text, maxLength) {
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength).trim() + '...';
 }
 
 // Format a single action for display (used by formatAction and batch display)
