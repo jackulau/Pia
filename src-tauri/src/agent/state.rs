@@ -15,11 +15,32 @@ pub enum ConfirmationResponse {
 pub enum AgentStatus {
     Idle,
     Running,
+    Recording,
     Paused,
     AwaitingConfirmation,
     Retrying,
     Completed,
     Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExecutionMode {
+    Normal,
+    Recording,
+}
+
+impl Default for ExecutionMode {
+    fn default() -> Self {
+        Self::Normal
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordedAction {
+    pub action: String,
+    pub reasoning: Option<String>,
+    pub timestamp: u64,
+    pub iteration: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +71,8 @@ pub struct AgentState {
     pub preview_mode: bool,
     pub last_screenshot: Option<String>,
     pub kill_switch_triggered: bool,
+    pub execution_mode: ExecutionMode,
+    pub recorded_actions: Vec<RecordedAction>,
 }
 
 impl Default for AgentState {
@@ -74,6 +97,8 @@ impl Default for AgentState {
             preview_mode: false,
             last_screenshot: None,
             kill_switch_triggered: false,
+            execution_mode: ExecutionMode::Normal,
+            recorded_actions: Vec::new(),
         }
     }
 }
@@ -132,8 +157,19 @@ impl AgentStateManager {
     }
 
     pub async fn start(&self, instruction: String, max_iterations: u32) {
+        self.start_with_mode(instruction, max_iterations, ExecutionMode::Normal).await;
+    }
+
+    pub async fn start_recording(&self, instruction: String, max_iterations: u32) {
+        self.start_with_mode(instruction, max_iterations, ExecutionMode::Recording).await;
+    }
+
+    pub async fn start_with_mode(&self, instruction: String, max_iterations: u32, mode: ExecutionMode) {
         let mut state = self.state.write().await;
-        state.status = AgentStatus::Running;
+        state.status = match mode {
+            ExecutionMode::Normal => AgentStatus::Running,
+            ExecutionMode::Recording => AgentStatus::Recording,
+        };
         state.instruction = Some(instruction.clone());
         state.iteration = 0;
         state.max_iterations = max_iterations;
@@ -145,12 +181,42 @@ impl AgentStateManager {
         state.action_history.clear();
         state.retry_count = 0;
         state.consecutive_errors = 0;
+        state.execution_mode = mode;
+        state.recorded_actions = Vec::new();
         self.should_stop.store(false, Ordering::SeqCst);
         self.should_pause.store(false, Ordering::SeqCst);
         self.kill_switch_triggered.store(false, Ordering::SeqCst);
         // Start a new history session
         drop(state); // Release write lock before async call
         self.history.start_session(instruction).await;
+    }
+
+    pub async fn add_recorded_action(&self, action: String, reasoning: Option<String>) {
+        let mut state = self.state.write().await;
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let iteration = state.iteration;
+        state.recorded_actions.push(RecordedAction {
+            action,
+            reasoning,
+            timestamp,
+            iteration,
+        });
+    }
+
+    pub async fn get_recorded_actions(&self) -> Vec<RecordedAction> {
+        self.state.read().await.recorded_actions.clone()
+    }
+
+    pub async fn clear_recorded_actions(&self) {
+        let mut state = self.state.write().await;
+        state.recorded_actions.clear();
+    }
+
+    pub async fn get_execution_mode(&self) -> ExecutionMode {
+        self.state.read().await.execution_mode
     }
 
     pub async fn increment_iteration(&self) -> u32 {

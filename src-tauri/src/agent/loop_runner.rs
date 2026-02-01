@@ -6,7 +6,7 @@ use super::recovery::{
     classify_capture_error, classify_llm_error, retry_with_policy, ErrorClassification,
     RetryPolicy,
 };
-use super::state::{AgentStateManager, AgentStatus, ConfirmationResponse};
+use super::state::{AgentStateManager, AgentStatus, ConfirmationResponse, ExecutionMode};
 use crate::capture::{capture_primary_screen, CaptureError, Screenshot};
 use crate::config::Config;
 use crate::llm::{
@@ -139,6 +139,14 @@ impl AgentLoop {
     }
 
     pub async fn run(&self, instruction: String) -> Result<(), LoopError> {
+        self.run_with_mode(instruction, ExecutionMode::Normal).await
+    }
+
+    pub async fn run_recording(&self, instruction: String) -> Result<(), LoopError> {
+        self.run_with_mode(instruction, ExecutionMode::Recording).await
+    }
+
+    async fn run_with_mode(&self, instruction: String, mode: ExecutionMode) -> Result<(), LoopError> {
         let provider = self.create_provider()?;
         let max_iterations = self.config.general.max_iterations;
         let confirm_dangerous = self.config.general.confirm_dangerous_actions;
@@ -148,7 +156,7 @@ impl AgentLoop {
         let mut conversation = ConversationHistory::new();
         conversation.set_original_instruction(instruction.clone());
 
-        self.state.start(instruction.clone(), max_iterations).await;
+        self.state.start_with_mode(instruction.clone(), max_iterations, mode).await;
         self.emit_state_update().await;
 
         let result = self.run_loop(&*provider, &instruction, max_iterations, confirm_dangerous, show_overlay, &mut conversation).await;
@@ -330,7 +338,7 @@ impl AgentLoop {
             let action_display = if self.preview_mode {
                 format!("[PREVIEW] {}", action_str)
             } else {
-                action_str
+                action_str.clone()
             };
             self.state.set_last_action(action_display).await;
             self.emit_state_update().await;
@@ -771,4 +779,15 @@ impl AgentLoop {
             let _ = self.app_handle.emit("queue-update", queue_state);
         }
     }
+}
+
+fn extract_reasoning(response: &str) -> Option<String> {
+    // Find the first { which starts the JSON action
+    if let Some(json_start) = response.find('{') {
+        let reasoning = response[..json_start].trim();
+        if !reasoning.is_empty() {
+            return Some(reasoning.to_string());
+        }
+    }
+    None
 }

@@ -19,6 +19,7 @@ const submitBtn = document.getElementById('submit-btn');
 const controlButtons = document.getElementById('control-buttons');
 const pauseBtn = document.getElementById('pause-btn');
 const resumeBtn = document.getElementById('resume-btn');
+const recordBtn = document.getElementById('record-btn');
 const stopBtn = document.getElementById('stop-btn');
 const exportBtn = document.getElementById('export-btn');
 const settingsBtn = document.getElementById('settings-btn');
@@ -47,6 +48,13 @@ const queueList = document.getElementById('queue-list');
 const queueProgress = document.getElementById('queue-progress');
 const queueStartBtn = document.getElementById('queue-start-btn');
 const queueClearBtn = document.getElementById('queue-clear-btn');
+
+// Recording elements
+const recordingPanel = document.getElementById('recording-panel');
+const recordedActionsList = document.getElementById('recorded-actions-list');
+const recordingCount = document.getElementById('recording-count');
+const clearRecordingBtn = document.getElementById('clear-recording-btn');
+const executeRecordingBtn = document.getElementById('execute-recording-btn');
 
 // Status elements
 const statusDot = document.querySelector('.status-dot');
@@ -121,6 +129,8 @@ const killSwitchTooltip = document.getElementById('kill-switch-tooltip');
 // State
 let isRunning = false;
 let isPaused = false;
+let isRecording = false;
+let recordedActions = [];
 let currentConfig = null;
 let lastIteration = 0;
 let lastTokens = 0;
@@ -494,6 +504,13 @@ function setupEventListeners() {
   // Resume agent
   resumeBtn.addEventListener('click', resumeAgent);
 
+  // Record instruction
+  recordBtn.addEventListener('click', startRecording);
+
+  // Recording controls
+  clearRecordingBtn.addEventListener('click', clearRecording);
+  executeRecordingBtn.addEventListener('click', executeRecordedActions);
+
   // Stop agent
   stopBtn.addEventListener('click', stopAgent);
 
@@ -704,6 +721,12 @@ async function setupTauriListeners() {
     // Could display streaming text if needed
   });
 
+  // Recorded actions updates
+  await listen('recorded-actions', (event) => {
+    recordedActions = event.payload;
+    updateRecordedActionsDisplay();
+  });
+
   // Confirmation required
   await listen('confirmation-required', (event) => {
     previousFocusElement = document.activeElement;
@@ -797,7 +820,7 @@ function handleKillSwitchTriggered() {
 // Submit instruction to agent
 async function submitInstruction() {
   const instruction = instructionInput.value.trim();
-  if (!instruction || isRunning) return;
+  if (!instruction || isRunning || isRecording) return;
 
   try {
     await invoke('start_agent', { instruction });
@@ -824,6 +847,102 @@ async function resumeAgent() {
   } catch (error) {
     console.error('Failed to resume agent:', error);
   }
+}
+
+// Start recording mode
+async function startRecording() {
+  const instruction = instructionInput.value.trim();
+  if (!instruction || isRunning || isRecording) return;
+
+  try {
+    recordedActions = [];
+    updateRecordedActionsDisplay();
+    recordingPanel.classList.remove('hidden');
+    await invoke('start_agent_recording', { instruction });
+    instructionInput.value = '';
+  } catch (error) {
+    console.error('Failed to start recording:', error);
+    showToast(error, 'error');
+  }
+}
+
+// Clear recorded actions
+async function clearRecording() {
+  try {
+    await invoke('clear_recorded_actions');
+    recordedActions = [];
+    updateRecordedActionsDisplay();
+    recordingPanel.classList.add('hidden');
+    showToast('Recording cleared', 'info');
+  } catch (error) {
+    console.error('Failed to clear recording:', error);
+    showToast('Failed to clear recording', 'error');
+  }
+}
+
+// Execute recorded actions
+async function executeRecordedActions() {
+  if (recordedActions.length === 0) {
+    showToast('No actions to execute', 'error');
+    return;
+  }
+
+  // For now, just show a message that execution is not yet implemented
+  // Full implementation would replay the recorded actions
+  showToast(`Executing ${recordedActions.length} recorded actions...`, 'info');
+
+  // Start normal agent with the same instruction
+  const state = await invoke('get_agent_state');
+  if (state.instruction) {
+    try {
+      await invoke('clear_recorded_actions');
+      await invoke('start_agent', { instruction: state.instruction });
+      recordingPanel.classList.add('hidden');
+    } catch (error) {
+      console.error('Failed to execute:', error);
+      showToast('Failed to execute', 'error');
+    }
+  }
+}
+
+// Update recorded actions display
+function updateRecordedActionsDisplay() {
+  recordingCount.textContent = `${recordedActions.length} action${recordedActions.length !== 1 ? 's' : ''}`;
+
+  if (recordedActions.length === 0) {
+    recordedActionsList.innerHTML = '<div style="color: rgba(255,255,255,0.4); font-size: 11px; text-align: center; padding: 10px;">No actions recorded yet...</div>';
+    return;
+  }
+
+  recordedActionsList.innerHTML = recordedActions.map((action, index) => {
+    let actionDesc = 'Unknown action';
+    try {
+      const parsed = JSON.parse(action.action);
+      actionDesc = formatAction(parsed);
+    } catch {
+      actionDesc = action.action;
+    }
+
+    const reasoning = action.reasoning
+      ? `<div class="recorded-action-reasoning">${truncate(action.reasoning, 80)}</div>`
+      : '';
+
+    return `
+      <div class="recorded-action-item">
+        <span class="recorded-action-num">${index + 1}.</span>
+        <div class="recorded-action-content">
+          <div class="recorded-action-desc">${actionDesc}</div>
+          ${reasoning}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// Truncate string helper
+function truncate(str, maxLen) {
+  if (str.length <= maxLen) return str;
+  return str.substring(0, maxLen) + '...';
 }
 
 // Stop the agent
@@ -878,6 +997,7 @@ function updateAgentState(state) {
   const wasRunning = isRunning;
   isRunning = state.status === 'Running';
   isPaused = state.status === 'Paused';
+  isRecording = state.status === 'Recording';
 
   // Start timer when agent starts running
   if (isRunning && !wasRunning) {
@@ -912,6 +1032,10 @@ function updateAgentState(state) {
         statusDot.classList.add('running');
         statusLabel = 'Running';
       }
+      break;
+    case 'Recording':
+      statusDot.classList.add('recording');
+      statusText.textContent = 'Recording';
       break;
     case 'Completed':
       statusDot.classList.add('completed');
@@ -1070,10 +1194,19 @@ function updateAgentState(state) {
   pauseBtn.classList.toggle('hidden', isPaused);
   resumeBtn.classList.toggle('hidden', !isPaused);
 
-  // Disable input while running or paused
-  const inputDisabled = isRunning || isPaused;
+  // Show/hide stop button and recording panel
+  stopBtn.classList.toggle('hidden', !isRunning && !isRecording);
+
+  // Show recording panel when recording or when there are recorded actions
+  if (isRecording || state.recorded_actions_count > 0) {
+    recordingPanel.classList.remove('hidden');
+  }
+
+  // Disable input while running, paused, or recording
+  const inputDisabled = isRunning || isPaused || isRecording;
   instructionInput.disabled = inputDisabled;
   submitBtn.disabled = inputDisabled;
+  if (recordBtn) recordBtn.disabled = inputDisabled;
 
   // Sync aria-disabled for screen readers
   instructionInput.setAttribute('aria-disabled', inputDisabled.toString());
