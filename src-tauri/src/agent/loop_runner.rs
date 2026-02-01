@@ -19,7 +19,7 @@ use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use thiserror::Error;
-use tokio::time::{sleep, timeout, Duration};
+use tokio::time::{sleep, timeout, Duration, Instant};
 
 #[derive(Clone, Serialize)]
 struct HistoryEvent {
@@ -166,6 +166,9 @@ impl AgentLoop {
             self.config.general.enable_self_correction,
         );
 
+        // Target delay between iterations for adaptive timing
+        let target_iteration_delay = delay_controller.iteration_delay();
+
         self.state.start_with_mode(instruction.clone(), max_iterations, mode).await;
         self.emit_state_update().await;
 
@@ -235,8 +238,8 @@ impl AgentLoop {
                 self.emit_state_update().await;
             }
 
-            // Check iteration limit
-            let iteration = self.state.increment_iteration().await;
+            // Check iteration limit (now uses atomic, no await needed)
+            let iteration = self.state.increment_iteration();
             if iteration > max_iterations {
                 self.state
                     .set_error("Max iterations reached".to_string())
@@ -276,6 +279,9 @@ impl AgentLoop {
                 let _ = app_handle.emit("llm-chunk", chunk.to_string());
             });
 
+            // Track LLM response time for adaptive delay
+            let llm_start = Instant::now();
+
             // Send conversation history to LLM with retry logic
             let llm_result = provider
                 .send_with_history(
@@ -313,16 +319,15 @@ impl AgentLoop {
             let response_str = response.to_string_repr();
             conversation.add_assistant_message(&response_str);
 
-            // Update metrics
-            self.state
-                .update_metrics(
-                    metrics.tokens_per_second(),
-                    metrics.input_tokens,
-                    metrics.output_tokens,
-                )
-                .await;
+            let llm_elapsed = llm_start.elapsed();
+
+            // Update metrics atomically (no await needed)
+            self.state.update_metrics(
+                metrics.tokens_per_second(),
+                metrics.input_tokens,
+                metrics.output_tokens,
+            );
             self.state.history().update_metrics(metrics.input_tokens, metrics.output_tokens).await;
-            self.emit_state_update().await;
 
             // Parse action - on parse error, send feedback to LLM
             let action = match parse_llm_response(&response) {
@@ -351,6 +356,8 @@ impl AgentLoop {
                 action_str.clone()
             };
             self.state.set_last_action(action_display).await;
+
+            // Emit state once after LLM + action parsing (batched update)
             self.emit_state_update().await;
 
             // Skip execution in preview mode
@@ -531,8 +538,12 @@ impl AgentLoop {
                 }
             }
 
-            // Delay between iterations based on speed multiplier
-            sleep(delay_controller.iteration_delay()).await;
+            // Adaptive delay: if LLM took >= target, skip delay; otherwise sleep remaining
+            if llm_elapsed < target_iteration_delay {
+                let remaining = target_iteration_delay - llm_elapsed;
+                sleep(remaining).await;
+            }
+            // If LLM took longer than target, no delay needed
         }
     }
 
