@@ -58,7 +58,8 @@
         0 0 0 0.5px rgba(0, 0, 0, 0.3),
         0 8px 32px rgba(0, 0, 0, 0.4),
         0 2px 8px rgba(0, 0, 0, 0.2);
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
       transition: box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
     }
 
@@ -1709,7 +1710,7 @@
       font-size: 11px;
       color: rgba(255, 255, 255, 0.9);
       pointer-events: none;
-      z-index: 150;
+      z-index: 9999;
       animation: hint-in 0.15s ease;
     }
     @keyframes hint-in {
@@ -1736,9 +1737,9 @@
         </div>
         <div class="header-actions">
           <div class="size-selector">
-            <button class="size-btn" id="size-mini" title="Mini view" aria-label="Mini view">S</button>
-            <button class="size-btn active" id="size-standard" title="Standard view" aria-label="Standard view">M</button>
-            <button class="size-btn" id="size-detailed" title="Detailed view" aria-label="Detailed view">L</button>
+            <button class="size-btn" id="size-mini" title="Small - Compact view" aria-label="Small view">S</button>
+            <button class="size-btn active" id="size-standard" title="Medium - Standard view" aria-label="Medium view">M</button>
+            <button class="size-btn" id="size-detailed" title="Large - Detailed view with full info" aria-label="Large view">L</button>
           </div>
           <div class="position-menu-container">
             <button class="icon-btn" id="position-btn" title="Snap Position" aria-label="Snap to corner">
@@ -2045,8 +2046,8 @@
         </div>
         <div class="setting-group">
           <label class="setting-label">Max Iterations</label>
-          <input type="number" id="max-iterations" class="setting-input" placeholder="50" min="1" max="200" value="50">
-          <p class="setting-hint">Maximum number of agent iterations per task (1-200)</p>
+          <input type="number" id="max-iterations" class="setting-input" placeholder="150" min="1" max="1000" value="150">
+          <p class="setting-hint">Maximum number of agent iterations per task (1-1000)</p>
         </div>
         <div class="setting-group">
           <label class="setting-label">Global Hotkey</label>

@@ -158,10 +158,10 @@ impl Default for Config {
         Self {
             general: GeneralConfig {
                 default_provider: "ollama".to_string(),
-                max_iterations: 50,
+                max_iterations: 150,
                 confirm_dangerous_actions: true,
                 show_coordinate_overlay: false,
-                show_visual_feedback: true,
+                show_visual_feedback: false,
                 global_hotkey: default_global_hotkey(),
                 queue_failure_mode: "stop".to_string(),
                 queue_delay_ms: 500,

@@ -824,14 +824,6 @@ pub fn run() {
             }
 
             let agent_state = AgentStateManager::new();
-            // Initialize preview_mode from config
-            {
-                let preview_mode = config.general.preview_mode;
-                let agent_state_clone = agent_state.clone();
-                tokio::spawn(async move {
-                    agent_state_clone.set_preview_mode(preview_mode).await;
-                });
-            }
             let state = AppState {
                 agent_state,
                 config: Arc::new(RwLock::new(config)),
