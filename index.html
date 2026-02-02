@@ -27,6 +27,7 @@
       justify-content: center;
       padding: 10px;
       background: transparent;
+      overflow: hidden;
     }
     .hidden { display: none !important; }
 
@@ -73,6 +74,10 @@
       transition: background 0.15s ease;
       -webkit-tap-highlight-color: transparent;
       touch-action: none;
+      position: relative;
+      z-index: 100;
+      -webkit-app-region: drag;
+      app-region: drag;
     }
     .drag-handle::after {
       content: '';
@@ -113,6 +118,8 @@
       align-items: center;
       justify-content: space-between;
       padding: 4px 12px 8px;
+      -webkit-app-region: no-drag;
+      app-region: no-drag;
     }
     .status-indicator { display: flex; align-items: center; gap: 6px; }
     .pia-logo {

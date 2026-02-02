@@ -2397,13 +2397,36 @@ function showContextHint(element, message) {
   const hint = document.createElement('div');
   hint.className = 'context-hint';
   hint.textContent = message;
-
-  const rect = element.getBoundingClientRect();
-  hint.style.left = `${rect.left + rect.width / 2}px`;
-  hint.style.top = `${rect.top - 30}px`;
-  hint.style.transform = 'translateX(-50%)';
+  hint.style.position = 'fixed';
+  hint.style.zIndex = '99999';
+  hint.style.whiteSpace = 'nowrap';
 
   document.body.appendChild(hint);
+
+  // Get dimensions after appending to calculate size
+  const rect = element.getBoundingClientRect();
+  const hintRect = hint.getBoundingClientRect();
+
+  // Calculate center position
+  let left = rect.left + rect.width / 2;
+  let top = rect.top - 35;
+
+  // Adjust horizontal position if it would overflow
+  const hintWidth = hintRect.width;
+  if (left - hintWidth / 2 < 5) {
+    left = hintWidth / 2 + 5;
+  } else if (left + hintWidth / 2 > window.innerWidth - 5) {
+    left = window.innerWidth - hintWidth / 2 - 5;
+  }
+
+  // Adjust vertical position if it would overflow
+  if (top < 5) {
+    top = rect.bottom + 5; // Show below instead
+  }
+
+  hint.style.left = `${left}px`;
+  hint.style.top = `${top}px`;
+  hint.style.transform = 'translateX(-50%)';
 
   setTimeout(() => {
     hint.remove();
