@@ -169,8 +169,8 @@ body {
 }
 
 .size-btn {
-  width: 24px;
-  height: 24px;
+  min-width: 44px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -447,8 +447,8 @@ body {
 }
 
 .modal.size-mini .size-selector .size-btn {
-  width: 18px;
-  height: 18px;
+  min-width: 44px;
+  min-height: 44px;
   font-size: 9px;
 }
 
