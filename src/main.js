@@ -159,6 +159,7 @@ let cachedTemplates = [];
 let killSwitchTriggered = false;
 let canUndo = false;
 let lastUndoableAction = null;
+let tauriUnlisteners = [];
 
 // Window sizes
 const COMPACT_SIZE = { width: 420, height: 280 };
@@ -757,43 +758,49 @@ function setupEventListeners() {
 
 // Setup Tauri event listeners
 async function setupTauriListeners() {
+  // Clean up previous listeners to prevent duplication
+  for (const unlisten of tauriUnlisteners) {
+    unlisten();
+  }
+  tauriUnlisteners = [];
+
   // Agent state updates
-  await listen('agent-state', (event) => {
+  tauriUnlisteners.push(await listen('agent-state', (event) => {
     updateAgentState(event.payload);
-  });
+  }));
 
   // LLM streaming chunks
-  await listen('llm-chunk', (event) => {
+  tauriUnlisteners.push(await listen('llm-chunk', (event) => {
     // Could display streaming text if needed
-  });
+  }));
 
   // Recorded actions updates
-  await listen('recorded-actions', (event) => {
+  tauriUnlisteners.push(await listen('recorded-actions', (event) => {
     recordedActions = event.payload;
     updateRecordedActionsDisplay();
-  });
+  }));
 
   // Confirmation required
-  await listen('confirmation-required', (event) => {
+  tauriUnlisteners.push(await listen('confirmation-required', (event) => {
     previousFocusElement = document.activeElement;
     confirmationMessage.textContent = event.payload;
     confirmationDialog.classList.remove('hidden');
     // Focus cancel button (safer default)
     cancelActionBtn.focus();
-  });
+  }));
 
   // Retry info notification
-  await listen('retry-info', (event) => {
+  tauriUnlisteners.push(await listen('retry-info', (event) => {
     showToast(event.payload, 'info');
-  });
+  }));
 
   // Parse error notification
-  await listen('parse-error', (event) => {
+  tauriUnlisteners.push(await listen('parse-error', (event) => {
     showToast(event.payload, 'error');
-  });
+  }));
 
   // Instruction completed - save to history
-  await listen('instruction-completed', async (event) => {
+  tauriUnlisteners.push(await listen('instruction-completed', async (event) => {
     const { instruction, success } = event.payload;
     try {
       await invoke('add_to_history', { instruction, success });
@@ -801,30 +808,30 @@ async function setupTauriListeners() {
     } catch (error) {
       console.error('Failed to save to history:', error);
     }
-  });
+  }));
 
   // Queue events
-  await listen('queue-update', (event) => {
+  tauriUnlisteners.push(await listen('queue-update', (event) => {
     queueItems = event.payload.items || [];
     renderQueue();
-  });
+  }));
 
-  await listen('queue-item-started', (event) => {
+  tauriUnlisteners.push(await listen('queue-item-started', (event) => {
     updateQueueItemStatus(event.payload.current_index, 'running');
-  });
+  }));
 
-  await listen('queue-item-completed', (event) => {
+  tauriUnlisteners.push(await listen('queue-item-completed', (event) => {
     updateQueueItemStatus(event.payload.current_index, 'completed');
-  });
+  }));
 
-  await listen('queue-item-failed', (event) => {
+  tauriUnlisteners.push(await listen('queue-item-failed', (event) => {
     updateQueueItemStatus(event.payload.current_index, 'failed');
-  });
+  }));
 
   // Kill switch triggered
-  await listen('kill-switch-triggered', () => {
+  tauriUnlisteners.push(await listen('kill-switch-triggered', () => {
     handleKillSwitchTriggered();
-  });
+  }));
 }
 
 // Setup kill switch display based on platform
