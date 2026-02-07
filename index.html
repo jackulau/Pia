@@ -994,6 +994,11 @@
     }
     .setting-input:focus::placeholder { opacity: 0.6; }
     .setting-select { cursor: pointer; appearance: none; }
+    .setting-input:disabled,
+    .setting-select:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
     .setting-checkbox { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: rgba(255, 255, 255, 0.8); }
     .setting-checkbox input { width: 16px; height: 16px; accent-color: #0a84ff; }
     .setting-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-top: 4px; }
