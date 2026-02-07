@@ -762,11 +762,6 @@ async function setupTauriListeners() {
     updateAgentState(event.payload);
   });
 
-  // LLM streaming chunks
-  await listen('llm-chunk', (event) => {
-    // Could display streaming text if needed
-  });
-
   // Recorded actions updates
   await listen('recorded-actions', (event) => {
     recordedActions = event.payload;
