@@ -2284,11 +2284,10 @@ function setupSettingsPanelSwipe() {
       settingsPanel.style.opacity = '0';
 
       setTimeout(() => {
-        settingsPanel.classList.add('hidden');
         settingsPanel.classList.remove('swipe-closing');
         settingsPanel.style.transform = '';
         settingsPanel.style.opacity = '';
-        mainModal.classList.remove('hidden');
+        closeSettings();
       }, 200);
     } else {
       // Reset position
