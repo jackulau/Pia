@@ -40,7 +40,7 @@
         "url": "src/overlay.html",
         "transparent": true,
         "decorations": false,
-        "alwaysOnTop": false,
+        "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,
         "fullscreen": false,
