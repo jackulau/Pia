@@ -216,6 +216,7 @@ impl AgentLoop {
         let delay_controller = DelayController::new(speed_multiplier);
         let target_iteration_delay = delay_controller.iteration_delay();
 
+
         loop {
             // Check if should stop
             if self.state.should_stop() {
@@ -417,6 +418,7 @@ impl AgentLoop {
                     // Add successful tool result to conversation
                     conversation.add_tool_result(true, result.message.clone(), None);
 
+
                     // Record successful action to history
                     let entry = ActionEntry {
                         timestamp: Utc::now(),
@@ -456,6 +458,7 @@ impl AgentLoop {
                         self.state.update_undo_state(can_undo, last_undoable).await;
                         self.emit_state_update().await;
                     }
+
 
                     if result.completed {
                         self.state.complete(result.message).await;
@@ -564,6 +567,7 @@ impl AgentLoop {
                     let mut history = self.action_history.write().await;
                     history.push(record);
                     drop(history);
+
 
                     self.state.set_error(e.to_string()).await;
                     self.emit_state_update().await;
@@ -754,6 +758,19 @@ impl AgentLoop {
             if queue_delay.as_millis() > 0 {
                 sleep(queue_delay).await;
             }
+        }
+    }
+
+    fn get_action_type(action: &Action) -> String {
+        match action {
+            Action::Click { .. } => "click".to_string(),
+            Action::DoubleClick { .. } => "double_click".to_string(),
+            Action::Move { .. } => "move".to_string(),
+            Action::Type { .. } => "type".to_string(),
+            Action::Key { .. } => "key".to_string(),
+            Action::Scroll { .. } => "scroll".to_string(),
+            Action::Complete { .. } => "complete".to_string(),
+            Action::Error { .. } => "error".to_string(),
         }
     }
 
