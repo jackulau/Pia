@@ -947,9 +947,7 @@ async function executeRecordedActions() {
     return;
   }
 
-  // For now, just show a message that execution is not yet implemented
-  // Full implementation would replay the recorded actions
-  showToast(`Executing ${recordedActions.length} recorded actions...`, 'info');
+  showToast('Re-running instruction...', 'info');
 
   // Start normal agent with the same instruction
   const state = await invoke('get_agent_state');
