@@ -1353,21 +1353,12 @@ function formatSingleAction(action) {
     case 'wait_for_element':
       return `⏳ Wait: ${action.description} (${action.timeout_ms || 5000}ms)`;
     case 'complete':
-      actionText = `Completed: ${action.message}`;
-      break;
+      return `Completed: ${action.message}`;
     case 'error':
-      actionText = `Error: ${action.message}`;
-      break;
+      return `Error: ${action.message}`;
     default:
-      actionText = JSON.stringify(action);
+      return JSON.stringify(action);
   }
-
-  // Add retry count if retries occurred
-  if (retryCount > 0) {
-    actionText += ` (${retryCount} ${retryCount === 1 ? 'retry' : 'retries'})`;
-  }
-
-  return actionText;
 }
 
 // Format action for display
