@@ -159,6 +159,7 @@ let cachedTemplates = [];
 let killSwitchTriggered = false;
 let canUndo = false;
 let lastUndoableAction = null;
+let renderQueueTimer = null;
 
 // Window sizes
 const COMPACT_SIZE = { width: 420, height: 280 };
@@ -801,7 +802,7 @@ async function setupTauriListeners() {
   // Queue events
   await listen('queue-update', (event) => {
     queueItems = event.payload.items || [];
-    renderQueue();
+    debouncedRenderQueue();
   });
 
   await listen('queue-item-started', (event) => {
@@ -1906,6 +1907,15 @@ async function refreshQueue() {
   }
 }
 
+// Debounced renderQueue for rapid Tauri event updates
+function debouncedRenderQueue() {
+  if (renderQueueTimer) clearTimeout(renderQueueTimer);
+  renderQueueTimer = setTimeout(() => {
+    renderQueueTimer = null;
+    renderQueue();
+  }, 50);
+}
+
 // Render queue UI
 function renderQueue() {
   const pendingItems = queueItems.filter(i => i.status === 'Pending');
@@ -1951,7 +1961,7 @@ function renderQueue() {
 function updateQueueItemStatus(index, status) {
   if (queueItems[index]) {
     queueItems[index].status = status.charAt(0).toUpperCase() + status.slice(1);
-    renderQueue();
+    debouncedRenderQueue();
   }
 }
 
