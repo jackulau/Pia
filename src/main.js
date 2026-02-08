@@ -571,7 +571,8 @@ function setupEventListeners() {
 
   // Speed slider
   speedSlider.addEventListener('input', (e) => {
-    const value = parseFloat(e.target.value);
+    const value = Math.min(3.0, Math.max(0.25, parseFloat(e.target.value)));
+    e.target.value = value;
     speedSliderValue.textContent = `${value.toFixed(2)}x`;
   });
 
@@ -1457,7 +1458,7 @@ async function saveSettings() {
         global_hotkey: newHotkey,
         queue_failure_mode: queueFailureMode ? queueFailureMode.value : 'stop',
         queue_delay_ms: queueDelay ? parseInt(queueDelay.value, 10) || 500 : 500,
-        speed_multiplier: speedSlider ? parseFloat(speedSlider.value) : 1.0,
+        speed_multiplier: speedSlider ? Math.min(3.0, Math.max(0.25, parseFloat(speedSlider.value))) : 1.0,
       },
       providers: {
         ollama: {
