@@ -406,6 +406,10 @@ body {
 }
 
 /* Scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
 ::-webkit-scrollbar {
   width: 6px;
 }
