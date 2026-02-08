@@ -868,12 +868,21 @@ async function submitInstruction() {
   const instruction = instructionInput.value.trim();
   if (!instruction || isRunning || isRecording) return;
 
+  // Disable submit button immediately to prevent rapid double-clicks
+  submitBtn.disabled = true;
+
   try {
     await invoke('start_agent', { instruction });
     instructionInput.value = '';
   } catch (error) {
     console.error('Failed to start agent:', error);
     showToast(error, 'error');
+  } finally {
+    // Re-enable only if the agent is not running (agent state listener
+    // will keep it disabled while running)
+    if (!isRunning) {
+      submitBtn.disabled = false;
+    }
   }
 }
 
@@ -900,6 +909,9 @@ async function startRecording() {
   const instruction = instructionInput.value.trim();
   if (!instruction || isRunning || isRecording) return;
 
+  // Disable record button immediately to prevent rapid double-clicks
+  if (recordBtn) recordBtn.disabled = true;
+
   try {
     recordedActions = [];
     updateRecordedActionsDisplay();
@@ -909,6 +921,12 @@ async function startRecording() {
   } catch (error) {
     console.error('Failed to start recording:', error);
     showToast(error, 'error');
+  } finally {
+    // Re-enable only if not running/recording (agent state listener
+    // will keep it disabled while active)
+    if (!isRunning && !isRecording) {
+      if (recordBtn) recordBtn.disabled = false;
+    }
   }
 }
 
