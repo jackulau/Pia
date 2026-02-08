@@ -1089,8 +1089,11 @@ function updateAgentState(state) {
   }
 
   // Update kill switch indicator (unless it was just triggered)
-  if (!killSwitchTriggered) {
+  if (!killSwitchTriggered || state.status !== 'Running') {
     updateKillSwitchState(state.status, state.kill_switch_triggered);
+    if (killSwitchTriggered && state.status !== 'Running') {
+      killSwitchTriggered = false;
+    }
   }
 
   // Update undo button state
