@@ -1101,46 +1101,48 @@ function updateAgentState(state) {
   }
 
   // Update status indicator
-  statusDot.className = 'status-dot';
   let statusLabel = 'Ready';
-  switch (state.status) {
-    case 'Running':
-      if (previewMode) {
-        statusDot.classList.add('preview');
-        statusLabel = 'Preview';
-      } else {
-        statusDot.classList.add('running');
-        statusLabel = 'Running';
-      }
-      break;
-    case 'Recording':
-      statusDot.classList.add('recording');
-      statusText.textContent = 'Recording';
-      break;
-    case 'Completed':
-      statusDot.classList.add('completed');
-      statusLabel = previewMode ? 'Preview Done' : 'Completed';
-      break;
-    case 'Error':
-      statusDot.classList.add('error');
-      statusLabel = 'Error';
-      break;
-    case 'Paused':
-      statusDot.classList.add('paused');
-      statusLabel = 'Paused';
-      break;
-    case 'Retrying':
-      statusDot.classList.add('retrying');
-      statusLabel = 'Retrying';
-      break;
-    case 'AwaitingConfirmation':
-      statusDot.classList.add('awaiting');
-      statusLabel = 'Awaiting Confirmation';
-      break;
-    default:
-      statusLabel = 'Ready';
+  if (statusDot) {
+    statusDot.className = 'status-dot';
+    switch (state.status) {
+      case 'Running':
+        if (previewMode) {
+          statusDot.classList.add('preview');
+          statusLabel = 'Preview';
+        } else {
+          statusDot.classList.add('running');
+          statusLabel = 'Running';
+        }
+        break;
+      case 'Recording':
+        statusDot.classList.add('recording');
+        if (statusText) statusText.textContent = 'Recording';
+        break;
+      case 'Completed':
+        statusDot.classList.add('completed');
+        statusLabel = previewMode ? 'Preview Done' : 'Completed';
+        break;
+      case 'Error':
+        statusDot.classList.add('error');
+        statusLabel = 'Error';
+        break;
+      case 'Paused':
+        statusDot.classList.add('paused');
+        statusLabel = 'Paused';
+        break;
+      case 'Retrying':
+        statusDot.classList.add('retrying');
+        statusLabel = 'Retrying';
+        break;
+      case 'AwaitingConfirmation':
+        statusDot.classList.add('awaiting');
+        statusLabel = 'Awaiting Confirmation';
+        break;
+      default:
+        statusLabel = 'Ready';
+    }
+    if (statusText) statusText.textContent = statusLabel;
   }
-  statusText.textContent = statusLabel;
 
   // Announce status changes to screen readers
   if (state.status !== previousStatus) {
@@ -1221,12 +1223,14 @@ function updateAgentState(state) {
 
   // Update screenshot thumbnail
   if (state.last_screenshot) {
-    screenshotThumbnail.src = `data:image/png;base64,${state.last_screenshot}`;
-    screenshotThumbnail.classList.add('visible');
-    previewPlaceholder.classList.add('hidden');
+    if (screenshotThumbnail) {
+      screenshotThumbnail.src = `data:image/png;base64,${state.last_screenshot}`;
+      screenshotThumbnail.classList.add('visible');
+    }
+    if (previewPlaceholder) previewPlaceholder.classList.add('hidden');
   } else {
-    screenshotThumbnail.classList.remove('visible');
-    previewPlaceholder.classList.remove('hidden');
+    if (screenshotThumbnail) screenshotThumbnail.classList.remove('visible');
+    if (previewPlaceholder) previewPlaceholder.classList.remove('hidden');
   }
 
   // Update action timeline
@@ -1284,10 +1288,10 @@ function updateAgentState(state) {
     }
 
     // Auto-scroll to show newest (at top)
-    timelineList.scrollTop = 0;
+    if (timelineList) timelineList.scrollTop = 0;
   } else {
-    timelineList.innerHTML = '<div class="timeline-empty">Waiting for instruction...</div>';
-    actionCount.textContent = '0 actions';
+    if (timelineList) timelineList.innerHTML = '<div class="timeline-empty">Waiting for instruction...</div>';
+    if (actionCount) actionCount.textContent = '0 actions';
   }
 
   // Show/hide control buttons based on state
@@ -1475,7 +1479,7 @@ async function saveSettings() {
 
     await invoke('save_config', { config });
     currentConfig = config;
-    agentSpeedValue.textContent = `${config.general.speed_multiplier.toFixed(1)}x`;
+    if (agentSpeedValue) agentSpeedValue.textContent = `${config.general.speed_multiplier.toFixed(1)}x`;
 
     // Toggle overlay visibility based on setting
     if (config.general.show_visual_feedback) {
