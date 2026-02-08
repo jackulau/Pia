@@ -1945,7 +1945,7 @@ function renderQueue() {
         <span class="queue-item-status ${statusClass}"></span>
         <span class="queue-item-text" title="${escapeHtml(item.instruction)}">${escapeHtml(item.instruction)}</span>
         ${item.status === 'Pending' ? `
-          <button class="queue-item-remove" onclick="window.removeQueueItem('${item.id}')" title="Remove">
+          <button class="queue-item-remove" data-queue-id="${item.id}" title="Remove">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -1965,8 +1965,14 @@ function updateQueueItemStatus(index, status) {
   }
 }
 
-// Expose removeQueueItem to window for inline onclick handlers
-window.removeQueueItem = removeFromQueue;
+// Event delegation for queue item remove buttons
+queueList.addEventListener('click', (e) => {
+  const removeBtn = e.target.closest('.queue-item-remove');
+  if (removeBtn) {
+    const id = removeBtn.dataset.queueId;
+    if (id) removeFromQueue(id);
+  }
+});
 
 // Window size persistence
 const WINDOW_SIZE_KEY = 'pia-window-size';
