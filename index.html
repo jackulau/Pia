@@ -838,72 +838,8 @@
     .btn-clear { background: rgba(255, 255, 255, 0.1); }
     .btn-clear:hover { background: rgba(255, 255, 255, 0.15); }
 
-    .export-btn {
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      width: calc(100% - 24px);
-      margin: 0 12px 12px;
-      padding: 8px;
-      min-height: 44px;
-      background: rgba(50, 215, 75, 0.9);
-      border: none;
-      border-radius: 8px;
-      color: #fff;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-    }
-    .export-btn:hover { background: #32d74b; }
     .stop-btn:hover { background: #ff453a; }
     .stop-btn:active, .stop-btn.touch-active { background: #cc362e; transform: scale(0.98); }
-
-    .export-dialog {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 100;
-    }
-    .export-content {
-      background: rgba(40, 40, 40, 0.95);
-      -webkit-backdrop-filter: blur(20px);
-      backdrop-filter: blur(20px);
-      border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      padding: 20px;
-      max-width: 280px;
-      text-align: center;
-    }
-    .export-content h3 { font-size: 15px; margin-bottom: 8px; }
-    .export-content p { font-size: 12px; color: rgba(255, 255, 255, 0.6); margin-bottom: 16px; }
-    .export-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
-    .export-option {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 12px;
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .export-option:hover {
-      background: rgba(255, 255, 255, 0.12);
-      border-color: rgba(10, 132, 255, 0.5);
-    }
-    .export-option-info { text-align: left; }
-    .export-option-name { font-size: 13px; font-weight: 600; color: #fff; }
-    .export-option-desc { font-size: 10px; color: rgba(255, 255, 255, 0.5); }
-    .export-option svg { color: rgba(255, 255, 255, 0.4); }
-    .export-checkbox { display: flex; align-items: center; gap: 8px; font-size: 11px; color: rgba(255, 255, 255, 0.6); margin-bottom: 12px; }
-    .export-checkbox input { accent-color: #0a84ff; }
 
     .undo-btn {
       display: flex;
