@@ -12,7 +12,8 @@ use super::state::{AgentStateManager, AgentStatus, ConfirmationResponse, Executi
 use crate::capture::{capture_primary_screen, CaptureError, Screenshot};
 use crate::config::Config;
 use crate::llm::{
-    AnthropicProvider, GlmProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider, ToolResult,
+    AnthropicProvider, GlmProvider, LlmProvider, OllamaProvider, OpenAICompatibleProvider,
+    OpenAIProvider, OpenRouterProvider, ToolResult,
 };
 use chrono::Utc;
 use serde::Serialize;
@@ -153,6 +154,19 @@ impl AgentLoop {
                     .as_ref()
                     .ok_or(LoopError::NoProvider)?;
                 Ok(Box::new(GlmProvider::new(
+                    config.api_key.clone(),
+                    config.model.clone(),
+                )))
+            }
+            "openai-compatible" => {
+                let config = self
+                    .config
+                    .providers
+                    .openai_compatible
+                    .as_ref()
+                    .ok_or(LoopError::NoProvider)?;
+                Ok(Box::new(OpenAICompatibleProvider::new(
+                    config.base_url.clone(),
                     config.api_key.clone(),
                     config.model.clone(),
                 )))
