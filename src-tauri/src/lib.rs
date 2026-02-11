@@ -9,6 +9,10 @@ use agent::{validate_speed_multiplier, ActionHistory, AgentLoop, AgentStateManag
 use agent::action::execute_action;
 use config::{Config, TaskTemplate};
 use history::{HistoryEntry, InstructionHistory};
+use llm::{
+    AnthropicProvider, LlmProvider, OllamaProvider, OpenAICompatibleProvider, OpenAIProvider,
+    OpenRouterProvider,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{
@@ -803,6 +807,92 @@ async fn remove_from_history(index: usize, state: State<'_, AppState>) -> Result
     }
 }
 
+/// Create a provider instance from config for a given provider name
+fn create_provider_from_config(
+    provider_name: &str,
+    config: &Config,
+) -> Result<Box<dyn LlmProvider>, String> {
+    match provider_name {
+        "ollama" => {
+            let cfg = config
+                .providers
+                .ollama
+                .as_ref()
+                .ok_or("Ollama not configured")?;
+            Ok(Box::new(OllamaProvider::new(
+                cfg.host.clone(),
+                cfg.model.clone(),
+            )))
+        }
+        "anthropic" => {
+            let cfg = config
+                .providers
+                .anthropic
+                .as_ref()
+                .ok_or("Anthropic not configured")?;
+            Ok(Box::new(AnthropicProvider::new(
+                cfg.api_key.clone(),
+                cfg.model.clone(),
+            )))
+        }
+        "openai" => {
+            let cfg = config
+                .providers
+                .openai
+                .as_ref()
+                .ok_or("OpenAI not configured")?;
+            Ok(Box::new(OpenAIProvider::new(
+                cfg.api_key.clone(),
+                cfg.model.clone(),
+            )))
+        }
+        "openrouter" => {
+            let cfg = config
+                .providers
+                .openrouter
+                .as_ref()
+                .ok_or("OpenRouter not configured")?;
+            Ok(Box::new(OpenRouterProvider::new(
+                cfg.api_key.clone(),
+                cfg.model.clone(),
+            )))
+        }
+        "openai-compatible" => {
+            let cfg = config
+                .providers
+                .openai_compatible
+                .as_ref()
+                .ok_or("OpenAI-compatible not configured")?;
+            Ok(Box::new(OpenAICompatibleProvider::new(
+                cfg.base_url.clone(),
+                cfg.api_key.clone(),
+                cfg.model.clone(),
+            )))
+        }
+        _ => Err(format!("Unknown provider: {}", provider_name)),
+    }
+}
+
+#[tauri::command]
+async fn check_provider_health(
+    provider_name: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let config = state.config.read().await;
+    let provider = create_provider_from_config(&provider_name, &config)?;
+    provider.health_check().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn list_provider_models(
+    provider_name: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let config = state.config.read().await;
+    let provider = create_provider_from_config(&provider_name, &config)?;
+    provider.list_models().await.map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = Config::load().unwrap_or_default();
@@ -1005,6 +1095,8 @@ pub fn run() {
             delete_template,
             update_template,
             undo_last_action,
+            check_provider_health,
+            list_provider_models,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

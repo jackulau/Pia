@@ -329,6 +329,18 @@ pub trait LlmProvider: Send + Sync {
         false
     }
 
+    /// Check if the provider is reachable and operational.
+    /// Default implementation returns NotConfigured error.
+    async fn health_check(&self) -> Result<bool, LlmError> {
+        Err(LlmError::NotConfigured)
+    }
+
+    /// List available models from the provider.
+    /// Default implementation returns NotConfigured error.
+    async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        Err(LlmError::NotConfigured)
+    }
+
     fn name(&self) -> &str;
 }
 

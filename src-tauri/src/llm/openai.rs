@@ -1,6 +1,8 @@
 use super::provider::{
-    build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics,
+    build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse,
+    TokenMetrics,
 };
+use serde_json::Value;
 use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -197,6 +199,43 @@ impl LlmProvider for OpenAIProvider {
         };
 
         Ok((LlmResponse::Text(full_response), metrics))
+    }
+
+    async fn health_check(&self) -> Result<bool, LlmError> {
+        let response = self
+            .client
+            .get("https://api.openai.com/v1/models")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await?;
+        Ok(response.status().is_success())
+    }
+
+    async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        let response = self
+            .client
+            .get("https://api.openai.com/v1/models")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(LlmError::ApiError(format!(
+                "Failed to list models: HTTP {}",
+                response.status()
+            )));
+        }
+        let body: Value = response.json().await.map_err(|e| {
+            LlmError::ParseError(format!("Failed to parse model list: {}", e))
+        })?;
+        let models = body["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(models)
     }
 
     fn name(&self) -> &str {
