@@ -15,21 +15,35 @@ pub struct OllamaProvider {
 }
 
 #[derive(Serialize)]
-struct OllamaRequest {
+struct OllamaChatMessage {
+    role: String,
+    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    images: Option<Vec<String>>,
+}
+
+#[derive(Serialize)]
+struct OllamaChatRequest {
     model: String,
-    prompt: String,
-    images: Vec<String>,
+    messages: Vec<OllamaChatMessage>,
     stream: bool,
 }
 
 #[derive(Deserialize)]
-struct OllamaStreamResponse {
-    response: Option<String>,
+struct OllamaChatStreamResponse {
+    message: Option<OllamaChatMessageResponse>,
     done: bool,
     #[serde(default)]
     eval_count: Option<u64>,
     #[serde(default)]
     prompt_eval_count: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct OllamaChatMessageResponse {
+    #[allow(dead_code)]
+    role: Option<String>,
+    content: Option<String>,
 }
 
 impl OllamaProvider {
@@ -54,39 +68,42 @@ impl LlmProvider for OllamaProvider {
         let start = Instant::now();
         let system_prompt = build_system_prompt(screen_width, screen_height);
 
-        // Build prompt from conversation history
-        // Ollama uses a simple prompt format, so we concatenate messages
-        let mut prompt = format!("{}\n\n", system_prompt);
-        let mut images = Vec::new();
+        let mut messages = Vec::new();
 
+        // System message
+        messages.push(OllamaChatMessage {
+            role: "system".to_string(),
+            content: system_prompt,
+            images: None,
+        });
+
+        // Convert conversation history to chat messages
         for (role, text, image_base64) in history_to_messages(history) {
-            let role_label = match role.as_str() {
-                "user" => "User",
-                "assistant" => "Assistant",
-                _ => "System",
+            let (content, images) = if let Some(img_data) = image_base64 {
+                (
+                    format!("[Screenshot attached]\n{}\n\nAnalyze the screenshot and respond with a single JSON action.", text),
+                    Some(vec![img_data]),
+                )
+            } else {
+                (text, None)
             };
 
-            if let Some(img_data) = image_base64 {
-                images.push(img_data);
-                prompt.push_str(&format!(
-                    "{}: [Screenshot attached]\n{}\n\nAnalyze the screenshot and respond with a single JSON action.\n\n",
-                    role_label, text
-                ));
-            } else {
-                prompt.push_str(&format!("{}: {}\n\n", role_label, text));
-            }
+            messages.push(OllamaChatMessage {
+                role,
+                content,
+                images,
+            });
         }
 
-        let request = OllamaRequest {
+        let request = OllamaChatRequest {
             model: self.model.clone(),
-            prompt,
-            images,
+            messages,
             stream: true,
         };
 
         let response = self
             .client
-            .post(format!("{}/api/generate", self.host))
+            .post(format!("{}/api/chat", self.host))
             .json(&request)
             .send()
             .await?;
@@ -111,10 +128,14 @@ impl LlmProvider for OllamaProvider {
                     continue;
                 }
 
-                if let Ok(parsed) = serde_json::from_str::<OllamaStreamResponse>(line) {
-                    if let Some(response_text) = parsed.response {
-                        full_response.push_str(&response_text);
-                        on_chunk(&response_text);
+                if let Ok(parsed) = serde_json::from_str::<OllamaChatStreamResponse>(line) {
+                    if let Some(msg) = &parsed.message {
+                        if let Some(content) = &msg.content {
+                            if !content.is_empty() {
+                                full_response.push_str(content);
+                                on_chunk(content);
+                            }
+                        }
                     }
 
                     if parsed.done {
@@ -136,5 +157,184 @@ impl LlmProvider for OllamaProvider {
 
     fn name(&self) -> &str {
         "ollama"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_chat_message_serialization_without_images() {
+        let msg = OllamaChatMessage {
+            role: "user".to_string(),
+            content: "Hello".to_string(),
+            images: None,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["role"], "user");
+        assert_eq!(json["content"], "Hello");
+        assert!(json.get("images").is_none(), "images field should be omitted when None");
+    }
+
+    #[test]
+    fn test_chat_message_serialization_with_images() {
+        let msg = OllamaChatMessage {
+            role: "user".to_string(),
+            content: "Describe this".to_string(),
+            images: Some(vec!["base64data".to_string()]),
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["role"], "user");
+        assert_eq!(json["content"], "Describe this");
+        assert_eq!(json["images"][0], "base64data");
+    }
+
+    #[test]
+    fn test_chat_request_serialization() {
+        let request = OllamaChatRequest {
+            model: "llava".to_string(),
+            messages: vec![
+                OllamaChatMessage {
+                    role: "system".to_string(),
+                    content: "You are a helper.".to_string(),
+                    images: None,
+                },
+                OllamaChatMessage {
+                    role: "user".to_string(),
+                    content: "Click the button".to_string(),
+                    images: Some(vec!["screenshot_data".to_string()]),
+                },
+            ],
+            stream: true,
+        };
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["model"], "llava");
+        assert_eq!(json["stream"], true);
+        assert_eq!(json["messages"].as_array().unwrap().len(), 2);
+        assert_eq!(json["messages"][0]["role"], "system");
+        assert!(json["messages"][0].get("images").is_none());
+        assert_eq!(json["messages"][1]["images"][0], "screenshot_data");
+    }
+
+    #[test]
+    fn test_stream_response_parsing_content_chunk() {
+        let chunk = json!({
+            "message": {"role": "assistant", "content": "hello"},
+            "done": false
+        });
+        let parsed: OllamaChatStreamResponse = serde_json::from_value(chunk).unwrap();
+        assert!(!parsed.done);
+        assert_eq!(
+            parsed.message.as_ref().unwrap().content.as_deref(),
+            Some("hello")
+        );
+    }
+
+    #[test]
+    fn test_stream_response_parsing_done() {
+        let chunk = json!({
+            "message": {"role": "assistant", "content": ""},
+            "done": true,
+            "eval_count": 42,
+            "prompt_eval_count": 100
+        });
+        let parsed: OllamaChatStreamResponse = serde_json::from_value(chunk).unwrap();
+        assert!(parsed.done);
+        assert_eq!(parsed.eval_count, Some(42));
+        assert_eq!(parsed.prompt_eval_count, Some(100));
+    }
+
+    #[test]
+    fn test_stream_response_parsing_missing_metrics() {
+        let chunk = json!({
+            "message": {"role": "assistant", "content": "text"},
+            "done": false
+        });
+        let parsed: OllamaChatStreamResponse = serde_json::from_value(chunk).unwrap();
+        assert_eq!(parsed.eval_count, None);
+        assert_eq!(parsed.prompt_eval_count, None);
+    }
+
+    #[test]
+    fn test_stream_response_empty_content() {
+        let chunk = json!({
+            "message": {"role": "assistant", "content": ""},
+            "done": false
+        });
+        let parsed: OllamaChatStreamResponse = serde_json::from_value(chunk).unwrap();
+        assert_eq!(
+            parsed.message.as_ref().unwrap().content.as_deref(),
+            Some("")
+        );
+    }
+
+    #[test]
+    fn test_history_to_chat_messages() {
+        let mut history = ConversationHistory::new();
+        history.add_user_message("Click the button", Some("img_data".to_string()), Some(1920), Some(1080));
+        history.add_assistant_message(r#"{"action": "click", "x": 100, "y": 200}"#);
+        history.add_tool_result(true, Some("Clicked successfully".to_string()), None);
+        history.add_user_message("Now type hello", None, None, None);
+
+        let raw_messages = history_to_messages(&history);
+        let mut chat_messages: Vec<OllamaChatMessage> = Vec::new();
+
+        // System message
+        chat_messages.push(OllamaChatMessage {
+            role: "system".to_string(),
+            content: "System prompt".to_string(),
+            images: None,
+        });
+
+        for (role, text, image_base64) in raw_messages {
+            let (content, images) = if let Some(img_data) = image_base64 {
+                (
+                    format!("[Screenshot attached]\n{}\n\nAnalyze the screenshot and respond with a single JSON action.", text),
+                    Some(vec![img_data]),
+                )
+            } else {
+                (text, None)
+            };
+            chat_messages.push(OllamaChatMessage { role, content, images });
+        }
+
+        // 1 system + 4 conversation messages
+        assert_eq!(chat_messages.len(), 5);
+
+        // System message has no images
+        assert_eq!(chat_messages[0].role, "system");
+        assert!(chat_messages[0].images.is_none());
+
+        // First user message has image
+        assert_eq!(chat_messages[1].role, "user");
+        assert!(chat_messages[1].images.is_some());
+        assert_eq!(chat_messages[1].images.as_ref().unwrap()[0], "img_data");
+
+        // Assistant message has no images
+        assert_eq!(chat_messages[2].role, "assistant");
+        assert!(chat_messages[2].images.is_none());
+
+        // Tool result mapped to user role, no images
+        assert_eq!(chat_messages[3].role, "user");
+        assert!(chat_messages[3].images.is_none());
+
+        // Second user message has no images
+        assert_eq!(chat_messages[4].role, "user");
+        assert!(chat_messages[4].images.is_none());
+    }
+
+    #[test]
+    fn test_provider_name() {
+        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string());
+        assert_eq!(provider.name(), "ollama");
+    }
+
+    #[test]
+    fn test_chat_request_uses_correct_endpoint() {
+        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string());
+        let expected = format!("{}/api/chat", provider.host);
+        assert_eq!(expected, "http://localhost:11434/api/chat");
     }
 }
