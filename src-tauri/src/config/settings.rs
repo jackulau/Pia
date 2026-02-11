@@ -127,6 +127,8 @@ pub struct ProvidersConfig {
     pub openai: Option<OpenAIConfig>,
     #[serde(default)]
     pub openrouter: Option<OpenRouterConfig>,
+    #[serde(default)]
+    pub openai_compatible: Option<OpenAICompatibleConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +152,14 @@ pub struct OpenAIConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenRouterConfig {
     pub api_key: String,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpenAICompatibleConfig {
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
     pub model: String,
 }
 
@@ -182,6 +192,7 @@ impl Default for Config {
                 anthropic: None,
                 openai: None,
                 openrouter: None,
+                openai_compatible: None,
             },
             templates: Vec::new(),
         }

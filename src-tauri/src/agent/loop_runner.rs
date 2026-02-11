@@ -12,7 +12,8 @@ use super::state::{AgentStateManager, AgentStatus, ConfirmationResponse, Executi
 use crate::capture::{capture_primary_screen, CaptureError, Screenshot};
 use crate::config::Config;
 use crate::llm::{
-    AnthropicProvider, LlmProvider, OllamaProvider, OpenAIProvider, OpenRouterProvider, ToolResult,
+    AnthropicProvider, LlmProvider, OllamaProvider, OpenAICompatibleProvider, OpenAIProvider,
+    OpenRouterProvider, ToolResult,
 };
 use chrono::Utc;
 use serde::Serialize;
@@ -141,6 +142,19 @@ impl AgentLoop {
                     .as_ref()
                     .ok_or(LoopError::NoProvider)?;
                 Ok(Box::new(OpenRouterProvider::new(
+                    config.api_key.clone(),
+                    config.model.clone(),
+                )))
+            }
+            "openai-compatible" => {
+                let config = self
+                    .config
+                    .providers
+                    .openai_compatible
+                    .as_ref()
+                    .ok_or(LoopError::NoProvider)?;
+                Ok(Box::new(OpenAICompatibleProvider::new(
+                    config.base_url.clone(),
                     config.api_key.clone(),
                     config.model.clone(),
                 )))
@@ -761,18 +775,6 @@ impl AgentLoop {
         }
     }
 
-    fn get_action_type(action: &Action) -> String {
-        match action {
-            Action::Click { .. } => "click".to_string(),
-            Action::DoubleClick { .. } => "double_click".to_string(),
-            Action::Move { .. } => "move".to_string(),
-            Action::Type { .. } => "type".to_string(),
-            Action::Key { .. } => "key".to_string(),
-            Action::Scroll { .. } => "scroll".to_string(),
-            Action::Complete { .. } => "complete".to_string(),
-            Action::Error { .. } => "error".to_string(),
-        }
-    }
 
     async fn emit_state_update(&self) {
         let state = self.state.get_state().await;

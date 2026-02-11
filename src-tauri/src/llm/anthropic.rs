@@ -268,6 +268,45 @@ impl LlmProvider for AnthropicProvider {
         }
     }
 
+    async fn health_check(&self) -> Result<bool, LlmError> {
+        let response = self
+            .client
+            .get("https://api.anthropic.com/v1/models")
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .send()
+            .await?;
+        Ok(response.status().is_success())
+    }
+
+    async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        let response = self
+            .client
+            .get("https://api.anthropic.com/v1/models")
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(LlmError::ApiError(format!(
+                "Failed to list models: HTTP {}",
+                response.status()
+            )));
+        }
+        let body: serde_json::Value = response.json().await.map_err(|e| {
+            LlmError::ParseError(format!("Failed to parse model list: {}", e))
+        })?;
+        let models = body["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(models)
+    }
+
     fn name(&self) -> &str {
         "anthropic"
     }
