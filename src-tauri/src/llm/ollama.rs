@@ -8,7 +8,7 @@ use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub struct OllamaProvider {
     client: Client,
@@ -52,6 +52,19 @@ impl OllamaProvider {
     pub fn new(host: String, model: String) -> Self {
         Self {
             client: Client::new(),
+            host,
+            model,
+        }
+    }
+
+    pub fn with_timeouts(host: String, model: String, connect_timeout: Duration, response_timeout: Duration) -> Self {
+        let client = Client::builder()
+            .connect_timeout(connect_timeout)
+            .timeout(response_timeout)
+            .build()
+            .unwrap_or_else(|_| Client::new());
+        Self {
+            client,
             host,
             model,
         }

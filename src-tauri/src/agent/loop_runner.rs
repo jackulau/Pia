@@ -101,6 +101,8 @@ impl AgentLoop {
 
     fn create_provider(&self) -> Result<Box<dyn LlmProvider>, LoopError> {
         let provider_name = &self.config.general.default_provider;
+        let connect_timeout = Duration::from_secs(self.config.general.connect_timeout_secs);
+        let response_timeout = Duration::from_secs(self.config.general.response_timeout_secs);
 
         match provider_name.as_str() {
             "ollama" => {
@@ -110,9 +112,11 @@ impl AgentLoop {
                     .ollama
                     .as_ref()
                     .ok_or(LoopError::NoProvider)?;
-                Ok(Box::new(OllamaProvider::new(
+                Ok(Box::new(OllamaProvider::with_timeouts(
                     config.host.clone(),
                     config.model.clone(),
+                    connect_timeout,
+                    response_timeout,
                 )))
             }
             "anthropic" => {
@@ -122,9 +126,11 @@ impl AgentLoop {
                     .anthropic
                     .as_ref()
                     .ok_or(LoopError::NoProvider)?;
-                Ok(Box::new(AnthropicProvider::new(
+                Ok(Box::new(AnthropicProvider::with_timeouts(
                     config.api_key.clone(),
                     config.model.clone(),
+                    connect_timeout,
+                    response_timeout,
                 )))
             }
             "openai" => {
@@ -134,9 +140,11 @@ impl AgentLoop {
                     .openai
                     .as_ref()
                     .ok_or(LoopError::NoProvider)?;
-                Ok(Box::new(OpenAIProvider::new(
+                Ok(Box::new(OpenAIProvider::with_timeouts(
                     config.api_key.clone(),
                     config.model.clone(),
+                    connect_timeout,
+                    response_timeout,
                 )))
             }
             "openrouter" => {
@@ -146,9 +154,11 @@ impl AgentLoop {
                     .openrouter
                     .as_ref()
                     .ok_or(LoopError::NoProvider)?;
-                Ok(Box::new(OpenRouterProvider::new(
+                Ok(Box::new(OpenRouterProvider::with_timeouts(
                     config.api_key.clone(),
                     config.model.clone(),
+                    connect_timeout,
+                    response_timeout,
                 )))
             }
             "glm" => {

@@ -75,6 +75,10 @@ pub struct GeneralConfig {
     pub voice_auto_submit: bool,
     #[serde(default = "default_voice_language")]
     pub voice_language: String,
+    #[serde(default = "default_connect_timeout_secs")]
+    pub connect_timeout_secs: u64,
+    #[serde(default = "default_response_timeout_secs")]
+    pub response_timeout_secs: u64,
 }
 
 fn default_global_hotkey() -> Option<String> {
@@ -115,6 +119,14 @@ fn default_true() -> bool {
 
 fn default_voice_language() -> String {
     "en-US".to_string()
+}
+
+fn default_connect_timeout_secs() -> u64 {
+    30
+}
+
+fn default_response_timeout_secs() -> u64 {
+    300
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -191,6 +203,8 @@ impl Default for Config {
                 voice_input_enabled: true,
                 voice_auto_submit: false,
                 voice_language: "en-US".to_string(),
+                connect_timeout_secs: default_connect_timeout_secs(),
+                response_timeout_secs: default_response_timeout_secs(),
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {
