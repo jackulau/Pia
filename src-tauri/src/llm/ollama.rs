@@ -1,7 +1,9 @@
 use super::provider::{
-    build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics,
+    build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse,
+    TokenMetrics,
 };
 use super::sse::append_bytes_to_buffer;
+use serde_json::Value;
 use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -145,10 +147,14 @@ impl LlmProvider for OllamaProvider {
                 {
                     let line = &buffer[..pos];
                     if !line.is_empty() {
-                        if let Ok(parsed) = serde_json::from_str::<OllamaStreamResponse>(line) {
-                            if let Some(response_text) = &parsed.response {
-                                full_response.push_str(response_text);
-                                on_chunk(response_text);
+                        if let Ok(parsed) = serde_json::from_str::<OllamaChatStreamResponse>(line) {
+                            if let Some(msg) = &parsed.message {
+                                if let Some(content) = &msg.content {
+                                    if !content.is_empty() {
+                                        full_response.push_str(content);
+                                        on_chunk(content);
+                                    }
+                                }
                             }
 
                             if parsed.done {
@@ -164,10 +170,14 @@ impl LlmProvider for OllamaProvider {
 
         // Process any trailing data left in the buffer (no final newline)
         if !buffer.is_empty() {
-            if let Ok(parsed) = serde_json::from_str::<OllamaStreamResponse>(&buffer) {
-                if let Some(response_text) = &parsed.response {
-                    full_response.push_str(response_text);
-                    on_chunk(response_text);
+            if let Ok(parsed) = serde_json::from_str::<OllamaChatStreamResponse>(&buffer) {
+                if let Some(msg) = &parsed.message {
+                    if let Some(content) = &msg.content {
+                        if !content.is_empty() {
+                            full_response.push_str(content);
+                            on_chunk(content);
+                        }
+                    }
                 }
 
                 if parsed.done {
@@ -184,6 +194,35 @@ impl LlmProvider for OllamaProvider {
         };
 
         Ok((LlmResponse::Text(full_response), metrics))
+    }
+
+    async fn health_check(&self) -> Result<bool, LlmError> {
+        let url = format!("{}/api/tags", self.host);
+        let response = self.client.get(&url).send().await?;
+        Ok(response.status().is_success())
+    }
+
+    async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        let url = format!("{}/api/tags", self.host);
+        let response = self.client.get(&url).send().await?;
+        if !response.status().is_success() {
+            return Err(LlmError::ApiError(format!(
+                "Failed to list models: HTTP {}",
+                response.status()
+            )));
+        }
+        let body: Value = response.json().await.map_err(|e| {
+            LlmError::ParseError(format!("Failed to parse model list: {}", e))
+        })?;
+        let models = body["models"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["name"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(models)
     }
 
     fn name(&self) -> &str {
@@ -367,5 +406,69 @@ mod tests {
         let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string());
         let expected = format!("{}/api/chat", provider.host);
         assert_eq!(expected, "http://localhost:11434/api/chat");
+    }
+
+    #[test]
+    fn test_health_check_url() {
+        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string());
+        let url = format!("{}/api/tags", provider.host);
+        assert_eq!(url, "http://localhost:11434/api/tags");
+    }
+
+    #[test]
+    fn test_list_models_response_parsing() {
+        let response_json = json!({
+            "models": [
+                {"name": "llava:latest", "size": 4000000000u64},
+                {"name": "codellama:7b", "size": 3000000000u64},
+                {"name": "mistral:latest", "size": 4000000000u64}
+            ]
+        });
+
+        let models: Vec<String> = response_json["models"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["name"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        assert_eq!(models.len(), 3);
+        assert_eq!(models[0], "llava:latest");
+        assert_eq!(models[1], "codellama:7b");
+        assert_eq!(models[2], "mistral:latest");
+    }
+
+    #[test]
+    fn test_list_models_empty_response() {
+        let response_json = json!({"models": []});
+
+        let models: Vec<String> = response_json["models"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["name"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        assert!(models.is_empty());
+    }
+
+    #[test]
+    fn test_list_models_missing_field() {
+        let response_json = json!({"other": "data"});
+
+        let models: Vec<String> = response_json["models"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["name"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        assert!(models.is_empty());
     }
 }

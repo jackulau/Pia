@@ -186,6 +186,19 @@ impl AgentLoop {
                     config.model.clone(),
                 )))
             }
+            "openai-compatible" => {
+                let config = self
+                    .config
+                    .providers
+                    .openai_compatible
+                    .as_ref()
+                    .ok_or(LoopError::NoProvider)?;
+                Ok(Box::new(OpenAICompatibleProvider::new(
+                    config.base_url.clone(),
+                    config.api_key.clone(),
+                    config.model.clone(),
+                )))
+            }
             _ => Err(LoopError::NoProvider),
         }
     }

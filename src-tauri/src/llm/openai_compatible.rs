@@ -2,6 +2,7 @@ use super::provider::{
     build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse,
     TokenMetrics,
 };
+use serde_json::Value;
 use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -193,6 +194,43 @@ impl LlmProvider for OpenAICompatibleProvider {
         Ok((LlmResponse::Text(full_response), metrics))
     }
 
+    async fn health_check(&self) -> Result<bool, LlmError> {
+        let url = format!("{}/v1/models", self.base_url);
+        let mut req = self.client.get(&url);
+        if let Some(ref api_key) = self.api_key {
+            req = req.header("Authorization", format!("Bearer {}", api_key));
+        }
+        let response = req.send().await?;
+        Ok(response.status().is_success())
+    }
+
+    async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        let url = format!("{}/v1/models", self.base_url);
+        let mut req = self.client.get(&url);
+        if let Some(ref api_key) = self.api_key {
+            req = req.header("Authorization", format!("Bearer {}", api_key));
+        }
+        let response = req.send().await?;
+        if !response.status().is_success() {
+            return Err(LlmError::ApiError(format!(
+                "Failed to list models: HTTP {}",
+                response.status()
+            )));
+        }
+        let body: Value = response.json().await.map_err(|e| {
+            LlmError::ParseError(format!("Failed to parse model list: {}", e))
+        })?;
+        let models = body["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(models)
+    }
+
     fn name(&self) -> &str {
         "openai-compatible"
     }
@@ -304,5 +342,84 @@ mod tests {
         let usage = chunk.usage.unwrap();
         assert_eq!(usage.prompt_tokens, Some(10));
         assert_eq!(usage.completion_tokens, Some(20));
+    }
+
+    #[test]
+    fn test_health_check_url() {
+        let provider = OpenAICompatibleProvider::new(
+            "http://localhost:1234".to_string(),
+            None,
+            "model".to_string(),
+        );
+        let url = format!("{}/v1/models", provider.base_url);
+        assert_eq!(url, "http://localhost:1234/v1/models");
+    }
+
+    #[test]
+    fn test_health_check_url_trailing_slash_stripped() {
+        let provider = OpenAICompatibleProvider::new(
+            "http://localhost:1234/".to_string(),
+            None,
+            "model".to_string(),
+        );
+        let url = format!("{}/v1/models", provider.base_url);
+        assert_eq!(url, "http://localhost:1234/v1/models");
+    }
+
+    #[test]
+    fn test_list_models_response_parsing() {
+        let response_json = serde_json::json!({
+            "data": [
+                {"id": "gpt-4", "object": "model"},
+                {"id": "gpt-3.5-turbo", "object": "model"},
+                {"id": "llama3", "object": "model"}
+            ]
+        });
+
+        let models: Vec<String> = response_json["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        assert_eq!(models.len(), 3);
+        assert_eq!(models[0], "gpt-4");
+        assert_eq!(models[1], "gpt-3.5-turbo");
+        assert_eq!(models[2], "llama3");
+    }
+
+    #[test]
+    fn test_list_models_empty_data() {
+        let response_json = serde_json::json!({"data": []});
+
+        let models: Vec<String> = response_json["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        assert!(models.is_empty());
+    }
+
+    #[test]
+    fn test_list_models_missing_data_field() {
+        let response_json = serde_json::json!({"error": "unauthorized"});
+
+        let models: Vec<String> = response_json["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        assert!(models.is_empty());
     }
 }
