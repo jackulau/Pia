@@ -1108,6 +1108,11 @@ function updateAgentState(state) {
   if (undoBtn) {
     undoBtn.disabled = !canUndo;
     undoBtn.title = lastUndoableAction ? `Undo: ${lastUndoableAction}` : 'Nothing to undo';
+    if (canUndo) {
+      undoBtn.classList.remove('hidden');
+    } else {
+      undoBtn.classList.add('hidden');
+    }
   }
 
   // Update status indicator
