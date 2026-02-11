@@ -459,6 +459,7 @@
       0% { color: #0a84ff; transform: scale(1.05); }
       100% { color: rgba(255, 255, 255, 0.8); transform: scale(1); }
     }
+    #retry-indicator { color: #ff9f0a; font-size: 10px; }
 
     .action-timeline {
       padding: 10px 12px;
@@ -1914,6 +1915,9 @@
         <div class="metric">
           <span class="metric-label" id="tokens-label">Tokens</span>
           <span class="metric-value" id="tokens-value" aria-labelledby="tokens-label">0</span>
+        </div>
+        <div class="metric">
+          <span class="metric-value hidden" id="retry-indicator">0 retries</span>
         </div>
         <div class="metric expanded-only">
           <span class="metric-label">Elapsed</span>
