@@ -99,7 +99,7 @@ impl LlmProvider for OllamaProvider {
             let (content, images) = if let Some(img_data) = image_base64 {
                 (
                     format!("[Screenshot attached]\n{}\n\nAnalyze the screenshot and respond with a single JSON action.", text),
-                    Some(vec![img_data]),
+                    Some(vec![(*img_data).clone()]),
                 )
             } else {
                 (text, None)
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn test_history_to_chat_messages() {
         let mut history = ConversationHistory::new();
-        history.add_user_message("Click the button", Some("img_data".to_string()), Some(1920), Some(1080));
+        history.add_user_message("Click the button", Some("img_data".to_string().into()), Some(1920), Some(1080));
         history.add_assistant_message(r#"{"action": "click", "x": 100, "y": 200}"#);
         history.add_tool_result(true, Some("Clicked successfully".to_string()), None);
         history.add_user_message("Now type hello", None, None, None);
@@ -362,7 +362,7 @@ mod tests {
             let (content, images) = if let Some(img_data) = image_base64 {
                 (
                     format!("[Screenshot attached]\n{}\n\nAnalyze the screenshot and respond with a single JSON action.", text),
-                    Some(vec![img_data]),
+                    Some(vec![(*img_data).clone()]),
                 )
             } else {
                 (text, None)

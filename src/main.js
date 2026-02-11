@@ -101,6 +101,7 @@ const providerSettings = {
   openai: document.getElementById('openai-settings'),
   openrouter: document.getElementById('openrouter-settings'),
   glm: document.getElementById('glm-settings'),
+  'openai-compatible': document.getElementById('openai-compatible-settings'),
 };
 
 // Confirmation dialog
@@ -388,6 +389,13 @@ function updateSettingsUI() {
     document.getElementById('glm-key').value = currentConfig.providers.glm.api_key || '';
     document.getElementById('glm-model').value = currentConfig.providers.glm.model || '';
   }
+
+  // Set OpenAI Compatible settings
+  if (currentConfig.providers.openai_compatible) {
+    document.getElementById('openai-compatible-url').value = currentConfig.providers.openai_compatible.base_url || '';
+    document.getElementById('openai-compatible-key').value = currentConfig.providers.openai_compatible.api_key || '';
+    document.getElementById('openai-compatible-model').value = currentConfig.providers.openai_compatible.model || '';
+  }
 }
 
 // Show/hide provider-specific settings
@@ -397,6 +405,58 @@ function showProviderSettings(provider) {
       providerSettings[key].classList.toggle('hidden', key !== provider);
     }
   });
+}
+
+// Test connection to a provider
+async function testConnection(providerName, statusEl, btn) {
+  statusEl.textContent = 'Testing...';
+  statusEl.className = 'connection-status';
+  btn.disabled = true;
+  try {
+    const healthy = await invoke('check_provider_health', { providerName });
+    if (healthy) {
+      statusEl.textContent = 'Connected';
+      statusEl.className = 'connection-status success';
+    } else {
+      statusEl.textContent = 'Unreachable';
+      statusEl.className = 'connection-status error';
+    }
+  } catch (error) {
+    statusEl.textContent = 'Failed: ' + (error || 'Unknown error');
+    statusEl.className = 'connection-status error';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Refresh model list from a provider
+async function refreshModels(providerName, datalistId, inputId, btn) {
+  btn.classList.add('spinning');
+  btn.disabled = true;
+  try {
+    const models = await invoke('list_provider_models', { providerName });
+    const datalist = document.getElementById(datalistId);
+    datalist.innerHTML = '';
+    models.forEach(model => {
+      const option = document.createElement('option');
+      option.value = model;
+      datalist.appendChild(option);
+    });
+    if (models.length > 0) {
+      const input = document.getElementById(inputId);
+      if (!input.value) {
+        input.value = models[0];
+      }
+      showToast(`Found ${models.length} model${models.length === 1 ? '' : 's'}`, 'success');
+    } else {
+      showToast('No models found', 'error');
+    }
+  } catch (error) {
+    showToast('Failed to list models: ' + (error || 'Unknown error'), 'error');
+  } finally {
+    btn.classList.remove('spinning');
+    btn.disabled = false;
+  }
 }
 
 // Load templates from backend
@@ -577,6 +637,34 @@ function setupEventListeners() {
   // Provider selection
   providerSelect.addEventListener('change', (e) => {
     showProviderSettings(e.target.value);
+  });
+
+  // Ollama test connection and refresh models
+  document.getElementById('ollama-test-connection').addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await testConnection('ollama', document.getElementById('ollama-connection-status'), this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+  document.getElementById('ollama-refresh-models').addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await refreshModels('ollama', 'ollama-model-list', 'ollama-model', this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+
+  // OpenAI Compatible test connection and refresh models
+  document.getElementById('openai-compatible-test-connection').addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await testConnection('openai-compatible', document.getElementById('openai-compatible-connection-status'), this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+  document.getElementById('openai-compatible-refresh-models').addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await refreshModels('openai-compatible', 'openai-compatible-model-list', 'openai-compatible-model', this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
   });
 
   // Speed slider
@@ -1465,98 +1553,100 @@ function formatTimeOnly(isoString) {
   });
 }
 
+// Build config from current UI state and save to backend (no UI side-effects)
+async function saveConfigQuiet() {
+  const maxIterInput = document.getElementById('max-iterations');
+  let maxIterations = parseInt(maxIterInput.value, 10);
+  if (isNaN(maxIterations) || maxIterations < 1) maxIterations = 1;
+  if (maxIterations > 200) maxIterations = 200;
+  maxIterInput.value = maxIterations;
+
+  if (hotkeyError) {
+    hotkeyError.style.display = 'none';
+  }
+
+  let newHotkey = null;
+  if (globalHotkeyInput) {
+    newHotkey = globalHotkeyInput.value.trim() || null;
+    const currentHotkey = currentConfig?.general?.global_hotkey || null;
+
+    if (newHotkey !== currentHotkey) {
+      if (newHotkey) {
+        await invoke('set_global_hotkey', { shortcut: newHotkey });
+      } else {
+        await invoke('unregister_global_hotkey');
+      }
+    }
+  }
+
+  const config = {
+    general: {
+      default_provider: providerSelect.value,
+      max_iterations: maxIterations,
+      confirm_dangerous_actions: confirmDangerous.checked,
+      show_coordinate_overlay: showOverlay ? showOverlay.checked : false,
+      show_visual_feedback: visualFeedback ? visualFeedback.checked : true,
+      global_hotkey: newHotkey,
+      queue_failure_mode: queueFailureMode ? queueFailureMode.value : 'stop',
+      queue_delay_ms: queueDelay ? parseInt(queueDelay.value, 10) || 500 : 500,
+      speed_multiplier: speedSlider ? Math.min(3.0, Math.max(0.25, parseFloat(speedSlider.value))) : 1.0,
+    },
+    providers: {
+      ollama: {
+        host: document.getElementById('ollama-host').value || 'http://localhost:11434',
+        model: document.getElementById('ollama-model').value || 'llava',
+      },
+      anthropic: document.getElementById('anthropic-key').value ? {
+        api_key: document.getElementById('anthropic-key').value,
+        model: document.getElementById('anthropic-model').value || 'claude-sonnet-4-20250514',
+      } : null,
+      openai: document.getElementById('openai-key').value ? {
+        api_key: document.getElementById('openai-key').value,
+        model: document.getElementById('openai-model').value || 'gpt-4o',
+      } : null,
+      openrouter: document.getElementById('openrouter-key').value ? {
+        api_key: document.getElementById('openrouter-key').value,
+        model: document.getElementById('openrouter-model').value || 'anthropic/claude-sonnet-4-20250514',
+      } : null,
+      glm: document.getElementById('glm-key').value ? {
+        api_key: document.getElementById('glm-key').value,
+        model: document.getElementById('glm-model').value || 'glm-4v',
+      } : null,
+      openai_compatible: document.getElementById('openai-compatible-url').value ? {
+        base_url: document.getElementById('openai-compatible-url').value,
+        api_key: document.getElementById('openai-compatible-key').value || null,
+        model: document.getElementById('openai-compatible-model').value || 'default',
+      } : null,
+    },
+  };
+
+  await invoke('save_config', { config });
+  currentConfig = config;
+  if (agentSpeedValue) agentSpeedValue.textContent = `${config.general.speed_multiplier.toFixed(1)}x`;
+
+  if (config.general.show_visual_feedback) {
+    await invoke('show_overlay');
+  } else {
+    await invoke('hide_overlay');
+  }
+
+  return config;
+}
+
 // Save settings to backend
 async function saveSettings() {
   try {
-    // Get max iterations with validation
-    const maxIterInput = document.getElementById('max-iterations');
-    let maxIterations = parseInt(maxIterInput.value, 10);
-    if (isNaN(maxIterations) || maxIterations < 1) maxIterations = 1;
-    if (maxIterations > 200) maxIterations = 200;
-    maxIterInput.value = maxIterations;
-
-    // Handle hotkey change first (if changed)
-    if (hotkeyError) {
-      hotkeyError.style.display = 'none';
-    }
-
-    let newHotkey = null;
-    if (globalHotkeyInput) {
-      newHotkey = globalHotkeyInput.value.trim() || null;
-      const currentHotkey = currentConfig?.general?.global_hotkey || null;
-
-      if (newHotkey !== currentHotkey) {
-        if (newHotkey) {
-          try {
-            await invoke('set_global_hotkey', { shortcut: newHotkey });
-          } catch (error) {
-            if (hotkeyError) {
-              hotkeyError.textContent = error;
-              hotkeyError.style.display = 'block';
-            }
-            return;
-          }
-        } else {
-          await invoke('unregister_global_hotkey');
-        }
-      }
-    }
-
-    // Build config object
-    const config = {
-      general: {
-        default_provider: providerSelect.value,
-        max_iterations: maxIterations,
-        confirm_dangerous_actions: confirmDangerous.checked,
-        show_coordinate_overlay: showOverlay ? showOverlay.checked : false,
-        show_visual_feedback: visualFeedback ? visualFeedback.checked : true,
-        global_hotkey: newHotkey,
-        queue_failure_mode: queueFailureMode ? queueFailureMode.value : 'stop',
-        queue_delay_ms: queueDelay ? parseInt(queueDelay.value, 10) || 500 : 500,
-        speed_multiplier: speedSlider ? Math.min(3.0, Math.max(0.25, parseFloat(speedSlider.value))) : 1.0,
-      },
-      providers: {
-        ollama: {
-          host: document.getElementById('ollama-host').value || 'http://localhost:11434',
-          model: document.getElementById('ollama-model').value || 'llava',
-        },
-        anthropic: document.getElementById('anthropic-key').value ? {
-          api_key: document.getElementById('anthropic-key').value,
-          model: document.getElementById('anthropic-model').value || 'claude-sonnet-4-20250514',
-        } : null,
-        openai: document.getElementById('openai-key').value ? {
-          api_key: document.getElementById('openai-key').value,
-          model: document.getElementById('openai-model').value || 'gpt-4o',
-        } : null,
-        openrouter: document.getElementById('openrouter-key').value ? {
-          api_key: document.getElementById('openrouter-key').value,
-          model: document.getElementById('openrouter-model').value || 'anthropic/claude-sonnet-4-20250514',
-        } : null,
-        glm: document.getElementById('glm-key').value ? {
-          api_key: document.getElementById('glm-key').value,
-          model: document.getElementById('glm-model').value || 'glm-4v',
-        } : null,
-      },
-    };
-
-    await invoke('save_config', { config });
-    currentConfig = config;
-    if (agentSpeedValue) agentSpeedValue.textContent = `${config.general.speed_multiplier.toFixed(1)}x`;
-
-    // Toggle overlay visibility based on setting
-    if (config.general.show_visual_feedback) {
-      await invoke('show_overlay');
-    } else {
-      await invoke('hide_overlay');
-    }
-
+    await saveConfigQuiet();
     showToast('Settings saved', 'success');
-
-    // Return to main view
     closeSettings();
   } catch (error) {
     console.error('Failed to save settings:', error);
-    showToast('Failed to save settings', 'error');
+    if (hotkeyError && error && String(error).toLowerCase().includes('hotkey')) {
+      hotkeyError.textContent = error;
+      hotkeyError.style.display = 'block';
+    } else {
+      showToast('Failed to save settings', 'error');
+    }
   }
 }
 

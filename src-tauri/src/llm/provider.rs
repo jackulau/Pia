@@ -601,13 +601,13 @@ mod tests {
     #[test]
     fn test_history_to_messages_user_message() {
         let mut history = ConversationHistory::new();
-        history.add_user_message("Click the button", Some("img_data".to_string()), Some(1920), Some(1080));
+        history.add_user_message("Click the button", Some("img_data".to_string().into()), Some(1920), Some(1080));
 
         let messages = history_to_messages(&history);
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].0, "user");
         assert_eq!(messages[0].1, "Click the button");
-        assert_eq!(messages[0].2.as_deref(), Some("img_data"));
+        assert_eq!(messages[0].2.as_deref(), Some(&"img_data".to_string()));
     }
 
     #[test]
@@ -649,10 +649,10 @@ mod tests {
     #[test]
     fn test_history_to_messages_mixed_conversation() {
         let mut history = ConversationHistory::new();
-        history.add_user_message("Open browser", Some("screenshot1".to_string()), Some(1920), Some(1080));
+        history.add_user_message("Open browser", Some("screenshot1".to_string().into()), Some(1920), Some(1080));
         history.add_assistant_message(r#"{"action": "click", "x": 50, "y": 60}"#);
         history.add_tool_result(true, Some("Clicked".to_string()), None);
-        history.add_user_message("Next step", Some("screenshot2".to_string()), Some(1920), Some(1080));
+        history.add_user_message("Next step", Some("screenshot2".to_string().into()), Some(1920), Some(1080));
 
         let messages = history_to_messages(&history);
         assert_eq!(messages.len(), 4);
