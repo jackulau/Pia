@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 
 /// Maximum number of messages to keep in history to prevent unbounded memory growth.
 /// Each message includes a screenshot (~1-2MB base64), so we limit to recent context.
@@ -33,7 +34,7 @@ pub enum Message {
 /// Manages conversation history for the agent loop.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ConversationHistory {
-    messages: Vec<Message>,
+    messages: VecDeque<Message>,
     /// The original user instruction for this task
     #[serde(skip_serializing_if = "Option::is_none")]
     original_instruction: Option<String>,
@@ -43,7 +44,7 @@ impl ConversationHistory {
     /// Creates a new empty conversation history.
     pub fn new() -> Self {
         Self {
-            messages: Vec::new(),
+            messages: VecDeque::new(),
             original_instruction: None,
         }
     }
@@ -61,7 +62,7 @@ impl ConversationHistory {
     /// Adds a message to the conversation history.
     /// Automatically truncates if history exceeds MAX_HISTORY_LENGTH.
     pub fn add_message(&mut self, message: Message) {
-        self.messages.push(message);
+        self.messages.push_back(message);
         self.truncate_to_max();
     }
 
@@ -97,9 +98,15 @@ impl ConversationHistory {
         });
     }
 
-    /// Returns all messages in the history.
-    pub fn get_messages(&self) -> &[Message] {
-        &self.messages
+    /// Returns all messages as a contiguous slice.
+    pub fn get_messages(&mut self) -> &[Message] {
+        self.messages.make_contiguous();
+        self.messages.as_slices().0
+    }
+
+    /// Returns an iterator over all messages.
+    pub fn messages(&self) -> impl Iterator<Item = &Message> {
+        self.messages.iter()
     }
 
     /// Returns the number of messages in history.
@@ -123,12 +130,10 @@ impl ConversationHistory {
     fn truncate_to_max(&mut self) {
         if self.messages.len() > MAX_HISTORY_LENGTH {
             // Keep first message (original context) and most recent messages
-            let keep_recent = MAX_HISTORY_LENGTH - 1;
-            let start = self.messages.len() - keep_recent;
-            let first = self.messages.remove(0);
-            self.messages = std::iter::once(first)
-                .chain(self.messages.drain(start - 1..))
-                .collect();
+            let first = self.messages.pop_front().unwrap();
+            let excess = self.messages.len() - (MAX_HISTORY_LENGTH - 1);
+            drop(self.messages.drain(..excess));
+            self.messages.push_front(first);
         }
     }
 
