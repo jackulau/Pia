@@ -1170,6 +1170,12 @@ function updateAgentState(state) {
     lastIteration = newIteration;
   }
 
+  if (newTokens !== lastTokens) {
+    tokensValue.textContent = newTokens.toLocaleString();
+    triggerPulse(tokensValue);
+    lastTokens = newTokens;
+  }
+
   // Update progress ring
   updateProgressRing(state);
 
