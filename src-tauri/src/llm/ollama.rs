@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Instant;
 
 pub struct OllamaProvider {
@@ -18,7 +19,7 @@ pub struct OllamaProvider {
 struct OllamaRequest {
     model: String,
     prompt: String,
-    images: Vec<String>,
+    images: Vec<Arc<String>>,
     stream: bool,
 }
 

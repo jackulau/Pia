@@ -2,7 +2,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use image::{imageops::FilterType, DynamicImage, ImageFormat};
 use once_cell::sync::Lazy;
 use std::io::Cursor;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use xcap::Monitor;
 
@@ -19,7 +19,10 @@ pub enum CaptureError {
 pub struct Screenshot {
     pub width: u32,
     pub height: u32,
-    pub base64: String,
+    /// Base64-encoded screenshot data wrapped in Arc to avoid expensive clones.
+    /// Screenshots are typically 1-2MB and are shared across conversation history,
+    /// action history, and state without copying.
+    pub base64: Arc<String>,
 }
 
 /// Configuration for screenshot capture
@@ -216,7 +219,7 @@ pub fn capture_primary_screen_with_config(
     Ok(Screenshot {
         width,
         height,
-        base64,
+        base64: Arc::new(base64),
     })
 }
 
@@ -243,7 +246,7 @@ pub fn capture_all_screens_with_config(
         screenshots.push(Screenshot {
             width,
             height,
-            base64,
+            base64: Arc::new(base64),
         });
     }
 

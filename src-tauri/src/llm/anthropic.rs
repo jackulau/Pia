@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Instant;
 
 pub struct AnthropicProvider {
@@ -45,7 +46,7 @@ struct ImageSource {
     #[serde(rename = "type")]
     source_type: String,
     media_type: String,
-    data: String,
+    data: Arc<String>,
 }
 
 #[derive(Deserialize, Debug)]

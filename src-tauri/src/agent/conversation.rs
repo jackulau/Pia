@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Maximum number of messages to keep in history to prevent unbounded memory growth.
 /// Each message includes a screenshot (~1-2MB base64), so we limit to recent context.
@@ -12,7 +13,7 @@ pub enum Message {
     User {
         instruction: String,
         #[serde(skip_serializing_if = "Option::is_none")]
-        screenshot_base64: Option<String>,
+        screenshot_base64: Option<Arc<String>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         screen_width: Option<u32>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -69,7 +70,7 @@ impl ConversationHistory {
     pub fn add_user_message(
         &mut self,
         instruction: &str,
-        screenshot_base64: Option<String>,
+        screenshot_base64: Option<Arc<String>>,
         screen_width: Option<u32>,
         screen_height: Option<u32>,
     ) {
@@ -158,13 +159,13 @@ mod tests {
     #[test]
     fn test_add_user_message() {
         let mut conv = ConversationHistory::new();
-        conv.add_user_message("Click the button", Some("base64data".to_string()), Some(1920), Some(1080));
+        conv.add_user_message("Click the button", Some(Arc::new("base64data".to_string())), Some(1920), Some(1080));
 
         assert_eq!(conv.len(), 1);
         match &conv.get_messages()[0] {
             Message::User { instruction, screenshot_base64, screen_width, screen_height } => {
                 assert_eq!(instruction, "Click the button");
-                assert_eq!(screenshot_base64.as_deref(), Some("base64data"));
+                assert_eq!(screenshot_base64.as_ref().map(|s| s.as_str()), Some("base64data"));
                 assert_eq!(*screen_width, Some(1920));
                 assert_eq!(*screen_height, Some(1080));
             }

@@ -7,7 +7,6 @@ use super::recovery::{
     classify_capture_error, classify_llm_error, retry_with_policy, ErrorClassification,
     RetryPolicy,
 };
-use super::retry::RetryContext;
 use super::state::{AgentStateManager, AgentStatus, ConfirmationResponse, ExecutionMode};
 use crate::capture::{capture_primary_screen, CaptureError, Screenshot};
 use crate::config::Config;
@@ -22,6 +21,9 @@ use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, timeout, Duration, Instant};
+
+/// Minimum interval between state emissions to avoid flooding the frontend
+const STATE_EMISSION_MIN_INTERVAL_MS: u64 = 50;
 
 #[derive(Clone, Serialize)]
 struct HistoryEvent {
@@ -68,6 +70,8 @@ pub struct AgentLoop {
     queue: Option<QueueManager>,
     preview_mode: bool,
     action_history: Arc<RwLock<ActionHistory>>,
+    /// Tracks last state emission time for debouncing
+    last_emission: std::sync::Mutex<Instant>,
 }
 
 impl AgentLoop {
@@ -85,6 +89,7 @@ impl AgentLoop {
             queue: None,
             preview_mode,
             action_history,
+            last_emission: std::sync::Mutex::new(Instant::now()),
         }
     }
 
@@ -162,21 +167,10 @@ impl AgentLoop {
         let max_iterations = self.config.general.max_iterations;
         let confirm_dangerous = self.config.general.confirm_dangerous_actions;
         let show_overlay = self.config.general.show_coordinate_overlay;
-        let delay_controller = DelayController::new(self.config.general.speed_multiplier);
 
         // Initialize conversation history for this task
         let mut conversation = ConversationHistory::new();
         conversation.set_original_instruction(instruction.clone());
-
-        // Create retry context from config
-        let mut retry_ctx = RetryContext::new(
-            self.config.general.max_retries,
-            self.config.general.retry_delay_ms,
-            self.config.general.enable_self_correction,
-        );
-
-        // Target delay between iterations for adaptive timing
-        let target_iteration_delay = delay_controller.iteration_delay();
 
         // Clear action history for new session
         {
@@ -186,7 +180,7 @@ impl AgentLoop {
 
         self.state.start_with_mode(instruction.clone(), max_iterations, mode).await;
         self.state.update_undo_state(false, None).await;
-        self.emit_state_update().await;
+        self.emit_state_update_immediate().await;
 
         let result = self.run_loop(&*provider, &instruction, max_iterations, confirm_dangerous, show_overlay, &mut conversation).await;
 
@@ -216,17 +210,16 @@ impl AgentLoop {
         let delay_controller = DelayController::new(speed_multiplier);
         let target_iteration_delay = delay_controller.iteration_delay();
 
-
         loop {
             // Check if should stop
             if self.state.should_stop() {
                 self.state.set_status(AgentStatus::Idle).await;
-                self.emit_state_update().await;
+                self.emit_state_update_immediate().await;
                 return Err(LoopError::Stopped);
             }
 
             // Check consecutive error limit
-            let consecutive_errors = self.state.get_consecutive_errors().await;
+            let consecutive_errors = self.state.get_consecutive_errors();
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
                 self.state
                     .set_error(format!(
@@ -234,14 +227,14 @@ impl AgentLoop {
                         consecutive_errors
                     ))
                     .await;
-                self.emit_state_update().await;
+                self.emit_state_update_immediate().await;
                 return Err(LoopError::TooManyErrors(consecutive_errors));
             }
 
             // Check if should pause
             if self.state.should_pause() {
                 self.state.set_status(AgentStatus::Paused).await;
-                self.emit_state_update().await;
+                self.emit_state_update_immediate().await;
 
                 // Wait while paused
                 while self.state.should_pause() && !self.state.should_stop() {
@@ -251,13 +244,13 @@ impl AgentLoop {
                 // Check if stopped while paused
                 if self.state.should_stop() {
                     self.state.set_status(AgentStatus::Idle).await;
-                    self.emit_state_update().await;
+                    self.emit_state_update_immediate().await;
                     return Err(LoopError::Stopped);
                 }
 
                 // Resume running
                 self.state.set_status(AgentStatus::Running).await;
-                self.emit_state_update().await;
+                self.emit_state_update_immediate().await;
             }
 
             // Check iteration limit (now uses atomic, no await needed)
@@ -266,7 +259,7 @@ impl AgentLoop {
                 self.state
                     .set_error("Max iterations reached".to_string())
                     .await;
-                self.emit_state_update().await;
+                self.emit_state_update_immediate().await;
                 return Err(LoopError::MaxIterations);
             }
 
@@ -274,9 +267,9 @@ impl AgentLoop {
             let screenshot = match self.capture_with_retry().await {
                 Ok(s) => s,
                 Err(e) => {
-                    self.state.increment_consecutive_errors().await;
+                    self.state.increment_consecutive_errors();
                     self.state.set_error(e.to_string()).await;
-                    self.emit_state_update().await;
+                    self.emit_state_update_immediate().await;
                     return Err(e.into());
                 }
             };
@@ -317,13 +310,13 @@ impl AgentLoop {
             let (response, metrics) = match llm_result {
                 Ok((resp, met)) => {
                     // Reset consecutive errors on success
-                    self.state.reset_consecutive_errors().await;
+                    self.state.reset_consecutive_errors();
                     (resp, met)
                 }
                 Err(e) => {
-                    self.state.increment_consecutive_errors().await;
+                    self.state.increment_consecutive_errors();
                     self.state.set_error(e.to_string()).await;
-                    self.emit_state_update().await;
+                    self.emit_state_update_immediate().await;
 
                     // Check if we should continue or bail
                     let classification = classify_llm_error(&e);
@@ -355,7 +348,7 @@ impl AgentLoop {
             let action = match parse_llm_response(&response) {
                 Ok(a) => a,
                 Err(parse_err) => {
-                    self.state.increment_consecutive_errors().await;
+                    self.state.increment_consecutive_errors();
 
                     // Emit parse error feedback
                     let _ = self.app_handle.emit(
@@ -370,8 +363,9 @@ impl AgentLoop {
                 }
             };
 
-            // Format action string with optional [PREVIEW] prefix
-            let action_str = serde_json::to_string(&action).unwrap_or_default();
+            // Serialize action once - reuse for display, history, and details
+            let action_value = serde_json::to_value(&action).unwrap_or_default();
+            let action_str = action_value.to_string();
             let action_display = if self.preview_mode {
                 format!("[PREVIEW] {}", action_str)
             } else {
@@ -409,9 +403,8 @@ impl AgentLoop {
             // Brief pause to let user see the indicator
             sleep(Duration::from_millis(300)).await;
 
-            // Prepare action details for history logging
+            // Prepare action details for history logging (reuse serialized value)
             let action_type = Self::get_action_type(&action);
-            let action_details = serde_json::to_value(&action).unwrap_or_default();
 
             match execute_action_with_delay(&action, confirm_dangerous, delay_controller.click_delay()).await {
                 Ok(result) => {
@@ -424,7 +417,7 @@ impl AgentLoop {
                         timestamp: Utc::now(),
                         iteration,
                         action_type: action_type.clone(),
-                        action_details: action_details.clone(),
+                        action_details: action_value.clone(),
                         screenshot_base64: Some(screenshot.base64.clone()),
                         llm_response: response_str.clone(),
                         success: true,
@@ -434,7 +427,7 @@ impl AgentLoop {
                     self.state.history().add_entry(entry).await;
 
                     // Reset consecutive errors on successful action
-                    self.state.reset_consecutive_errors().await;
+                    self.state.reset_consecutive_errors();
 
                     // Hide cursor indicator after action
                     self.hide_cursor_indicator().await;
@@ -462,7 +455,7 @@ impl AgentLoop {
 
                     if result.completed {
                         self.state.complete(result.message).await;
-                        self.emit_state_update().await;
+                        self.emit_state_update_immediate().await;
                         // Emit history event for successful completion
                         let _ = self.app_handle.emit(
                             "instruction-completed",
@@ -487,7 +480,7 @@ impl AgentLoop {
                         timestamp: Utc::now(),
                         iteration,
                         action_type: action_type.clone(),
-                        action_details: action_details.clone(),
+                        action_details: action_value.clone(),
                         screenshot_base64: Some(screenshot.base64.clone()),
                         llm_response: response_str.clone(),
                         success: false,
@@ -502,7 +495,7 @@ impl AgentLoop {
                     // Set pending action and status
                     self.state.set_pending_action(Some(msg.clone())).await;
                     self.state.set_status(AgentStatus::AwaitingConfirmation).await;
-                    self.emit_state_update().await;
+                    self.emit_state_update_immediate().await;
 
                     // Emit confirmation request to frontend
                     let _ = self.app_handle.emit("confirmation-required", msg);
@@ -518,13 +511,13 @@ impl AgentLoop {
                         Ok(Some(ConfirmationResponse::Confirmed)) => {
                             // User confirmed, continue execution
                             self.state.set_status(AgentStatus::Running).await;
-                            self.emit_state_update().await;
+                            self.emit_state_update_immediate().await;
                         }
                         Ok(Some(ConfirmationResponse::Denied)) | Ok(None) | Err(_) => {
                             // User denied, no response, or timeout - abort
                             self.state.set_status(AgentStatus::Idle).await;
                             self.state.set_error("Action denied or timed out".to_string()).await;
-                            self.emit_state_update().await;
+                            self.emit_state_update_immediate().await;
                             return Err(LoopError::ActionDenied);
                         }
                     }
@@ -534,7 +527,7 @@ impl AgentLoop {
 
                     if self.state.should_stop() {
                         self.state.set_status(AgentStatus::Idle).await;
-                        self.emit_state_update().await;
+                        self.emit_state_update_immediate().await;
                         return Err(LoopError::Stopped);
                     }
                 }
@@ -547,7 +540,7 @@ impl AgentLoop {
                         timestamp: Utc::now(),
                         iteration,
                         action_type: action_type.clone(),
-                        action_details: action_details.clone(),
+                        action_details: action_value.clone(),
                         screenshot_base64: Some(screenshot.base64.clone()),
                         llm_response: response_str.clone(),
                         success: false,
@@ -557,7 +550,7 @@ impl AgentLoop {
                     self.state.history().add_entry(entry).await;
 
                     // Increment consecutive errors
-                    self.state.increment_consecutive_errors().await;
+                    self.state.increment_consecutive_errors();
 
                     // Hide cursor indicator on error
                     self.hide_cursor_indicator().await;
@@ -570,7 +563,7 @@ impl AgentLoop {
 
 
                     self.state.set_error(e.to_string()).await;
-                    self.emit_state_update().await;
+                    self.emit_state_update_immediate().await;
 
                     // Emit history event for failed completion
                     let _ = self.app_handle.emit(
@@ -653,7 +646,7 @@ impl AgentLoop {
                 queue.set_processing(false).await;
                 self.state.set_status(AgentStatus::Idle).await;
                 self.state.set_queue_info(0, 0, false).await;
-                self.emit_state_update().await;
+                self.emit_state_update_immediate().await;
                 self.emit_queue_update().await;
                 return Err(LoopError::Stopped);
             }
@@ -666,7 +659,7 @@ impl AgentLoop {
                     queue.set_processing(false).await;
                     self.state.set_status(AgentStatus::Completed).await;
                     self.state.set_queue_info(total, total, false).await;
-                    self.emit_state_update().await;
+                    self.emit_state_update_immediate().await;
                     self.emit_queue_update().await;
                     return Ok(());
                 }
@@ -732,7 +725,7 @@ impl AgentLoop {
                         QueueFailureMode::Stop => {
                             queue.set_processing(false).await;
                             self.state.set_queue_info(current_index + 1, total, false).await;
-                            self.emit_state_update().await;
+                            self.emit_state_update_immediate().await;
                             self.emit_queue_update().await;
                             return Err(LoopError::QueueItemFailed(error_msg));
                         }
@@ -749,7 +742,7 @@ impl AgentLoop {
                 queue.set_processing(false).await;
                 self.state.set_status(AgentStatus::Completed).await;
                 self.state.set_queue_info(total, total, false).await;
-                self.emit_state_update().await;
+                self.emit_state_update_immediate().await;
                 self.emit_queue_update().await;
                 return Ok(());
             }
@@ -761,20 +754,33 @@ impl AgentLoop {
         }
     }
 
-    fn get_action_type(action: &Action) -> String {
-        match action {
-            Action::Click { .. } => "click".to_string(),
-            Action::DoubleClick { .. } => "double_click".to_string(),
-            Action::Move { .. } => "move".to_string(),
-            Action::Type { .. } => "type".to_string(),
-            Action::Key { .. } => "key".to_string(),
-            Action::Scroll { .. } => "scroll".to_string(),
-            Action::Complete { .. } => "complete".to_string(),
-            Action::Error { .. } => "error".to_string(),
+    /// Emit state update with debouncing (min 50ms between emissions).
+    /// Use `emit_state_update_immediate` for status transitions that must be seen immediately.
+    async fn emit_state_update(&self) {
+        let min_interval = Duration::from_millis(STATE_EMISSION_MIN_INTERVAL_MS);
+        let should_emit = {
+            let mut last = self.last_emission.lock().unwrap();
+            let now = Instant::now();
+            if now.duration_since(*last) >= min_interval {
+                *last = now;
+                true
+            } else {
+                false
+            }
+        };
+        if should_emit {
+            let state = self.state.get_state().await;
+            let _ = self.app_handle.emit("agent-state", state);
         }
     }
 
-    async fn emit_state_update(&self) {
+    /// Emit state update immediately, bypassing debounce.
+    /// Used for status transitions (idle, completed, error, paused) that the frontend must see.
+    async fn emit_state_update_immediate(&self) {
+        {
+            let mut last = self.last_emission.lock().unwrap();
+            *last = Instant::now();
+        }
         let state = self.state.get_state().await;
         let _ = self.app_handle.emit("agent-state", state);
     }
@@ -946,15 +952,4 @@ impl AgentLoop {
             let _ = self.app_handle.emit("queue-update", queue_state);
         }
     }
-}
-
-fn extract_reasoning(response: &str) -> Option<String> {
-    // Find the first { which starts the JSON action
-    if let Some(json_start) = response.find('{') {
-        let reasoning = response[..json_start].trim();
-        if !reasoning.is_empty() {
-            return Some(reasoning.to_string());
-        }
-    }
-    None
 }

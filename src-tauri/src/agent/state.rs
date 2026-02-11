@@ -70,7 +70,7 @@ pub struct AgentState {
     pub queue_total: usize,
     pub queue_active: bool,
     pub preview_mode: bool,
-    pub last_screenshot: Option<String>,
+    pub last_screenshot: Option<Arc<String>>,
     pub kill_switch_triggered: bool,
     pub execution_mode: ExecutionMode,
     pub recorded_actions: Vec<RecordedAction>,
@@ -123,6 +123,8 @@ struct AtomicMetrics {
     total_output_tokens: AtomicU64,
     /// tokens_per_second stored as bits (use f64::to_bits/from_bits)
     tokens_per_second_bits: AtomicU64,
+    /// Consecutive error count - frequently read/written, no need for RwLock
+    consecutive_errors: AtomicU32,
 }
 
 impl AtomicMetrics {
@@ -133,6 +135,7 @@ impl AtomicMetrics {
             total_input_tokens: AtomicU64::new(0),
             total_output_tokens: AtomicU64::new(0),
             tokens_per_second_bits: AtomicU64::new(0.0_f64.to_bits()),
+            consecutive_errors: AtomicU32::new(0),
         }
     }
 
@@ -152,6 +155,7 @@ impl AtomicMetrics {
         self.total_output_tokens.store(0, Ordering::Release);
         self.tokens_per_second_bits
             .store(0.0_f64.to_bits(), Ordering::Release);
+        self.consecutive_errors.store(0, Ordering::Release);
     }
 }
 
@@ -209,6 +213,7 @@ impl AgentStateManager {
         state.tokens_per_second = self.metrics.get_tokens_per_second();
         state.total_input_tokens = self.metrics.total_input_tokens.load(Ordering::Acquire);
         state.total_output_tokens = self.metrics.total_output_tokens.load(Ordering::Acquire);
+        state.consecutive_errors = self.metrics.consecutive_errors.load(Ordering::Acquire);
         state.kill_switch_triggered = self.kill_switch_triggered.load(Ordering::SeqCst);
         state
     }
@@ -259,6 +264,7 @@ impl AgentStateManager {
         self.metrics.total_input_tokens.store(0, Ordering::Release);
         self.metrics.total_output_tokens.store(0, Ordering::Release);
         self.metrics.set_tokens_per_second(0.0);
+        self.metrics.consecutive_errors.store(0, Ordering::Release);
         self.should_stop.store(false, Ordering::SeqCst);
 
         // Now update the RwLock-protected state
@@ -349,7 +355,7 @@ impl AgentStateManager {
         });
     }
 
-    pub async fn set_last_screenshot(&self, screenshot: String) {
+    pub async fn set_last_screenshot(&self, screenshot: Arc<String>) {
         let mut state = self.state.write().await;
         state.last_screenshot = Some(screenshot);
     }
@@ -461,20 +467,19 @@ impl AgentStateManager {
         state.retry_count = 0;
     }
 
-    pub async fn increment_consecutive_errors(&self) -> u32 {
-        let mut state = self.state.write().await;
-        state.consecutive_errors += 1;
-        state.consecutive_errors
+    /// Atomically increment consecutive errors without acquiring RwLock
+    pub fn increment_consecutive_errors(&self) -> u32 {
+        self.metrics.consecutive_errors.fetch_add(1, Ordering::AcqRel) + 1
     }
 
-    pub async fn reset_consecutive_errors(&self) {
-        let mut state = self.state.write().await;
-        state.consecutive_errors = 0;
+    /// Atomically reset consecutive errors without acquiring RwLock
+    pub fn reset_consecutive_errors(&self) {
+        self.metrics.consecutive_errors.store(0, Ordering::Release);
     }
 
-    pub async fn get_consecutive_errors(&self) -> u32 {
-        let state = self.state.read().await;
-        state.consecutive_errors
+    /// Atomically get consecutive errors without acquiring RwLock
+    pub fn get_consecutive_errors(&self) -> u32 {
+        self.metrics.consecutive_errors.load(Ordering::Acquire)
     }
 
     pub async fn set_queue_info(&self, index: usize, total: usize, active: bool) {
