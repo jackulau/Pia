@@ -1,11 +1,12 @@
 use super::provider::{
     build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics,
 };
+use super::sse::{append_bytes_to_buffer, process_sse_buffer};
 use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::time::Instant;
 
 pub struct OpenAIProvider {
@@ -53,29 +54,6 @@ enum OpenAIPart {
 #[derive(Serialize)]
 struct ImageUrl {
     url: String,
-}
-
-#[derive(Deserialize)]
-struct StreamChunk {
-    choices: Vec<StreamChoice>,
-    #[serde(default)]
-    usage: Option<UsageInfo>,
-}
-
-#[derive(Deserialize)]
-struct StreamChoice {
-    delta: Option<DeltaContent>,
-}
-
-#[derive(Deserialize)]
-struct DeltaContent {
-    content: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct UsageInfo {
-    prompt_tokens: Option<u64>,
-    completion_tokens: Option<u64>,
 }
 
 impl OpenAIProvider {
@@ -161,32 +139,14 @@ impl LlmProvider for OpenAIProvider {
 
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
+            append_bytes_to_buffer(&mut buffer, &chunk);
 
-            // Process complete lines using zero-allocation slicing
-            while let Some(pos) = buffer.find('\n') {
-                // Process line in-place before draining
-                if let Some(data) = buffer[..pos].strip_prefix("data: ") {
-                    if data != "[DONE]" {
-                        if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data) {
-                            for choice in chunk.choices {
-                                if let Some(delta) = choice.delta {
-                                    if let Some(content) = delta.content {
-                                        full_response.push_str(&content);
-                                        on_chunk(&content);
-                                    }
-                                }
-                            }
-
-                            if let Some(usage) = chunk.usage {
-                                input_tokens = usage.prompt_tokens.unwrap_or(0);
-                                output_tokens = usage.completion_tokens.unwrap_or(0);
-                            }
-                        }
-                    }
-                }
-                // Drain processed line from buffer (zero-allocation)
-                buffer.drain(..pos + 1);
+            let result = process_sse_buffer(&mut buffer, &mut full_response, &*on_chunk);
+            if let Some(t) = result.input_tokens {
+                input_tokens = t;
+            }
+            if let Some(t) = result.output_tokens {
+                output_tokens = t;
             }
         }
 

@@ -3,6 +3,7 @@ pub mod ollama;
 pub mod openai;
 pub mod openrouter;
 pub mod provider;
+pub mod sse;
 
 pub use anthropic::*;
 pub use ollama::*;
