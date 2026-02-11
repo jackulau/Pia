@@ -8,6 +8,7 @@ mod llm;
 use agent::{validate_speed_multiplier, ActionHistory, AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse, InstructionQueue, QueueFailureMode, QueueManager, RecordedAction};
 use agent::action::execute_action;
 use config::{Config, TaskTemplate};
+use config::credentials::{self, DetectedCredentialPayload};
 use history::{HistoryEntry, InstructionHistory};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -803,6 +804,32 @@ async fn remove_from_history(index: usize, state: State<'_, AppState>) -> Result
     }
 }
 
+#[tauri::command]
+async fn detect_credentials() -> Result<Vec<DetectedCredentialPayload>, String> {
+    let detected = credentials::detect_all_credentials();
+    Ok(detected.iter().map(|c| c.to_payload()).collect())
+}
+
+#[tauri::command]
+async fn apply_detected_credential(
+    provider: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let cred = credentials::detect_credential(&provider)
+        .ok_or_else(|| format!("No credential found for provider: {}", provider))?;
+
+    let mut config = state.config.write().await;
+    config.update_provider_api_key(&cred.provider, &cred.api_key);
+
+    // Set as default provider if no default is set or it's still the default "ollama"
+    if config.general.default_provider == "ollama" {
+        config.general.default_provider = cred.provider.clone();
+    }
+
+    config.save().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let config = Config::load().unwrap_or_default();
@@ -1005,6 +1032,8 @@ pub fn run() {
             delete_template,
             update_template,
             undo_last_action,
+            detect_credentials,
+            apply_detected_credential,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
