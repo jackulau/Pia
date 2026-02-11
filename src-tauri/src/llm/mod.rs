@@ -5,6 +5,7 @@ pub mod openai;
 pub mod openai_compatible;
 pub mod openrouter;
 pub mod provider;
+pub mod sse;
 
 pub use anthropic::*;
 pub use glm::*;

@@ -1,6 +1,7 @@
 use super::provider::{
     build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics,
 };
+use super::sse::append_bytes_to_buffer;
 use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -118,30 +119,46 @@ impl LlmProvider for OllamaProvider {
         let mut full_response = String::with_capacity(4096);
         let mut output_tokens = 0u64;
         let mut input_tokens = 0u64;
+        let mut buffer = String::new();
 
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result?;
-            let text = String::from_utf8_lossy(&chunk);
+            append_bytes_to_buffer(&mut buffer, &chunk);
 
-            for line in text.lines() {
-                if line.is_empty() {
-                    continue;
-                }
+            // Process complete newline-delimited JSON lines; partial lines
+            // are left in the buffer for the next chunk.
+            while let Some(pos) = buffer.find('\n') {
+                {
+                    let line = &buffer[..pos];
+                    if !line.is_empty() {
+                        if let Ok(parsed) = serde_json::from_str::<OllamaStreamResponse>(line) {
+                            if let Some(response_text) = &parsed.response {
+                                full_response.push_str(response_text);
+                                on_chunk(response_text);
+                            }
 
-                if let Ok(parsed) = serde_json::from_str::<OllamaChatStreamResponse>(line) {
-                    if let Some(msg) = &parsed.message {
-                        if let Some(content) = &msg.content {
-                            if !content.is_empty() {
-                                full_response.push_str(content);
-                                on_chunk(content);
+                            if parsed.done {
+                                output_tokens = parsed.eval_count.unwrap_or(0);
+                                input_tokens = parsed.prompt_eval_count.unwrap_or(0);
                             }
                         }
                     }
+                }
+                buffer.drain(..pos + 1);
+            }
+        }
 
-                    if parsed.done {
-                        output_tokens = parsed.eval_count.unwrap_or(0);
-                        input_tokens = parsed.prompt_eval_count.unwrap_or(0);
-                    }
+        // Process any trailing data left in the buffer (no final newline)
+        if !buffer.is_empty() {
+            if let Ok(parsed) = serde_json::from_str::<OllamaStreamResponse>(&buffer) {
+                if let Some(response_text) = &parsed.response {
+                    full_response.push_str(response_text);
+                    on_chunk(response_text);
+                }
+
+                if parsed.done {
+                    output_tokens = parsed.eval_count.unwrap_or(0);
+                    input_tokens = parsed.prompt_eval_count.unwrap_or(0);
                 }
             }
         }

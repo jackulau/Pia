@@ -2,6 +2,7 @@ use super::provider::{
     build_system_prompt, build_system_prompt_for_tools, build_tools, ChunkCallback, LlmError,
     LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse, history_to_messages,
 };
+use super::sse::append_bytes_to_buffer;
 use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -188,7 +189,7 @@ impl LlmProvider for AnthropicProvider {
 
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result?;
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
+            append_bytes_to_buffer(&mut buffer, &chunk);
 
             // Process complete SSE events using zero-allocation slicing
             while let Some(pos) = buffer.find("\n\n") {
