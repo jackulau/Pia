@@ -15,7 +15,7 @@ pub struct ActionEntry {
     pub action_type: String,
     pub action_details: serde_json::Value,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub screenshot_base64: Option<String>,
+    pub screenshot_base64: Option<Arc<String>>,
     pub llm_response: String,
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

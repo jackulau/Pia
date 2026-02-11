@@ -89,7 +89,7 @@ impl LlmProvider for OpenAIProvider {
                 OpenAIContent::Parts(vec![
                     OpenAIPart::ImageUrl {
                         image_url: ImageUrl {
-                            url: format!("data:image/png;base64,{}", img_data),
+                            url: format!("data:image/png;base64,{}", &*img_data),
                         },
                     },
                     OpenAIPart::Text {

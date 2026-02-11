@@ -2,6 +2,7 @@ use crate::agent::conversation::{ConversationHistory, Message};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -301,7 +302,7 @@ pub trait LlmProvider: Send + Sync {
         let mut history = ConversationHistory::new();
         history.add_user_message(
             instruction,
-            Some(image_base64.to_string()),
+            Some(Arc::new(image_base64.to_string())),
             Some(screen_width),
             Some(screen_height),
         );
@@ -334,7 +335,8 @@ pub trait LlmProvider: Send + Sync {
 
 /// Helper to convert conversation history to provider-specific message format.
 /// Returns a Vec of tuples: (role, text_content, optional_image_base64)
-pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String, Option<String>)> {
+/// The image_base64 is Arc-wrapped to avoid cloning large screenshot strings.
+pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String, Option<Arc<String>>)> {
     history
         .messages()
         .map(|msg| match msg {

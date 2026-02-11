@@ -83,7 +83,7 @@ impl LlmProvider for OpenRouterProvider {
                 OpenRouterContent::Parts(vec![
                     OpenRouterPart::ImageUrl {
                         image_url: ImageUrl {
-                            url: format!("data:image/png;base64,{}", img_data),
+                            url: format!("data:image/png;base64,{}", &*img_data),
                         },
                     },
                     OpenRouterPart::Text {
