@@ -6,7 +6,6 @@ use crate::llm::provider::{LlmResponse, ToolUse};
 use super::retry::{RetryContext, RetryError};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::thread;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -443,10 +442,18 @@ pub async fn execute_action_with_delay(
         }
 
         Action::DoubleClick { x, y } => {
-            let mut mouse = MouseController::new()?;
-            mouse.move_to(*x, *y)?;
-            std::thread::sleep(click_delay);
-            mouse.double_click(MouseButton::Left)?;
+            let x = *x;
+            let y = *y;
+            let delay = click_delay;
+
+            tokio::task::spawn_blocking(move || {
+                let mut mouse = MouseController::new()?;
+                mouse.move_to(x, y)?;
+                std::thread::sleep(delay);
+                mouse.double_click(MouseButton::Left)
+            })
+            .await
+            .map_err(|e| ActionError::MouseError(crate::input::MouseError::ActionError(e.to_string())))??;
 
             Ok(ActionResult {
                 success: true,
@@ -454,7 +461,7 @@ pub async fn execute_action_with_delay(
                 message: Some(format!("Double-clicked at ({}, {})", x, y)),
                 retry_count: 0,
                 action_type: "double_click".to_string(),
-                details: Some(ActionDetails::DoubleClick { x: *x, y: *y }),
+                details: Some(ActionDetails::DoubleClick { x, y }),
                 tool_use_id: None,
             })
         }
@@ -602,8 +609,17 @@ pub async fn execute_action_with_delay(
                 duration
             );
 
-            let mut mouse = MouseController::new()?;
-            mouse.drag(*start_x, *start_y, *end_x, *end_y, btn, duration)?;
+            let sx = *start_x;
+            let sy = *start_y;
+            let ex = *end_x;
+            let ey = *end_y;
+
+            tokio::task::spawn_blocking(move || {
+                let mut mouse = MouseController::new()?;
+                mouse.drag(sx, sy, ex, ey, btn, duration)
+            })
+            .await
+            .map_err(|e| ActionError::MouseError(crate::input::MouseError::ActionError(e.to_string())))??;
 
             Ok(ActionResult {
                 success: true,
@@ -620,9 +636,16 @@ pub async fn execute_action_with_delay(
         }
 
         Action::TripleClick { x, y } => {
-            let mut mouse = MouseController::new()?;
-            mouse.move_to(*x, *y)?;
-            mouse.triple_click(MouseButton::Left)?;
+            let x = *x;
+            let y = *y;
+
+            tokio::task::spawn_blocking(move || {
+                let mut mouse = MouseController::new()?;
+                mouse.move_to(x, y)?;
+                mouse.triple_click(MouseButton::Left)
+            })
+            .await
+            .map_err(|e| ActionError::MouseError(crate::input::MouseError::ActionError(e.to_string())))??;
 
             Ok(ActionResult {
                 success: true,
@@ -636,8 +659,15 @@ pub async fn execute_action_with_delay(
         }
 
         Action::RightClick { x, y } => {
-            let mut mouse = MouseController::new()?;
-            mouse.click_at(*x, *y, MouseButton::Right)?;
+            let x = *x;
+            let y = *y;
+
+            tokio::task::spawn_blocking(move || {
+                let mut mouse = MouseController::new()?;
+                mouse.click_at(x, y, MouseButton::Right)
+            })
+            .await
+            .map_err(|e| ActionError::MouseError(crate::input::MouseError::ActionError(e.to_string())))??;
 
             Ok(ActionResult {
                 success: true,
@@ -651,7 +681,7 @@ pub async fn execute_action_with_delay(
         }
 
         Action::Wait { duration_ms } => {
-            std::thread::sleep(std::time::Duration::from_millis(*duration_ms));
+            tokio::time::sleep(Duration::from_millis(*duration_ms)).await;
 
             Ok(ActionResult {
                 success: true,
@@ -769,7 +799,7 @@ pub async fn execute_action_with_delay(
 
                 // Small delay between batched actions (except after the last one)
                 if i < actions.len() - 1 {
-                    std::thread::sleep(std::time::Duration::from_millis(BATCH_INTER_ACTION_DELAY_MS));
+                    tokio::time::sleep(Duration::from_millis(BATCH_INTER_ACTION_DELAY_MS)).await;
                 }
             }
 
@@ -791,7 +821,7 @@ pub async fn execute_action_with_delay(
             let timeout = timeout_ms.unwrap_or(5000).min(10000);
             log::info!("Waiting for: {} (timeout: {}ms)", description, timeout);
 
-            std::thread::sleep(std::time::Duration::from_millis(timeout as u64));
+            tokio::time::sleep(Duration::from_millis(timeout as u64)).await;
 
             Ok(ActionResult {
                 success: true,
@@ -1006,7 +1036,7 @@ pub async fn execute_action_with_retry(
                     retry_ctx.max_retries,
                     action
                 );
-                thread::sleep(retry_ctx.retry_delay);
+                tokio::time::sleep(retry_ctx.retry_delay).await;
                 continue;
             }
             result.retry_count = retry_ctx.attempt;
@@ -1016,7 +1046,7 @@ pub async fn execute_action_with_retry(
         // For actions that should have visible effect, verify screen changed
         if action.should_verify_effect() && retry_ctx.enabled {
             // Wait a bit for UI to update
-            thread::sleep(Duration::from_millis(200));
+            tokio::time::sleep(Duration::from_millis(200)).await;
 
             if !retry_ctx.screen_changed()? {
                 if retry_ctx.should_retry() {
@@ -1027,7 +1057,7 @@ pub async fn execute_action_with_retry(
                         retry_ctx.max_retries,
                         action
                     );
-                    thread::sleep(retry_ctx.retry_delay);
+                    tokio::time::sleep(retry_ctx.retry_delay).await;
                     continue;
                 }
                 log::warn!("Action completed but no screen change detected after {} retries", retry_ctx.attempt);
