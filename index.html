@@ -1109,6 +1109,55 @@
     .save-btn:hover { background: #409cff; }
     .save-btn:active, .save-btn.touch-active { background: #006edb; transform: scale(0.97); }
 
+    .detect-subscriptions-section { margin-top: 14px; }
+    .detect-btn {
+      width: 100%;
+      padding: 10px;
+      min-height: 40px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+    .detect-btn:hover { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.2); }
+    .detect-btn:active { background: rgba(255, 255, 255, 0.06); transform: scale(0.97); }
+    .detect-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .detect-results { margin-top: 10px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; padding: 10px; }
+    .detect-result-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      margin-bottom: 6px;
+    }
+    .detect-result-item:last-child { margin-bottom: 0; }
+    .detect-result-info { display: flex; flex-direction: column; gap: 2px; }
+    .detect-result-provider { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.9); }
+    .detect-result-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); }
+    .detect-result-apply {
+      padding: 4px 10px;
+      background: #0a84ff;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+    }
+    .detect-result-apply:hover { background: #409cff; }
+    .detect-no-results { font-size: 11px; color: rgba(255, 255, 255, 0.4); text-align: center; padding: 8px; }
+
     .confirmation-dialog {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
@@ -2102,6 +2151,7 @@
             <option value="anthropic">Anthropic</option>
             <option value="openai">OpenAI</option>
             <option value="openrouter">OpenRouter</option>
+            <option value="glm">GLM (Zhipu AI)</option>
           </select>
         </div>
         <div class="provider-settings" id="ollama-settings">
@@ -2142,6 +2192,16 @@
           <div class="setting-group">
             <label class="setting-label">Model</label>
             <input type="text" id="openrouter-model" class="setting-input" placeholder="anthropic/claude-sonnet-4-20250514">
+          </div>
+        </div>
+        <div class="provider-settings hidden" id="glm-settings">
+          <div class="setting-group">
+            <label class="setting-label">API Key</label>
+            <input type="password" id="glm-key" class="setting-input" placeholder="zhipu-api-key...">
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Model</label>
+            <input type="text" id="glm-model" class="setting-input" placeholder="glm-4v">
           </div>
         </div>
         <div class="setting-group">
@@ -2206,6 +2266,19 @@
           <p class="setting-hint">Delay between queue items</p>
         </div>
         <button class="save-btn" id="save-settings-btn">Save</button>
+
+        <div class="detect-subscriptions-section">
+          <button class="detect-btn" id="detect-subscriptions-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            Detect API Subscriptions
+          </button>
+          <div class="detect-results hidden" id="detect-results">
+            <div class="detect-results-list" id="detect-results-list"></div>
+          </div>
+        </div>
 
         <div class="templates-section">
           <div class="templates-header">
