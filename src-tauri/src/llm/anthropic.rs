@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub struct AnthropicProvider {
     client: Client,
@@ -98,6 +98,19 @@ impl AnthropicProvider {
     pub fn new(api_key: String, model: String) -> Self {
         Self {
             client: Client::new(),
+            api_key,
+            model,
+        }
+    }
+
+    pub fn with_timeouts(api_key: String, model: String, connect_timeout: Duration, response_timeout: Duration) -> Self {
+        let client = Client::builder()
+            .connect_timeout(connect_timeout)
+            .timeout(response_timeout)
+            .build()
+            .unwrap_or_else(|_| Client::new());
+        Self {
+            client,
             api_key,
             model,
         }
