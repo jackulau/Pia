@@ -761,19 +761,6 @@ impl AgentLoop {
         }
     }
 
-    fn get_action_type(action: &Action) -> String {
-        match action {
-            Action::Click { .. } => "click".to_string(),
-            Action::DoubleClick { .. } => "double_click".to_string(),
-            Action::Move { .. } => "move".to_string(),
-            Action::Type { .. } => "type".to_string(),
-            Action::Key { .. } => "key".to_string(),
-            Action::Scroll { .. } => "scroll".to_string(),
-            Action::Complete { .. } => "complete".to_string(),
-            Action::Error { .. } => "error".to_string(),
-        }
-    }
-
     async fn emit_state_update(&self) {
         let state = self.state.get_state().await;
         let _ = self.app_handle.emit("agent-state", state);
