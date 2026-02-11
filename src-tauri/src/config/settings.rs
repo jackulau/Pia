@@ -127,6 +127,8 @@ pub struct ProvidersConfig {
     pub openai: Option<OpenAIConfig>,
     #[serde(default)]
     pub openrouter: Option<OpenRouterConfig>,
+    #[serde(default)]
+    pub glm: Option<GlmConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,6 +151,12 @@ pub struct OpenAIConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenRouterConfig {
+    pub api_key: String,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlmConfig {
     pub api_key: String,
     pub model: String,
 }
@@ -182,6 +190,7 @@ impl Default for Config {
                 anthropic: None,
                 openai: None,
                 openrouter: None,
+                glm: None,
             },
             templates: Vec::new(),
         }
@@ -249,6 +258,16 @@ impl Config {
                     self.providers.openrouter = Some(OpenRouterConfig {
                         api_key: api_key.to_string(),
                         model: "anthropic/claude-sonnet-4-20250514".to_string(),
+                    });
+                }
+            }
+            "glm" => {
+                if let Some(ref mut config) = self.providers.glm {
+                    config.api_key = api_key.to_string();
+                } else {
+                    self.providers.glm = Some(GlmConfig {
+                        api_key: api_key.to_string(),
+                        model: "glm-4v".to_string(),
                     });
                 }
             }
