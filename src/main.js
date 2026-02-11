@@ -161,6 +161,8 @@ let canUndo = false;
 let lastUndoableAction = null;
 let renderQueueTimer = null;
 let tauriUnlisteners = [];
+let lastRenderedTimelineCount = 0;
+let pendingAgentStateRAF = null;
 
 // Window sizes
 const COMPACT_SIZE = { width: 420, height: 280 };
@@ -766,9 +768,15 @@ async function setupTauriListeners() {
   }
   tauriUnlisteners = [];
 
-  // Agent state updates
+  // Agent state updates (throttled to one per animation frame)
   tauriUnlisteners.push(await listen('agent-state', (event) => {
-    updateAgentState(event.payload);
+    if (pendingAgentStateRAF !== null) {
+      cancelAnimationFrame(pendingAgentStateRAF);
+    }
+    pendingAgentStateRAF = requestAnimationFrame(() => {
+      pendingAgentStateRAF = null;
+      updateAgentState(event.payload);
+    });
   }));
 
   // Recorded actions updates
@@ -1252,35 +1260,50 @@ function updateAgentState(state) {
       actionsCount.textContent = state.action_history.length;
     }
 
-    // Clear and rebuild timeline
+    // Incremental timeline update: only append new items
     if (timelineList) {
-      timelineList.innerHTML = '';
+      const currentCount = state.action_history.length;
 
-      // Show most recent first (reverse order)
-      const recentActions = [...state.action_history].reverse();
+      if (currentCount < lastRenderedTimelineCount) {
+        // State was reset (new session) - clear and rebuild
+        timelineList.innerHTML = '';
+        lastRenderedTimelineCount = 0;
+      }
 
-      for (const entry of recentActions) {
-        const item = document.createElement('div');
-        item.className = `timeline-item${entry.is_error ? ' error' : ''}`;
+      const newCount = currentCount - lastRenderedTimelineCount;
+      if (newCount > 0) {
+        // Remove empty placeholder if present
+        const placeholder = timelineList.querySelector('.timeline-empty');
+        if (placeholder) placeholder.remove();
 
-        const time = document.createElement('span');
-        time.className = 'timeline-time';
-        time.textContent = formatTimeOnly(entry.timestamp);
+        // Append only new items (prepend to show most recent first)
+        for (let i = lastRenderedTimelineCount; i < currentCount; i++) {
+          const entry = state.action_history[i];
+          const item = document.createElement('div');
+          item.className = `timeline-item${entry.is_error ? ' error' : ''}`;
 
-        const actionContainer = document.createElement('span');
-        actionContainer.className = 'timeline-action';
+          const time = document.createElement('span');
+          time.className = 'timeline-time';
+          time.textContent = formatTimeOnly(entry.timestamp);
 
-        try {
-          const parsed = JSON.parse(entry.action);
-          const actionType = parsed.action || 'default';
-          renderActionWithIcon(actionContainer, actionType, formatAction(parsed));
-        } catch {
-          renderActionWithIcon(actionContainer, 'default', entry.action);
+          const actionContainer = document.createElement('span');
+          actionContainer.className = 'timeline-action';
+
+          try {
+            const parsed = JSON.parse(entry.action);
+            const actionType = parsed.action || 'default';
+            renderActionWithIcon(actionContainer, actionType, formatAction(parsed));
+          } catch {
+            renderActionWithIcon(actionContainer, 'default', entry.action);
+          }
+
+          item.appendChild(time);
+          item.appendChild(actionContainer);
+          // Prepend so newest appears at top (no reverse copy needed)
+          timelineList.insertBefore(item, timelineList.firstChild);
         }
 
-        item.appendChild(time);
-        item.appendChild(actionContainer);
-        timelineList.appendChild(item);
+        lastRenderedTimelineCount = currentCount;
       }
     }
 
@@ -1302,6 +1325,7 @@ function updateAgentState(state) {
   } else {
     if (timelineList) timelineList.innerHTML = '<div class="timeline-empty">Waiting for instruction...</div>';
     if (actionCount) actionCount.textContent = '0 actions';
+    lastRenderedTimelineCount = 0;
   }
 
   // Show/hide control buttons based on state
@@ -1704,6 +1728,7 @@ function resetSessionStats() {
   actionHistory = [];
   totalActionsCount = 0;
   sessionStartTime = null;
+  lastRenderedTimelineCount = 0;
   stopElapsedTimer();
   updateActionHistoryUI();
   if (elapsedValue) elapsedValue.textContent = '0:00';

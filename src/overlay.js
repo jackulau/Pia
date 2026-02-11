@@ -2,6 +2,10 @@ import { listen } from '@tauri-apps/api/event';
 
 const container = document.getElementById('overlay-container');
 
+// Pending timeout IDs so we can cancel before setting new ones
+let typeIndicatorTimer = null;
+let keyIndicatorTimer = null;
+
 // Listen for action indicator events
 listen('show-action-indicator', (event) => {
   const { action, x, y, label, text, key, modifiers, direction } = event.payload;
@@ -73,6 +77,12 @@ function showClickIndicator(x, y, label, className) {
 }
 
 function showTypeIndicator(text) {
+  // Cancel pending removal before replacing
+  if (typeIndicatorTimer !== null) {
+    clearTimeout(typeIndicatorTimer);
+    typeIndicatorTimer = null;
+  }
+
   // Remove existing type indicator
   const existing = container.querySelector('.type-indicator');
   if (existing) {
@@ -88,12 +98,19 @@ function showTypeIndicator(text) {
   container.appendChild(indicator);
 
   // Auto-remove after a delay
-  setTimeout(() => {
+  typeIndicatorTimer = setTimeout(() => {
+    typeIndicatorTimer = null;
     indicator.remove();
   }, 2000);
 }
 
 function showKeyIndicator(key, modifiers) {
+  // Cancel pending removal before replacing
+  if (keyIndicatorTimer !== null) {
+    clearTimeout(keyIndicatorTimer);
+    keyIndicatorTimer = null;
+  }
+
   // Remove existing key indicator
   const existing = container.querySelector('.key-indicator');
   if (existing) {
@@ -113,7 +130,8 @@ function showKeyIndicator(key, modifiers) {
   container.appendChild(indicator);
 
   // Auto-remove after a delay
-  setTimeout(() => {
+  keyIndicatorTimer = setTimeout(() => {
+    keyIndicatorTimer = null;
     indicator.remove();
   }, 1500);
 }
