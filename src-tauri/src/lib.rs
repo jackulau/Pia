@@ -271,30 +271,9 @@ async fn undo_last_action(
                 .update_undo_state(can_undo, last_undoable)
                 .await;
 
-            // Emit state update
-            let s = state.agent_state.get_state().await;
-            let payload = AgentStatePayload {
-                status: format!("{:?}", s.status),
-                instruction: s.instruction,
-                iteration: s.iteration,
-                max_iterations: s.max_iterations,
-                last_action: Some(format!("Undone: {}", record.description)),
-                last_error: s.last_error,
-                pending_action: s.pending_action,
-                tokens_per_second: s.tokens_per_second,
-                total_input_tokens: s.total_input_tokens,
-                total_output_tokens: s.total_output_tokens,
-                queue_index: s.queue_index,
-                queue_total: s.queue_total,
-                queue_active: s.queue_active,
-                preview_mode: s.preview_mode,
-                kill_switch_triggered: s.kill_switch_triggered,
-                execution_mode: format!("{:?}", s.execution_mode),
-                recorded_actions_count: s.recorded_actions.len(),
-                can_undo: s.can_undo,
-                last_undoable_action: s.last_undoable_action,
-            };
-            let _ = app_handle.emit("agent-state", payload);
+            // Emit complete agent state (same format as loop_runner)
+            let state = state.agent_state.get_state().await;
+            let _ = app_handle.emit("agent-state", state);
 
             Ok(format!("Undone: {}", record.description))
         }
