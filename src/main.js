@@ -7,8 +7,8 @@ import { getCurrentWindow, LogicalSize, PhysicalPosition, PhysicalSize, availabl
 // Size presets configuration
 const SIZE_PRESETS = {
   mini: { width: 300, height: 180, name: 'Mini', cssClass: 'size-mini' },
-  standard: { width: 420, height: 280, name: 'Standard', cssClass: 'size-standard' },
-  detailed: { width: 550, height: 420, name: 'Detailed', cssClass: 'size-detailed' }
+  standard: { width: 420, height: 380, name: 'Standard', cssClass: 'size-standard' },
+  detailed: { width: 550, height: 520, name: 'Detailed', cssClass: 'size-detailed' }
 };
 
 // DOM Elements
@@ -163,8 +163,8 @@ let renderQueueTimer = null;
 let tauriUnlisteners = [];
 
 // Window sizes
-const COMPACT_SIZE = { width: 420, height: 280 };
-const EXPANDED_SIZE = { width: 500, height: 450 };
+const COMPACT_SIZE = { width: 420, height: 380 };
+const EXPANDED_SIZE = { width: 500, height: 550 };
 
 // Position constants
 const POSITION_PADDING = 20;
