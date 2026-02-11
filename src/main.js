@@ -100,6 +100,7 @@ const providerSettings = {
   anthropic: document.getElementById('anthropic-settings'),
   openai: document.getElementById('openai-settings'),
   openrouter: document.getElementById('openrouter-settings'),
+  glm: document.getElementById('glm-settings'),
 };
 
 // Confirmation dialog
@@ -379,6 +380,12 @@ function updateSettingsUI() {
     document.getElementById('openrouter-key').value = currentConfig.providers.openrouter.api_key || '';
     document.getElementById('openrouter-model').value = currentConfig.providers.openrouter.model || '';
   }
+
+  // Set GLM settings
+  if (currentConfig.providers.glm) {
+    document.getElementById('glm-key').value = currentConfig.providers.glm.api_key || '';
+    document.getElementById('glm-model').value = currentConfig.providers.glm.model || '';
+  }
 }
 
 // Show/hide provider-specific settings
@@ -579,6 +586,12 @@ function setupEventListeners() {
 
   // Save settings
   saveSettingsBtn.addEventListener('click', saveSettings);
+
+  // Detect subscriptions
+  const detectSubscriptionsBtn = document.getElementById('detect-subscriptions-btn');
+  if (detectSubscriptionsBtn) {
+    detectSubscriptionsBtn.addEventListener('click', detectSubscriptions);
+  }
 
   // Template selection
   templateSelect.addEventListener('change', (e) => {
@@ -1495,6 +1508,10 @@ async function saveSettings() {
           api_key: document.getElementById('openrouter-key').value,
           model: document.getElementById('openrouter-model').value || 'anthropic/claude-sonnet-4-20250514',
         } : null,
+        glm: document.getElementById('glm-key').value ? {
+          api_key: document.getElementById('glm-key').value,
+          model: document.getElementById('glm-model').value || 'glm-4v',
+        } : null,
       },
     };
 
@@ -1517,6 +1534,96 @@ async function saveSettings() {
     console.error('Failed to save settings:', error);
     showToast('Failed to save settings', 'error');
   }
+}
+
+// Detect available API subscriptions
+async function detectSubscriptions() {
+  const btn = document.getElementById('detect-subscriptions-btn');
+  const resultsContainer = document.getElementById('detect-results');
+  const resultsList = document.getElementById('detect-results-list');
+
+  if (!btn || !resultsContainer || !resultsList) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Detecting...';
+  resultsList.innerHTML = '';
+  resultsContainer.classList.add('hidden');
+
+  try {
+    const detected = await invoke('detect_subscriptions');
+
+    if (detected && detected.length > 0) {
+      resultsContainer.classList.remove('hidden');
+      detected.forEach(sub => {
+        const item = document.createElement('div');
+        item.className = 'detect-result-item';
+
+        const maskedKey = sub.api_key
+          ? sub.api_key.substring(0, 8) + '...' + sub.api_key.substring(sub.api_key.length - 4)
+          : '(detected)';
+
+        item.innerHTML = `
+          <div class="detect-result-info">
+            <span class="detect-result-provider">${escapeHtml(sub.provider)}</span>
+            <span class="detect-result-hint">${escapeHtml(maskedKey)}</span>
+          </div>
+          <button class="detect-result-apply" data-provider="${escapeHtml(sub.provider)}" data-key="${escapeHtml(sub.api_key || '')}" data-model="${escapeHtml(sub.model || '')}">Apply</button>
+        `;
+        resultsList.appendChild(item);
+      });
+
+      // Attach apply handlers
+      resultsList.querySelectorAll('.detect-result-apply').forEach(applyBtn => {
+        applyBtn.addEventListener('click', () => {
+          applyDetectedCredential(applyBtn.dataset.provider, applyBtn.dataset.key, applyBtn.dataset.model);
+        });
+      });
+    } else {
+      resultsContainer.classList.remove('hidden');
+      resultsList.innerHTML = '<div class="detect-no-results">No API subscriptions detected</div>';
+    }
+  } catch (error) {
+    console.error('Failed to detect subscriptions:', error);
+    resultsContainer.classList.remove('hidden');
+    resultsList.innerHTML = '<div class="detect-no-results">Detection failed: ' + escapeHtml(String(error)) + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      Detect API Subscriptions
+    `;
+  }
+}
+
+// Apply a detected credential to the settings UI
+function applyDetectedCredential(provider, apiKey, model) {
+  const providerMap = {
+    anthropic: { keyId: 'anthropic-key', modelId: 'anthropic-model' },
+    openai: { keyId: 'openai-key', modelId: 'openai-model' },
+    openrouter: { keyId: 'openrouter-key', modelId: 'openrouter-model' },
+    glm: { keyId: 'glm-key', modelId: 'glm-model' },
+  };
+
+  const mapping = providerMap[provider];
+  if (!mapping) {
+    showToast('Unknown provider: ' + provider, 'error');
+    return;
+  }
+
+  const keyInput = document.getElementById(mapping.keyId);
+  const modelInput = document.getElementById(mapping.modelId);
+
+  if (keyInput && apiKey) keyInput.value = apiKey;
+  if (modelInput && model) modelInput.value = model;
+
+  // Switch to detected provider
+  providerSelect.value = provider;
+  showProviderSettings(provider);
+
+  showToast('Applied ' + provider + ' credentials', 'success');
 }
 
 // Export session to file
