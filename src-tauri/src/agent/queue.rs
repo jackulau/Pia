@@ -54,12 +54,29 @@ impl QueuedInstruction {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstructionQueue {
     pub items: VecDeque<QueuedInstruction>,
     pub current_index: usize,
     pub is_processing: bool,
     pub failure_mode: QueueFailureMode,
+    #[serde(default)]
+    pending_count: usize,
+    #[serde(default)]
+    completed_count: usize,
+}
+
+impl Default for InstructionQueue {
+    fn default() -> Self {
+        Self {
+            items: VecDeque::new(),
+            current_index: 0,
+            is_processing: false,
+            failure_mode: QueueFailureMode::default(),
+            pending_count: 0,
+            completed_count: 0,
+        }
+    }
 }
 
 impl InstructionQueue {
@@ -71,6 +88,7 @@ impl InstructionQueue {
         let item = QueuedInstruction::new(instruction);
         let id = item.id.clone();
         self.items.push_back(item);
+        self.pending_count += 1;
         id
     }
 
@@ -84,7 +102,13 @@ impl InstructionQueue {
             if pos == self.current_index && self.is_processing {
                 return false;
             }
+            let status = self.items[pos].status;
             self.items.remove(pos);
+            match status {
+                QueueItemStatus::Pending => self.pending_count = self.pending_count.saturating_sub(1),
+                QueueItemStatus::Completed => self.completed_count = self.completed_count.saturating_sub(1),
+                _ => {}
+            }
             // Adjust current_index if needed
             if pos < self.current_index && self.current_index > 0 {
                 self.current_index -= 1;
@@ -112,6 +136,9 @@ impl InstructionQueue {
 
     pub fn mark_current_running(&mut self) {
         if let Some(item) = self.items.get_mut(self.current_index) {
+            if item.status == QueueItemStatus::Pending {
+                self.pending_count = self.pending_count.saturating_sub(1);
+            }
             item.status = QueueItemStatus::Running;
         }
     }
@@ -120,6 +147,7 @@ impl InstructionQueue {
         if let Some(item) = self.items.get_mut(self.current_index) {
             item.status = QueueItemStatus::Completed;
             item.result = result;
+            self.completed_count += 1;
         }
     }
 
@@ -143,10 +171,13 @@ impl InstructionQueue {
         self.items.clear();
         self.current_index = 0;
         self.is_processing = false;
+        self.pending_count = 0;
+        self.completed_count = 0;
     }
 
     pub fn clear_pending(&mut self) {
         self.items.retain(|item| item.status != QueueItemStatus::Pending);
+        self.pending_count = 0;
     }
 
     pub fn reorder(&mut self, ids: Vec<String>) -> bool {
@@ -193,11 +224,11 @@ impl InstructionQueue {
     }
 
     pub fn pending_count(&self) -> usize {
-        self.items.iter().filter(|i| i.status == QueueItemStatus::Pending).count()
+        self.pending_count
     }
 
     pub fn completed_count(&self) -> usize {
-        self.items.iter().filter(|i| i.status == QueueItemStatus::Completed).count()
+        self.completed_count
     }
 
     pub fn total_count(&self) -> usize {
@@ -209,7 +240,7 @@ impl InstructionQueue {
     }
 
     pub fn has_pending(&self) -> bool {
-        self.items.iter().any(|i| i.status == QueueItemStatus::Pending)
+        self.pending_count > 0
     }
 }
 

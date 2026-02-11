@@ -82,14 +82,38 @@ impl SessionHistory {
 
     pub fn to_json(&self, include_screenshots: bool) -> serde_json::Value {
         if include_screenshots {
-            serde_json::to_value(self).unwrap_or_default()
-        } else {
-            let mut history = self.clone();
-            for entry in &mut history.entries {
-                entry.screenshot_base64 = None;
-            }
-            serde_json::to_value(history).unwrap_or_default()
+            return serde_json::to_value(self).unwrap_or_default();
         }
+        // Build JSON without cloning the entire history just to strip screenshots.
+        // Each screenshot_base64 can be 1-2MB, so avoiding the clone is significant.
+        let entries: Vec<serde_json::Value> = self.entries.iter().map(|entry| {
+            let mut obj = serde_json::Map::new();
+            obj.insert("timestamp".into(), serde_json::to_value(&entry.timestamp).unwrap_or_default());
+            obj.insert("iteration".into(), serde_json::Value::Number(entry.iteration.into()));
+            obj.insert("action_type".into(), serde_json::Value::String(entry.action_type.clone()));
+            obj.insert("action_details".into(), entry.action_details.clone());
+            obj.insert("llm_response".into(), serde_json::Value::String(entry.llm_response.clone()));
+            obj.insert("success".into(), serde_json::Value::Bool(entry.success));
+            if let Some(ref msg) = entry.error_message {
+                obj.insert("error_message".into(), serde_json::Value::String(msg.clone()));
+            }
+            if let Some(ref msg) = entry.result_message {
+                obj.insert("result_message".into(), serde_json::Value::String(msg.clone()));
+            }
+            serde_json::Value::Object(obj)
+        }).collect();
+
+        let mut obj = serde_json::Map::new();
+        obj.insert("session_id".into(), serde_json::Value::String(self.session_id.clone()));
+        obj.insert("instruction".into(), serde_json::Value::String(self.instruction.clone()));
+        obj.insert("started_at".into(), serde_json::to_value(&self.started_at).unwrap_or_default());
+        if let Some(ref ended) = self.ended_at {
+            obj.insert("ended_at".into(), serde_json::to_value(ended).unwrap_or_default());
+        }
+        obj.insert("entries".into(), serde_json::Value::Array(entries));
+        obj.insert("metrics".into(), serde_json::to_value(&self.metrics).unwrap_or_default());
+        obj.insert("final_status".into(), serde_json::Value::String(self.final_status.clone()));
+        serde_json::Value::Object(obj)
     }
 
     pub fn to_text(&self) -> String {

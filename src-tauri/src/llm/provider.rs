@@ -336,8 +336,7 @@ pub trait LlmProvider: Send + Sync {
 /// Returns a Vec of tuples: (role, text_content, optional_image_base64)
 pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String, Option<String>)> {
     history
-        .get_messages()
-        .iter()
+        .messages()
         .map(|msg| match msg {
             Message::User {
                 instruction,
