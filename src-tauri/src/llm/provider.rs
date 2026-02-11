@@ -475,3 +475,213 @@ If an action consistently fails, try:
 Respond with ONLY the JSON action, no other text."#
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_token_metrics_tokens_per_second() {
+        let metrics = TokenMetrics {
+            input_tokens: 100,
+            output_tokens: 50,
+            total_duration: Duration::from_secs(2),
+        };
+        assert!((metrics.tokens_per_second() - 25.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_token_metrics_zero_duration() {
+        let metrics = TokenMetrics {
+            input_tokens: 100,
+            output_tokens: 50,
+            total_duration: Duration::from_secs(0),
+        };
+        assert_eq!(metrics.tokens_per_second(), 0.0);
+    }
+
+    #[test]
+    fn test_tool_use_serialization() {
+        let tu = ToolUse {
+            id: "tool_abc".to_string(),
+            name: "click".to_string(),
+            input: json!({"x": 100, "y": 200}),
+        };
+        let json_str = serde_json::to_string(&tu).unwrap();
+        let parsed: ToolUse = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed.id, "tool_abc");
+        assert_eq!(parsed.name, "click");
+        assert_eq!(parsed.input["x"], 100);
+    }
+
+    #[test]
+    fn test_tool_result_success() {
+        let result = ToolResult::success("id1".to_string(), "done".to_string());
+        assert!(!result.is_error);
+        assert_eq!(result.tool_use_id, "id1");
+        assert_eq!(result.content, "done");
+    }
+
+    #[test]
+    fn test_tool_result_error() {
+        let result = ToolResult::error("id2".to_string(), "failed".to_string());
+        assert!(result.is_error);
+        assert_eq!(result.content, "failed");
+    }
+
+    #[test]
+    fn test_tool_result_to_json() {
+        let result = ToolResult::success("id3".to_string(), "ok".to_string());
+        let json = result.to_json();
+        assert_eq!(json["type"], "tool_result");
+        assert_eq!(json["tool_use_id"], "id3");
+        assert_eq!(json["is_error"], false);
+        assert_eq!(json["content"], "ok");
+    }
+
+    #[test]
+    fn test_build_tools_returns_expected_tools() {
+        let tools = build_tools();
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"click"));
+        assert!(names.contains(&"double_click"));
+        assert!(names.contains(&"move"));
+        assert!(names.contains(&"type"));
+        assert!(names.contains(&"key"));
+        assert!(names.contains(&"scroll"));
+        assert!(names.contains(&"complete"));
+        assert!(names.contains(&"error"));
+        assert_eq!(tools.len(), 8);
+    }
+
+    #[test]
+    fn test_build_system_prompt_contains_dimensions() {
+        let prompt = build_system_prompt(1920, 1080);
+        assert!(prompt.contains("1920x1080"));
+    }
+
+    #[test]
+    fn test_build_system_prompt_for_tools_contains_dimensions() {
+        let prompt = build_system_prompt_for_tools(2560, 1440);
+        assert!(prompt.contains("2560x1440"));
+    }
+
+    #[test]
+    fn test_llm_response_to_string_repr_text() {
+        let resp = LlmResponse::Text("hello".to_string());
+        assert_eq!(resp.to_string_repr(), "hello");
+    }
+
+    #[test]
+    fn test_llm_response_to_string_repr_tool_use() {
+        let resp = LlmResponse::ToolUse(ToolUse {
+            id: "id1".to_string(),
+            name: "click".to_string(),
+            input: json!({"x": 1}),
+        });
+        let repr = resp.to_string_repr();
+        assert!(repr.contains("click"));
+        assert!(repr.contains("id1"));
+    }
+
+    #[test]
+    fn test_history_to_messages_user_message() {
+        let mut history = ConversationHistory::new();
+        history.add_user_message("Click the button", Some("img_data".to_string()), Some(1920), Some(1080));
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, "user");
+        assert_eq!(messages[0].1, "Click the button");
+        assert_eq!(messages[0].2.as_deref(), Some("img_data"));
+    }
+
+    #[test]
+    fn test_history_to_messages_assistant_message() {
+        let mut history = ConversationHistory::new();
+        history.add_assistant_message(r#"{"action": "click", "x": 100, "y": 200}"#);
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, "assistant");
+        assert!(messages[0].1.contains("click"));
+        assert!(messages[0].2.is_none());
+    }
+
+    #[test]
+    fn test_history_to_messages_tool_result_success() {
+        let mut history = ConversationHistory::new();
+        history.add_tool_result(true, Some("Clicked successfully".to_string()), None);
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, "user");
+        assert!(messages[0].1.contains("successfully"));
+        assert!(messages[0].1.contains("Clicked successfully"));
+    }
+
+    #[test]
+    fn test_history_to_messages_tool_result_failure() {
+        let mut history = ConversationHistory::new();
+        history.add_tool_result(false, None, Some("Element not found".to_string()));
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, "user");
+        assert!(messages[0].1.contains("failed"));
+        assert!(messages[0].1.contains("Element not found"));
+    }
+
+    #[test]
+    fn test_history_to_messages_mixed_conversation() {
+        let mut history = ConversationHistory::new();
+        history.add_user_message("Open browser", Some("screenshot1".to_string()), Some(1920), Some(1080));
+        history.add_assistant_message(r#"{"action": "click", "x": 50, "y": 60}"#);
+        history.add_tool_result(true, Some("Clicked".to_string()), None);
+        history.add_user_message("Next step", Some("screenshot2".to_string()), Some(1920), Some(1080));
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[0].0, "user");
+        assert_eq!(messages[1].0, "assistant");
+        assert_eq!(messages[2].0, "user"); // tool result mapped to user role
+        assert_eq!(messages[3].0, "user");
+    }
+
+    #[test]
+    fn test_history_to_messages_empty() {
+        let history = ConversationHistory::new();
+        let messages = history_to_messages(&history);
+        assert!(messages.is_empty());
+    }
+
+    #[test]
+    fn test_build_system_prompt_contains_all_action_types() {
+        let prompt = build_system_prompt(1920, 1080);
+        assert!(prompt.contains("click"));
+        assert!(prompt.contains("double_click"));
+        assert!(prompt.contains("type"));
+        assert!(prompt.contains("key"));
+        assert!(prompt.contains("scroll"));
+        assert!(prompt.contains("move"));
+        assert!(prompt.contains("drag"));
+        assert!(prompt.contains("triple_click"));
+        assert!(prompt.contains("right_click"));
+        assert!(prompt.contains("wait"));
+        assert!(prompt.contains("wait_for_element"));
+        assert!(prompt.contains("complete"));
+        assert!(prompt.contains("error"));
+        assert!(prompt.contains("batch"));
+    }
+
+    #[test]
+    fn test_build_tools_schema_has_required_fields() {
+        let tools = build_tools();
+        let click_tool = tools.iter().find(|t| t.name == "click").unwrap();
+        let required = click_tool.input_schema["required"].as_array().unwrap();
+        let required_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+        assert!(required_strs.contains(&"x"));
+        assert!(required_strs.contains(&"y"));
+    }
+}
