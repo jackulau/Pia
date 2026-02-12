@@ -224,24 +224,6 @@
     .status-text { font-size: 12px; color: rgba(255, 255, 255, 0.6); font-weight: 500; }
 
     .header-actions { display: flex; gap: 2px; align-items: center; }
-    .size-selector { display: flex; gap: 1px; margin-right: 4px; }
-    .size-btn {
-      min-width: 44px;
-      min-height: 44px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: transparent;
-      border: none;
-      border-radius: 4px;
-      color: rgba(255, 255, 255, 0.4);
-      cursor: pointer;
-      font-size: 10px;
-      font-weight: 600;
-      transition: all 0.15s;
-    }
-    .size-btn:hover { background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.7); }
-    .size-btn.active { background: rgba(10, 132, 255, 0.3); color: #0a84ff; }
     .icon-btn {
       width: 44px;
       height: 44px;
@@ -263,7 +245,6 @@
       outline: none;
       box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.5);
     }
-    .size-btn:focus-visible,
     .submit-btn:focus-visible,
     .record-btn:focus-visible,
     .stop-btn:focus-visible,
@@ -1363,55 +1344,11 @@
       .submit-btn.loading svg { animation: none !important; opacity: 0.6; }
     }
 
-    /* Expandable Mode */
-    .expanded-only { display: none !important; }
-
-    .modal.expanded .expanded-only { display: flex !important; }
-
-    .modal {
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .modal.expanded {
-      max-width: 480px;
-    }
-
-    .modal.expanded .input-area {
-      padding-bottom: 16px;
-    }
-
-    .modal.expanded #instruction-input {
-      height: 44px;
-    }
-
-    .modal.expanded .submit-btn {
-      width: 44px;
-      height: 44px;
-    }
-
-    .modal.expanded .metrics-bar {
-      flex-wrap: wrap;
-      gap: 8px;
-      padding: 12px 16px;
-    }
-
-    .modal.expanded .metric {
-      min-width: 60px;
-    }
-
-    .modal.expanded .action-display {
-      padding: 14px 16px;
-    }
-
-    .modal.expanded .action-content {
-      max-height: 60px;
-      font-size: 12px;
-    }
-
-    /* Action History (expanded only) */
+    /* Action History */
     .action-history {
       padding: 0 16px 14px;
       border-top: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
       flex-direction: column;
     }
 
@@ -1440,27 +1377,6 @@
     .action-history-item:first-child {
       color: rgba(255, 255, 255, 0.7);
       background: rgba(255, 255, 255, 0.08);
-    }
-
-    /* Expand button active state */
-    #expand-btn.active {
-      background: rgba(10, 132, 255, 0.2);
-      color: #0a84ff;
-    }
-
-    /* Transition animations for content */
-    .action-history,
-    .modal.expanded .action-display,
-    .metrics-bar .metric {
-      transition: opacity 0.2s ease-in-out;
-    }
-
-    .modal:not(.expanded) .expanded-only {
-      opacity: 0;
-    }
-
-    .modal.expanded .expanded-only {
-      opacity: 1;
     }
 
     /* Queue UI Styles */
@@ -1663,42 +1579,6 @@
     }
 
     .status-dot.preview { background: #ff9500; animation: pulse 1.5s infinite; }
-
-    /* Resize Handle */
-    .resize-handle {
-      position: absolute;
-      bottom: 4px;
-      right: 4px;
-      width: 16px;
-      height: 16px;
-      cursor: se-resize;
-      opacity: 0.4;
-      transition: opacity 0.15s;
-    }
-    .resize-handle:hover { opacity: 0.7; }
-    .resize-handle::before,
-    .resize-handle::after {
-      content: '';
-      position: absolute;
-      background: rgba(255, 255, 255, 0.5);
-      border-radius: 1px;
-    }
-    .resize-handle::before {
-      width: 10px;
-      height: 2px;
-      bottom: 2px;
-      right: 2px;
-      transform: rotate(-45deg);
-      transform-origin: bottom right;
-    }
-    .resize-handle::after {
-      width: 6px;
-      height: 2px;
-      bottom: 5px;
-      right: 2px;
-      transform: rotate(-45deg);
-      transform-origin: bottom right;
-    }
 
     /* Responsive Breakpoints */
     /* Small: 300-350px - Compact mode */
@@ -1931,11 +1811,6 @@
           <span class="preview-badge">Preview</span>
         </div>
         <div class="header-actions">
-          <div class="size-selector">
-            <button class="size-btn" id="size-mini" title="Small - Compact view" aria-label="Small view">S</button>
-            <button class="size-btn active" id="size-standard" title="Medium - Standard view" aria-label="Medium view">M</button>
-            <button class="size-btn" id="size-detailed" title="Large - Detailed view with full info" aria-label="Large view">L</button>
-          </div>
           <div class="position-menu-container">
             <button class="icon-btn" id="position-btn" title="Snap Position" aria-label="Snap to corner">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -1968,14 +1843,6 @@
               </button>
             </div>
           </div>
-          <button class="icon-btn" id="expand-btn" title="Expand" aria-label="Expand/collapse window">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <polyline points="15 3 21 3 21 9"></polyline>
-              <polyline points="9 21 3 21 3 15"></polyline>
-              <line x1="21" y1="3" x2="14" y2="10"></line>
-              <line x1="3" y1="21" x2="10" y2="14"></line>
-            </svg>
-          </button>
           <div class="kill-switch kill-switch--idle" id="kill-switch">
             <span class="kill-switch-icon">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -2077,11 +1944,11 @@
         <div class="metric">
           <span class="metric-value hidden" id="retry-indicator">0 retries</span>
         </div>
-        <div class="metric expanded-only">
+        <div class="metric">
           <span class="metric-label">Elapsed</span>
           <span class="metric-value" id="elapsed-value">0:00</span>
         </div>
-        <div class="metric expanded-only">
+        <div class="metric">
           <span class="metric-label">Actions</span>
           <span class="metric-value" id="actions-count">0</span>
         </div>
@@ -2117,7 +1984,7 @@
           <div class="timeline-empty">Waiting for instruction...</div>
         </div>
       </div>
-      <div class="action-history expanded-only">
+      <div class="action-history">
         <div class="action-label">Action History</div>
         <div class="action-history-list" id="action-history-list"></div>
       </div>
@@ -2179,7 +2046,6 @@
         </svg>
         Undo
       </button>
-      <div class="resize-handle" title="Resize"></div>
     </div>
 
     <div class="settings-panel hidden" id="settings-panel" role="region" aria-label="Settings" aria-labelledby="settings-title">
