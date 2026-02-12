@@ -789,7 +789,7 @@ async fn remove_from_history(index: usize, state: State<'_, AppState>) -> Result
 
 #[tauri::command]
 async fn detect_credentials() -> Result<Vec<DetectedCredentialPayload>, String> {
-    let detected = credentials::detect_all_credentials();
+    let detected = credentials::detect_all_credentials().await;
     Ok(detected.iter().map(|c| c.to_payload()).collect())
 }
 
@@ -798,15 +798,26 @@ async fn apply_detected_credential(
     provider: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let cred = credentials::detect_credential(&provider)
+    let cred = credentials::detect_credential(&provider).await
         .ok_or_else(|| format!("No credential found for provider: {}", provider))?;
 
     let mut config = state.config.write().await;
-    config.update_provider_api_key(&cred.provider, &cred.api_key);
 
-    // Set as default provider if no default is set or it's still the default "ollama"
-    if config.general.default_provider == "ollama" {
-        config.general.default_provider = cred.provider.clone();
+    if cred.provider == "ollama" {
+        // Ollama uses host + model, not API key
+        let host = cred.host.unwrap_or_else(|| "http://localhost:11434".to_string());
+        let model = cred.model_hint.unwrap_or_else(|| "llava".to_string());
+        config.providers.ollama = Some(config::OllamaConfig {
+            host,
+            model,
+        });
+        config.general.default_provider = "ollama".to_string();
+    } else {
+        config.update_provider_api_key(&cred.provider, &cred.api_key);
+        // Set as default provider if no default is set or it's still the default "ollama"
+        if config.general.default_provider == "ollama" {
+            config.general.default_provider = cred.provider.clone();
+        }
     }
 
     config.save().map_err(|e| e.to_string())?;
