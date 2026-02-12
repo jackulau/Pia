@@ -270,6 +270,67 @@ pub fn from_tool_use(tool_use: &ToolUse) -> Result<Action, ActionError> {
             let message = get_string(input, "message")?;
             Ok(Action::Error { message })
         }
+        "drag" => {
+            let start_x = get_i32(input, "start_x")?;
+            let start_y = get_i32(input, "start_y")?;
+            let end_x = get_i32(input, "end_x")?;
+            let end_y = get_i32(input, "end_y")?;
+            let button = get_string_or_default(input, "button", "left");
+            let duration_ms = input
+                .get("duration_ms")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32)
+                .unwrap_or(500);
+            Ok(Action::Drag {
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                button,
+                duration_ms,
+            })
+        }
+        "triple_click" => {
+            let x = get_i32(input, "x")?;
+            let y = get_i32(input, "y")?;
+            Ok(Action::TripleClick { x, y })
+        }
+        "right_click" => {
+            let x = get_i32(input, "x")?;
+            let y = get_i32(input, "y")?;
+            Ok(Action::RightClick { x, y })
+        }
+        "wait" => {
+            let duration_ms = input
+                .get("duration_ms")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(1000);
+            Ok(Action::Wait { duration_ms })
+        }
+        "wait_for_element" => {
+            let description = get_string(input, "description")?;
+            let timeout_ms = input
+                .get("timeout_ms")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32);
+            Ok(Action::WaitForElement {
+                description,
+                timeout_ms,
+            })
+        }
+        "batch" => {
+            let actions_value = input
+                .get("actions")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| ActionError::ParseError("Missing or invalid field: actions".to_string()))?;
+            let mut actions = Vec::new();
+            for action_val in actions_value {
+                let action: Action = serde_json::from_value(action_val.clone())
+                    .map_err(|e| ActionError::ParseError(format!("Invalid batch action: {}", e)))?;
+                actions.push(action);
+            }
+            Ok(Action::Batch { actions })
+        }
         _ => Err(ActionError::UnknownAction(tool_use.name.clone())),
     }
 }
@@ -1640,6 +1701,157 @@ mod tests {
         };
         let action = from_tool_use(&tu).unwrap();
         assert!(matches!(action, Action::Error { ref message } if message == "something went wrong"));
+    }
+
+    #[test]
+    fn test_from_tool_use_drag() {
+        let tu = ToolUse {
+            id: "t_drag".to_string(),
+            name: "drag".to_string(),
+            input: json!({"start_x": 10, "start_y": 20, "end_x": 300, "end_y": 400}),
+        };
+        let action = from_tool_use(&tu).unwrap();
+        match action {
+            Action::Drag { start_x, start_y, end_x, end_y, button, duration_ms } => {
+                assert_eq!(start_x, 10);
+                assert_eq!(start_y, 20);
+                assert_eq!(end_x, 300);
+                assert_eq!(end_y, 400);
+                assert_eq!(button, "left");
+                assert_eq!(duration_ms, 500);
+            }
+            _ => panic!("Expected Drag"),
+        }
+    }
+
+    #[test]
+    fn test_from_tool_use_drag_with_options() {
+        let tu = ToolUse {
+            id: "t_drag2".to_string(),
+            name: "drag".to_string(),
+            input: json!({"start_x": 0, "start_y": 0, "end_x": 100, "end_y": 100, "button": "right", "duration_ms": 2000}),
+        };
+        let action = from_tool_use(&tu).unwrap();
+        match action {
+            Action::Drag { button, duration_ms, .. } => {
+                assert_eq!(button, "right");
+                assert_eq!(duration_ms, 2000);
+            }
+            _ => panic!("Expected Drag"),
+        }
+    }
+
+    #[test]
+    fn test_from_tool_use_triple_click() {
+        let tu = ToolUse {
+            id: "t_tc".to_string(),
+            name: "triple_click".to_string(),
+            input: json!({"x": 100, "y": 200}),
+        };
+        let action = from_tool_use(&tu).unwrap();
+        assert!(matches!(action, Action::TripleClick { x: 100, y: 200 }));
+    }
+
+    #[test]
+    fn test_from_tool_use_right_click() {
+        let tu = ToolUse {
+            id: "t_rc".to_string(),
+            name: "right_click".to_string(),
+            input: json!({"x": 50, "y": 75}),
+        };
+        let action = from_tool_use(&tu).unwrap();
+        assert!(matches!(action, Action::RightClick { x: 50, y: 75 }));
+    }
+
+    #[test]
+    fn test_from_tool_use_wait() {
+        let tu = ToolUse {
+            id: "t_wait".to_string(),
+            name: "wait".to_string(),
+            input: json!({"duration_ms": 2000}),
+        };
+        let action = from_tool_use(&tu).unwrap();
+        assert!(matches!(action, Action::Wait { duration_ms: 2000 }));
+    }
+
+    #[test]
+    fn test_from_tool_use_wait_default_duration() {
+        let tu = ToolUse {
+            id: "t_wait2".to_string(),
+            name: "wait".to_string(),
+            input: json!({}),
+        };
+        let action = from_tool_use(&tu).unwrap();
+        assert!(matches!(action, Action::Wait { duration_ms: 1000 }));
+    }
+
+    #[test]
+    fn test_from_tool_use_wait_for_element() {
+        let tu = ToolUse {
+            id: "t_wfe".to_string(),
+            name: "wait_for_element".to_string(),
+            input: json!({"description": "page to load", "timeout_ms": 3000}),
+        };
+        let action = from_tool_use(&tu).unwrap();
+        match action {
+            Action::WaitForElement { description, timeout_ms } => {
+                assert_eq!(description, "page to load");
+                assert_eq!(timeout_ms, Some(3000));
+            }
+            _ => panic!("Expected WaitForElement"),
+        }
+    }
+
+    #[test]
+    fn test_from_tool_use_wait_for_element_no_timeout() {
+        let tu = ToolUse {
+            id: "t_wfe2".to_string(),
+            name: "wait_for_element".to_string(),
+            input: json!({"description": "loading spinner"}),
+        };
+        let action = from_tool_use(&tu).unwrap();
+        match action {
+            Action::WaitForElement { description, timeout_ms } => {
+                assert_eq!(description, "loading spinner");
+                assert!(timeout_ms.is_none());
+            }
+            _ => panic!("Expected WaitForElement"),
+        }
+    }
+
+    #[test]
+    fn test_from_tool_use_batch() {
+        let tu = ToolUse {
+            id: "t_batch".to_string(),
+            name: "batch".to_string(),
+            input: json!({"actions": [
+                {"action": "type", "text": "hello"},
+                {"action": "key", "key": "enter"}
+            ]}),
+        };
+        let action = from_tool_use(&tu).unwrap();
+        match action {
+            Action::Batch { actions } => {
+                assert_eq!(actions.len(), 2);
+                assert!(matches!(&actions[0], Action::Type { text } if text == "hello"));
+                assert!(matches!(&actions[1], Action::Key { key, .. } if key == "enter"));
+            }
+            _ => panic!("Expected Batch"),
+        }
+    }
+
+    #[test]
+    fn test_from_tool_use_batch_empty() {
+        let tu = ToolUse {
+            id: "t_batch2".to_string(),
+            name: "batch".to_string(),
+            input: json!({"actions": []}),
+        };
+        let action = from_tool_use(&tu).unwrap();
+        match action {
+            Action::Batch { actions } => assert!(actions.is_empty()),
+            _ => panic!("Expected Batch"),
+        }
     }
 
     #[test]

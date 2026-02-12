@@ -232,6 +232,132 @@ pub fn build_tools() -> Vec<Tool> {
                 "required": ["message"]
             }),
         },
+        Tool {
+            name: "drag".to_string(),
+            description: "Click and drag from one point to another. Use for moving files, resizing windows, adjusting sliders, selecting text.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "start_x": {
+                        "type": "integer",
+                        "description": "X coordinate to start dragging from"
+                    },
+                    "start_y": {
+                        "type": "integer",
+                        "description": "Y coordinate to start dragging from"
+                    },
+                    "end_x": {
+                        "type": "integer",
+                        "description": "X coordinate to drag to"
+                    },
+                    "end_y": {
+                        "type": "integer",
+                        "description": "Y coordinate to drag to"
+                    },
+                    "button": {
+                        "type": "string",
+                        "enum": ["left", "right", "middle"],
+                        "default": "left",
+                        "description": "Mouse button to use for dragging"
+                    },
+                    "duration_ms": {
+                        "type": "integer",
+                        "default": 500,
+                        "description": "Duration of drag in milliseconds (max 5000)"
+                    }
+                },
+                "required": ["start_x", "start_y", "end_x", "end_y"]
+            }),
+        },
+        Tool {
+            name: "triple_click".to_string(),
+            description: "Triple click at coordinates to select an entire line of text".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "integer",
+                        "description": "X coordinate to triple-click"
+                    },
+                    "y": {
+                        "type": "integer",
+                        "description": "Y coordinate to triple-click"
+                    }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "right_click".to_string(),
+            description: "Right click at coordinates to open a context menu".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "integer",
+                        "description": "X coordinate to right-click"
+                    },
+                    "y": {
+                        "type": "integer",
+                        "description": "Y coordinate to right-click"
+                    }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "wait".to_string(),
+            description: "Pause execution for a specified duration. Useful when waiting for UI elements to load or animations to complete.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "duration_ms": {
+                        "type": "integer",
+                        "default": 1000,
+                        "description": "Duration to wait in milliseconds"
+                    }
+                },
+                "required": []
+            }),
+        },
+        Tool {
+            name: "wait_for_element".to_string(),
+            description: "Wait for a UI element to appear before proceeding. Use after clicking buttons that trigger loading, navigating to new pages, or when elements might not be immediately visible.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": "Description of the element to wait for"
+                    },
+                    "timeout_ms": {
+                        "type": "integer",
+                        "default": 10000,
+                        "description": "Maximum time to wait in milliseconds (max 10000)"
+                    }
+                },
+                "required": ["description"]
+            }),
+        },
+        Tool {
+            name: "batch".to_string(),
+            description: "Execute multiple actions in sequence without intermediate screenshots. Use for predictable action sequences. Max 10 actions per batch. No nested batches allowed.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "actions": {
+                        "type": "array",
+                        "description": "Array of actions to execute in sequence (max 10, no nesting)",
+                        "maxItems": 10,
+                        "items": {
+                            "type": "object",
+                            "description": "An action object (e.g. {\"action\": \"type\", \"text\": \"hello\"})"
+                        }
+                    }
+                },
+                "required": ["actions"]
+            }),
+        },
     ]
 }
 
@@ -398,6 +524,11 @@ Guidelines:
 - Wait for UI to update between actions (the system handles this)
 - Use the "complete" tool when the task is done
 - Use the "error" tool if you cannot proceed
+- Use "drag" for moving files, resizing windows, adjusting sliders, or selecting text
+- Use "right_click" to open context menus
+- Use "triple_click" to select entire lines of text
+- Use "wait" or "wait_for_element" when UI needs time to load
+- Use "batch" for predictable multi-step sequences that don't need intermediate screenshots
 
 Use one of the provided tools to perform your next action."#
     )
@@ -565,7 +696,13 @@ mod tests {
         assert!(names.contains(&"scroll"));
         assert!(names.contains(&"complete"));
         assert!(names.contains(&"error"));
-        assert_eq!(tools.len(), 8);
+        assert!(names.contains(&"drag"));
+        assert!(names.contains(&"triple_click"));
+        assert!(names.contains(&"right_click"));
+        assert!(names.contains(&"wait"));
+        assert!(names.contains(&"wait_for_element"));
+        assert!(names.contains(&"batch"));
+        assert_eq!(tools.len(), 14);
     }
 
     #[test]
@@ -696,5 +833,111 @@ mod tests {
         let required_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
         assert!(required_strs.contains(&"x"));
         assert!(required_strs.contains(&"y"));
+    }
+
+    #[test]
+    fn test_build_tools_drag_schema() {
+        let tools = build_tools();
+        let tool = tools.iter().find(|t| t.name == "drag").unwrap();
+        let props = &tool.input_schema["properties"];
+        assert!(props.get("start_x").is_some());
+        assert!(props.get("start_y").is_some());
+        assert!(props.get("end_x").is_some());
+        assert!(props.get("end_y").is_some());
+        assert!(props.get("button").is_some());
+        assert!(props.get("duration_ms").is_some());
+        let required = tool.input_schema["required"].as_array().unwrap();
+        let req_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+        assert!(req_strs.contains(&"start_x"));
+        assert!(req_strs.contains(&"start_y"));
+        assert!(req_strs.contains(&"end_x"));
+        assert!(req_strs.contains(&"end_y"));
+        assert!(!req_strs.contains(&"button"));
+        assert!(!req_strs.contains(&"duration_ms"));
+    }
+
+    #[test]
+    fn test_build_tools_triple_click_schema() {
+        let tools = build_tools();
+        let tool = tools.iter().find(|t| t.name == "triple_click").unwrap();
+        let props = &tool.input_schema["properties"];
+        assert!(props.get("x").is_some());
+        assert!(props.get("y").is_some());
+        let required = tool.input_schema["required"].as_array().unwrap();
+        let req_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+        assert!(req_strs.contains(&"x"));
+        assert!(req_strs.contains(&"y"));
+    }
+
+    #[test]
+    fn test_build_tools_right_click_schema() {
+        let tools = build_tools();
+        let tool = tools.iter().find(|t| t.name == "right_click").unwrap();
+        let props = &tool.input_schema["properties"];
+        assert!(props.get("x").is_some());
+        assert!(props.get("y").is_some());
+        let required = tool.input_schema["required"].as_array().unwrap();
+        let req_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+        assert!(req_strs.contains(&"x"));
+        assert!(req_strs.contains(&"y"));
+    }
+
+    #[test]
+    fn test_build_tools_wait_schema() {
+        let tools = build_tools();
+        let tool = tools.iter().find(|t| t.name == "wait").unwrap();
+        let props = &tool.input_schema["properties"];
+        assert!(props.get("duration_ms").is_some());
+        let required = tool.input_schema["required"].as_array().unwrap();
+        assert!(required.is_empty());
+    }
+
+    #[test]
+    fn test_build_tools_wait_for_element_schema() {
+        let tools = build_tools();
+        let tool = tools.iter().find(|t| t.name == "wait_for_element").unwrap();
+        let props = &tool.input_schema["properties"];
+        assert!(props.get("description").is_some());
+        assert!(props.get("timeout_ms").is_some());
+        let required = tool.input_schema["required"].as_array().unwrap();
+        let req_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+        assert!(req_strs.contains(&"description"));
+        assert!(!req_strs.contains(&"timeout_ms"));
+    }
+
+    #[test]
+    fn test_build_tools_batch_schema() {
+        let tools = build_tools();
+        let tool = tools.iter().find(|t| t.name == "batch").unwrap();
+        let props = &tool.input_schema["properties"];
+        assert!(props.get("actions").is_some());
+        assert_eq!(props["actions"]["type"], "array");
+        let required = tool.input_schema["required"].as_array().unwrap();
+        let req_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+        assert!(req_strs.contains(&"actions"));
+    }
+
+    #[test]
+    fn test_build_tools_all_14_have_valid_schemas() {
+        let tools = build_tools();
+        assert_eq!(tools.len(), 14);
+        for tool in &tools {
+            assert!(!tool.name.is_empty(), "Tool name should not be empty");
+            assert!(!tool.description.is_empty(), "Tool description should not be empty for {}", tool.name);
+            assert_eq!(tool.input_schema["type"], "object", "Tool {} should have object schema", tool.name);
+            assert!(tool.input_schema.get("properties").is_some(), "Tool {} should have properties", tool.name);
+            assert!(tool.input_schema.get("required").is_some(), "Tool {} should have required field", tool.name);
+        }
+    }
+
+    #[test]
+    fn test_build_system_prompt_for_tools_mentions_new_capabilities() {
+        let prompt = build_system_prompt_for_tools(1920, 1080);
+        assert!(prompt.contains("drag"));
+        assert!(prompt.contains("right_click"));
+        assert!(prompt.contains("triple_click"));
+        assert!(prompt.contains("wait"));
+        assert!(prompt.contains("wait_for_element"));
+        assert!(prompt.contains("batch"));
     }
 }
