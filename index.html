@@ -81,18 +81,21 @@
     }
     .drag-handle::after {
       content: '';
-      width: 36px;
-      height: 4px;
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 2px;
+      width: 40px;
+      height: 5px;
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 2.5px;
       transition: all 0.15s ease;
     }
+    .drag-handle:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
     .drag-handle:hover::after {
-      background: rgba(255, 255, 255, 0.35);
-      width: 40px;
+      background: rgba(255, 255, 255, 0.45);
+      width: 44px;
     }
     .drag-handle:active { cursor: grabbing; }
-    .drag-handle:active::after, .drag-handle.touch-active::after { background: rgba(255, 255, 255, 0.4); width: 44px; }
+    .drag-handle:active::after, .drag-handle.touch-active::after { background: rgba(255, 255, 255, 0.5); width: 48px; }
 
     /* Dragging state visual feedback */
     .modal.dragging {
@@ -109,7 +112,7 @@
     }
     .modal.dragging .drag-handle::after {
       background: rgba(10, 132, 255, 0.6);
-      width: 44px;
+      width: 48px;
       height: 5px;
     }
 
