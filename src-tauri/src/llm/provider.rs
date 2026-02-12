@@ -384,12 +384,23 @@ pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String
         .collect()
 }
 
-/// Build system prompt for tool-based providers (simplified, tools are defined via API)
+/// Build system prompt for tool-based providers (simplified, tools are defined via API).
+/// When `instruction` is provided it is embedded so the LLM always has the task context
+/// even though subsequent user messages only say "Continue."
 pub fn build_system_prompt_for_tools(screen_width: u32, screen_height: u32) -> String {
+    build_system_prompt_for_tools_with_instruction(screen_width, screen_height, None)
+}
+
+/// Build system prompt for tool-based providers with an optional embedded instruction.
+pub fn build_system_prompt_for_tools_with_instruction(screen_width: u32, screen_height: u32, instruction: Option<&str>) -> String {
+    let task_section = match instruction {
+        Some(instr) => format!("\n\nUser's task: {instr}"),
+        None => String::new(),
+    };
     format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
 
-Screen dimensions: {screen_width}x{screen_height} pixels
+Screen dimensions: {screen_width}x{screen_height} pixels{task_section}
 
 Guidelines:
 - Analyze the screenshot carefully before acting
@@ -403,12 +414,21 @@ Use one of the provided tools to perform your next action."#
     )
 }
 
-/// Build system prompt for JSON-based providers (includes action definitions in prompt)
+/// Build system prompt for JSON-based providers (includes action definitions in prompt).
 pub fn build_system_prompt(screen_width: u32, screen_height: u32) -> String {
+    build_system_prompt_with_instruction(screen_width, screen_height, None)
+}
+
+/// Build system prompt for JSON-based providers with an optional embedded instruction.
+pub fn build_system_prompt_with_instruction(screen_width: u32, screen_height: u32, instruction: Option<&str>) -> String {
+    let task_section = match instruction {
+        Some(instr) => format!("\n\nUser's task: {instr}"),
+        None => String::new(),
+    };
     format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
 
-Screen dimensions: {screen_width}x{screen_height} pixels
+Screen dimensions: {screen_width}x{screen_height} pixels{task_section}
 
 You must respond with a single JSON action. Available actions:
 

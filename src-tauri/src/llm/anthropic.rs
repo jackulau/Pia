@@ -1,5 +1,5 @@
 use super::provider::{
-    build_system_prompt, build_system_prompt_for_tools, build_tools, ChunkCallback, LlmError,
+    build_system_prompt_for_tools_with_instruction, build_tools, ChunkCallback, LlmError,
     LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse, history_to_messages,
 };
 use super::sse::append_bytes_to_buffer;
@@ -129,16 +129,24 @@ impl LlmProvider for AnthropicProvider {
         on_chunk: ChunkCallback,
     ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt_for_tools(screen_width, screen_height);
+        let system_prompt = build_system_prompt_for_tools_with_instruction(
+            screen_width,
+            screen_height,
+            history.original_instruction(),
+        );
         let tools = build_tools();
 
-        // Convert conversation history to Anthropic message format
+        // Convert conversation history to Anthropic message format.
+        // The first user message with a screenshot gets the full wrapper;
+        // subsequent ones use minimal text since the instruction is in the system prompt.
+        let mut first_screenshot_seen = false;
         let messages: Vec<AnthropicMessage> = history_to_messages(history)
             .into_iter()
             .map(|(role, text, image_base64)| {
                 let mut content = Vec::new();
 
                 // Add image first if present (Anthropic prefers image before text)
+                let has_image = image_base64.is_some();
                 if let Some(img_data) = image_base64 {
                     content.push(AnthropicContent::Image {
                         source: ImageSource {
@@ -149,12 +157,17 @@ impl LlmProvider for AnthropicProvider {
                     });
                 }
 
-                // Add text content
-                let text_content = if role == "user" && content.iter().any(|c| matches!(c, AnthropicContent::Image { .. })) {
-                    format!(
-                        "User instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.",
-                        text
-                    )
+                // Add text content - full wrapper only for the first screenshot message
+                let text_content = if role == "user" && has_image {
+                    if !first_screenshot_seen {
+                        first_screenshot_seen = true;
+                        format!(
+                            "User instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.",
+                            text
+                        )
+                    } else {
+                        format!("{}\n\nRespond with a single JSON action.", text)
+                    }
                 } else {
                     text
                 };

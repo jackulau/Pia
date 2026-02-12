@@ -1,5 +1,5 @@
 use super::provider::{
-    build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse,
+    build_system_prompt_with_instruction, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse,
     TokenMetrics,
 };
 use super::sse::append_bytes_to_buffer;
@@ -83,7 +83,11 @@ impl LlmProvider for OllamaProvider {
         on_chunk: ChunkCallback,
     ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt(screen_width, screen_height);
+        let system_prompt = build_system_prompt_with_instruction(
+            screen_width,
+            screen_height,
+            history.original_instruction(),
+        );
 
         let mut messages = Vec::new();
 
@@ -94,11 +98,19 @@ impl LlmProvider for OllamaProvider {
             images: None,
         });
 
-        // Convert conversation history to chat messages
+        // Convert conversation history to chat messages.
+        // Full wrapper only on the first screenshot message; subsequent ones are minimal.
+        let mut first_screenshot_seen = false;
         for (role, text, image_base64) in history_to_messages(history) {
             let (content, images) = if let Some(img_data) = image_base64 {
+                let wrapper = if !first_screenshot_seen {
+                    first_screenshot_seen = true;
+                    format!("[Screenshot attached]\n{}\n\nAnalyze the screenshot and respond with a single JSON action.", text)
+                } else {
+                    format!("[Screenshot attached]\n{}\n\nRespond with a single JSON action.", text)
+                };
                 (
-                    format!("[Screenshot attached]\n{}\n\nAnalyze the screenshot and respond with a single JSON action.", text),
+                    wrapper,
                     Some(vec![(*img_data).clone()]),
                 )
             } else {

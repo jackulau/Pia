@@ -310,9 +310,16 @@ impl AgentLoop {
                 }
             };
 
-            // Add user message with current screenshot to conversation
+            // Add user message with current screenshot to conversation.
+            // First iteration includes the full instruction; subsequent ones use
+            // a short continuation since the instruction is already in the system prompt.
+            let user_text = if iteration == 1 {
+                instruction.to_string()
+            } else {
+                "Continue.".to_string()
+            };
             conversation.add_user_message(
-                &instruction,
+                &user_text,
                 Some(screenshot.base64.clone()),
                 Some(screenshot.width),
                 Some(screenshot.height),

@@ -1,5 +1,5 @@
 use super::provider::{
-    build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics,
+    build_system_prompt_with_instruction, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics,
 };
 use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
@@ -98,16 +98,31 @@ impl LlmProvider for GlmProvider {
         on_chunk: ChunkCallback,
     ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt(screen_width, screen_height);
+        let system_prompt = build_system_prompt_with_instruction(
+            screen_width,
+            screen_height,
+            history.original_instruction(),
+        );
 
-        // Build messages from conversation history
+        // Build messages from conversation history.
+        // Full wrapper only on the first screenshot message; subsequent ones are minimal.
         let mut messages = vec![GlmMessage {
             role: "system".to_string(),
             content: GlmContent::Text(system_prompt),
         }];
 
+        let mut first_screenshot_seen = false;
         for (role, text, image_base64) in history_to_messages(history) {
             let content = if let Some(img_data) = image_base64 {
+                let wrapper_text = if !first_screenshot_seen {
+                    first_screenshot_seen = true;
+                    format!(
+                        "User instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.",
+                        text
+                    )
+                } else {
+                    format!("{}\n\nRespond with a single JSON action.", text)
+                };
                 GlmContent::Parts(vec![
                     GlmPart::ImageUrl {
                         image_url: ImageUrl {
@@ -115,10 +130,7 @@ impl LlmProvider for GlmProvider {
                         },
                     },
                     GlmPart::Text {
-                        text: format!(
-                            "User instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.",
-                            text
-                        ),
+                        text: wrapper_text,
                     },
                 ])
             } else {
