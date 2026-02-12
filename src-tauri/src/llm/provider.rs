@@ -232,6 +232,129 @@ pub fn build_tools() -> Vec<Tool> {
                 "required": ["message"]
             }),
         },
+        Tool {
+            name: "drag".to_string(),
+            description: "Click and drag from one point to another".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "start_x": {
+                        "type": "integer",
+                        "description": "Starting X coordinate"
+                    },
+                    "start_y": {
+                        "type": "integer",
+                        "description": "Starting Y coordinate"
+                    },
+                    "end_x": {
+                        "type": "integer",
+                        "description": "Ending X coordinate"
+                    },
+                    "end_y": {
+                        "type": "integer",
+                        "description": "Ending Y coordinate"
+                    },
+                    "button": {
+                        "type": "string",
+                        "enum": ["left", "right", "middle"],
+                        "default": "left",
+                        "description": "Mouse button to use"
+                    },
+                    "duration_ms": {
+                        "type": "integer",
+                        "default": 500,
+                        "description": "Duration of drag in milliseconds (max 5000)"
+                    }
+                },
+                "required": ["start_x", "start_y", "end_x", "end_y"]
+            }),
+        },
+        Tool {
+            name: "triple_click".to_string(),
+            description: "Triple click at coordinates to select entire line".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "integer",
+                        "description": "X coordinate to triple-click"
+                    },
+                    "y": {
+                        "type": "integer",
+                        "description": "Y coordinate to triple-click"
+                    }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "right_click".to_string(),
+            description: "Right click at coordinates to open context menu".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "integer",
+                        "description": "X coordinate to right-click"
+                    },
+                    "y": {
+                        "type": "integer",
+                        "description": "Y coordinate to right-click"
+                    }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "wait".to_string(),
+            description: "Wait/pause execution for a specified duration".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "duration_ms": {
+                        "type": "integer",
+                        "description": "Duration to wait in milliseconds"
+                    }
+                },
+                "required": ["duration_ms"]
+            }),
+        },
+        Tool {
+            name: "wait_for_element".to_string(),
+            description: "Wait for a UI element to appear before proceeding".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": "Description of the element to wait for"
+                    },
+                    "timeout_ms": {
+                        "type": "integer",
+                        "default": 5000,
+                        "description": "Max wait time in milliseconds (max 10000)"
+                    }
+                },
+                "required": ["description"]
+            }),
+        },
+        Tool {
+            name: "batch".to_string(),
+            description: "Execute multiple actions in sequence without intermediate screenshots".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "actions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object"
+                        },
+                        "description": "Array of action objects to execute sequentially (max 10)"
+                    }
+                },
+                "required": ["actions"]
+            }),
+        },
     ]
 }
 
@@ -406,86 +529,25 @@ Use one of the provided tools to perform your next action."#
 /// Build system prompt for JSON-based providers (includes action definitions in prompt)
 pub fn build_system_prompt(screen_width: u32, screen_height: u32) -> String {
     format!(
-        r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
+        r#"You are a computer use agent. Screen: {screen_width}x{screen_height}px.
+Respond with a single JSON action. Actions:
 
-Screen dimensions: {screen_width}x{screen_height} pixels
+{{"action":"click","x":N,"y":N}} - optional "button":"left"|"right"|"middle"
+{{"action":"double_click","x":N,"y":N}}
+{{"action":"triple_click","x":N,"y":N}} - select entire line
+{{"action":"right_click","x":N,"y":N}} - context menu
+{{"action":"move","x":N,"y":N}} - move mouse without clicking
+{{"action":"drag","start_x":N,"start_y":N,"end_x":N,"end_y":N}} - optional "button","duration_ms"
+{{"action":"type","text":"..."}}
+{{"action":"key","key":"enter"}} - optional "modifiers":["ctrl","alt","shift","meta"]
+{{"action":"scroll","x":N,"y":N,"direction":"up|down|left|right"}} - optional "amount":3
+{{"action":"wait","duration_ms":1000}}
+{{"action":"wait_for_element","description":"...","timeout_ms":5000}}
+{{"action":"batch","actions":[...]}} - max 10, stops on first failure
+{{"action":"complete","message":"..."}}
+{{"action":"error","message":"..."}}
 
-You must respond with a single JSON action. Available actions:
-
-1. Click at coordinates:
-   {{"action": "click", "x": 100, "y": 200, "button": "left"}}
-   button can be "left", "right", or "middle"
-
-2. Double click:
-   {{"action": "double_click", "x": 100, "y": 200}}
-
-3. Type text:
-   {{"action": "type", "text": "Hello World"}}
-
-4. Press a key with optional modifiers:
-   {{"action": "key", "key": "enter"}}
-   {{"action": "key", "key": "c", "modifiers": ["ctrl"]}}
-   {{"action": "key", "key": "v", "modifiers": ["ctrl"]}}
-   Available modifiers: "ctrl", "alt", "shift", "meta" (cmd on macOS)
-
-5. Scroll at position:
-   {{"action": "scroll", "x": 500, "y": 300, "direction": "down", "amount": 3}}
-   direction can be "up", "down", "left", or "right"
-
-6. Move mouse (without clicking):
-   {{"action": "move", "x": 100, "y": 200}}
-
-7. Drag from one point to another:
-   {{"action": "drag", "start_x": 100, "start_y": 200, "end_x": 300, "end_y": 200}}
-   Click and drag from start position to end position.
-   Optional: "button" (default "left"), "duration_ms" (default 500, max 5000)
-   Use for: moving files, resizing windows, adjusting sliders, selecting text
-
-8. Triple click (select entire line):
-   {{"action": "triple_click", "x": 100, "y": 200}}
-   Useful for selecting entire lines of text
-
-9. Right click (context menu):
-   {{"action": "right_click", "x": 100, "y": 200}}
-
-10. Wait/pause execution:
-    {{"action": "wait", "duration_ms": 1000}}
-    Useful when waiting for UI elements to load or animations to complete
-
-11. Wait for element before proceeding:
-    {{"action": "wait_for_element", "timeout_ms": 3000, "description": "page to load"}}
-    Use when:
-    - After clicking a button that triggers loading
-    - After navigating to a new page
-    - When an element might not be immediately visible
-    Default timeout is 5000ms. Max is 10000ms.
-
-12. Complete the task:
-    {{"action": "complete", "message": "Task completed successfully"}}
-
-13. Report an error or inability to proceed:
-    {{"action": "error", "message": "Cannot find the required element"}}
-
-14. Execute multiple actions in sequence (batch):
-   {{"action": "batch", "actions": [{{"action": "type", "text": "hello"}}, {{"action": "key", "key": "tab"}}]}}
-   Use for predictable action sequences that don't need intermediate screenshots.
-   Max 10 actions per batch. Batch stops on first failure or complete action.
-
-Guidelines:
-- Analyze the screenshot carefully before acting
-- Use coordinates that match visible UI elements
-- Be precise with click locations
-- Wait for UI to update between actions (the system handles this)
-- Use "complete" when the task is done
-- Use "error" if you cannot proceed
-
-Note: Actions are automatically retried up to 3 times if they fail or have no visible effect.
-If an action consistently fails, try:
-- Adjusting coordinates slightly (elements may have shifted)
-- Using a different approach (e.g., keyboard navigation instead of clicking)
-- Waiting longer for elements to load by trying again
-
-Respond with ONLY the JSON action, no other text."#
+Analyze the screenshot, use precise coordinates, respond with ONLY JSON."#
     )
 }
 
@@ -565,7 +627,13 @@ mod tests {
         assert!(names.contains(&"scroll"));
         assert!(names.contains(&"complete"));
         assert!(names.contains(&"error"));
-        assert_eq!(tools.len(), 8);
+        assert!(names.contains(&"drag"));
+        assert!(names.contains(&"triple_click"));
+        assert!(names.contains(&"right_click"));
+        assert!(names.contains(&"wait"));
+        assert!(names.contains(&"wait_for_element"));
+        assert!(names.contains(&"batch"));
+        assert_eq!(tools.len(), 14);
     }
 
     #[test]
@@ -686,6 +754,52 @@ mod tests {
         assert!(prompt.contains("complete"));
         assert!(prompt.contains("error"));
         assert!(prompt.contains("batch"));
+    }
+
+    #[test]
+    fn test_build_system_prompt_is_compact() {
+        let prompt = build_system_prompt(1920, 1080);
+        // Should be under 1000 bytes (target ~800, was ~2000)
+        assert!(
+            prompt.len() < 1000,
+            "System prompt should be compact, got {} bytes",
+            prompt.len()
+        );
+    }
+
+    #[test]
+    fn test_tools_and_prompt_cover_same_actions() {
+        let tools = build_tools();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+        let prompt = build_system_prompt(1920, 1080);
+
+        // Every tool name should appear in the JSON prompt
+        for name in &tool_names {
+            assert!(
+                prompt.contains(name),
+                "Action '{}' missing from build_system_prompt()",
+                name
+            );
+        }
+
+        // Every action in the prompt should have a corresponding tool
+        let expected_actions = [
+            "click", "double_click", "triple_click", "right_click", "move",
+            "drag", "type", "key", "scroll", "wait", "wait_for_element",
+            "batch", "complete", "error",
+        ];
+        for action in &expected_actions {
+            assert!(
+                tool_names.contains(action),
+                "Action '{}' missing from build_tools()",
+                action
+            );
+            assert!(
+                prompt.contains(action),
+                "Action '{}' missing from build_system_prompt()",
+                action
+            );
+        }
     }
 
     #[test]
