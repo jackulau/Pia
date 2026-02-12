@@ -1096,6 +1096,19 @@
     .detect-btn:active { background: rgba(255, 255, 255, 0.06); transform: scale(0.97); }
     .detect-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .detect-results { margin-top: 10px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; padding: 10px; }
+    .detect-provider-group { margin-bottom: 10px; }
+    .detect-provider-group:last-child { margin-bottom: 0; }
+    .detect-provider-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 0;
+      margin-bottom: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.7);
+      text-transform: capitalize;
+    }
     .detect-result-item {
       display: flex;
       align-items: center;
@@ -1103,12 +1116,63 @@
       padding: 8px 10px;
       background: rgba(255, 255, 255, 0.05);
       border-radius: 6px;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
     .detect-result-item:last-child { margin-bottom: 0; }
-    .detect-result-info { display: flex; flex-direction: column; gap: 2px; }
+    .detect-result-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+    .detect-result-top-row { display: flex; align-items: center; gap: 6px; }
     .detect-result-provider { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.9); }
     .detect-result-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); }
+    .detect-source-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 500;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.5);
+    }
+    .detect-source-badge.source-env { background: rgba(52, 199, 89, 0.15); color: #34c759; }
+    .detect-source-badge.source-dotenv { background: rgba(0, 122, 255, 0.15); color: #0a84ff; }
+    .detect-source-badge.source-shell { background: rgba(175, 82, 222, 0.15); color: #af52de; }
+    .detect-source-badge.source-config { background: rgba(255, 159, 10, 0.15); color: #ff9f0a; }
+    .detect-source-badge.source-service { background: rgba(48, 209, 88, 0.15); color: #30d158; }
+    .detect-validation-icon {
+      display: inline-flex;
+      align-items: center;
+      font-size: 10px;
+      margin-left: 2px;
+    }
+    .detect-validation-icon.valid { color: #34c759; }
+    .detect-validation-icon.invalid { color: #ff9f0a; }
+    .detect-source-path {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.3);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .detect-ollama-info {
+      font-size: 9px;
+      color: rgba(48, 209, 88, 0.8);
+      margin-top: 2px;
+    }
+    .detect-ollama-models {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+      margin-top: 3px;
+    }
+    .detect-ollama-model-tag {
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 8px;
+      background: rgba(48, 209, 88, 0.12);
+      color: rgba(48, 209, 88, 0.8);
+    }
+    .detect-ollama-model-tag.vision { background: rgba(0, 122, 255, 0.15); color: #0a84ff; }
     .detect-result-apply {
       padding: 4px 10px;
       background: #0a84ff;
@@ -1118,10 +1182,20 @@
       font-size: 11px;
       font-weight: 500;
       cursor: pointer;
+      flex-shrink: 0;
       transition: background-color 0.15s ease;
     }
     .detect-result-apply:hover { background: #409cff; }
-    .detect-no-results { font-size: 11px; color: rgba(255, 255, 255, 0.4); text-align: center; padding: 8px; }
+    .detect-no-results { font-size: 11px; color: rgba(255, 255, 255, 0.4); text-align: center; padding: 12px 8px; }
+    .detect-no-results p { margin: 4px 0; }
+    .detect-hint-list {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.3);
+      text-align: left;
+      margin: 8px 0 0 0;
+      padding-left: 16px;
+    }
+    .detect-hint-list li { margin-bottom: 3px; }
 
     .confirmation-dialog {
       position: fixed;
