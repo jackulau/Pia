@@ -232,6 +232,135 @@ pub fn build_tools() -> Vec<Tool> {
                 "required": ["message"]
             }),
         },
+        Tool {
+            name: "drag".to_string(),
+            description: "Click and drag from one point to another. Use for moving files, resizing windows, adjusting sliders, or selecting text.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "start_x": {
+                        "type": "integer",
+                        "description": "X coordinate to start dragging from"
+                    },
+                    "start_y": {
+                        "type": "integer",
+                        "description": "Y coordinate to start dragging from"
+                    },
+                    "end_x": {
+                        "type": "integer",
+                        "description": "X coordinate to drag to"
+                    },
+                    "end_y": {
+                        "type": "integer",
+                        "description": "Y coordinate to drag to"
+                    },
+                    "button": {
+                        "type": "string",
+                        "enum": ["left", "right", "middle"],
+                        "default": "left",
+                        "description": "Mouse button to use for dragging"
+                    },
+                    "duration_ms": {
+                        "type": "integer",
+                        "default": 500,
+                        "maximum": 5000,
+                        "description": "Duration of the drag in milliseconds"
+                    }
+                },
+                "required": ["start_x", "start_y", "end_x", "end_y"]
+            }),
+        },
+        Tool {
+            name: "triple_click".to_string(),
+            description: "Triple click at coordinates to select an entire line of text".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "integer",
+                        "description": "X coordinate to triple-click"
+                    },
+                    "y": {
+                        "type": "integer",
+                        "description": "Y coordinate to triple-click"
+                    }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "right_click".to_string(),
+            description: "Right click at coordinates to open a context menu".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "integer",
+                        "description": "X coordinate to right-click"
+                    },
+                    "y": {
+                        "type": "integer",
+                        "description": "Y coordinate to right-click"
+                    }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "wait".to_string(),
+            description: "Wait/pause for a specified duration. Useful when waiting for UI elements to load or animations to complete.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "duration_ms": {
+                        "type": "integer",
+                        "default": 1000,
+                        "maximum": 5000,
+                        "description": "Duration to wait in milliseconds"
+                    }
+                },
+                "required": ["duration_ms"]
+            }),
+        },
+        Tool {
+            name: "batch".to_string(),
+            description: "Execute multiple actions in sequence without intermediate screenshots. Use for predictable action sequences. Max 10 actions per batch.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "actions": {
+                        "type": "array",
+                        "maxItems": 10,
+                        "description": "Array of actions to execute in sequence",
+                        "items": {
+                            "type": "object",
+                            "description": "An action object (same format as individual tool calls)"
+                        }
+                    }
+                },
+                "required": ["actions"]
+            }),
+        },
+        Tool {
+            name: "wait_for_element".to_string(),
+            description: "Wait for a UI element to appear before proceeding. Use after clicking buttons that trigger loading, navigating to new pages, or when elements may not be immediately visible.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": "Description of the element or state to wait for"
+                    },
+                    "timeout_ms": {
+                        "type": "integer",
+                        "default": 5000,
+                        "maximum": 10000,
+                        "description": "Maximum time to wait in milliseconds"
+                    }
+                },
+                "required": ["description"]
+            }),
+        },
     ]
 }
 
@@ -396,6 +525,12 @@ Guidelines:
 - Use coordinates that match visible UI elements
 - Be precise with click locations
 - Wait for UI to update between actions (the system handles this)
+- Use "drag" for moving elements, resizing windows, or adjusting sliders
+- Use "triple_click" to select entire lines of text
+- Use "right_click" to open context menus
+- Use "wait" when you need to pause for UI updates or animations
+- Use "batch" for predictable multi-step sequences that don't need intermediate screenshots
+- Use "wait_for_element" after triggering navigation or loading to wait for content to appear
 - Use the "complete" tool when the task is done
 - Use the "error" tool if you cannot proceed
 
@@ -565,7 +700,13 @@ mod tests {
         assert!(names.contains(&"scroll"));
         assert!(names.contains(&"complete"));
         assert!(names.contains(&"error"));
-        assert_eq!(tools.len(), 8);
+        assert!(names.contains(&"drag"));
+        assert!(names.contains(&"triple_click"));
+        assert!(names.contains(&"right_click"));
+        assert!(names.contains(&"wait"));
+        assert!(names.contains(&"batch"));
+        assert!(names.contains(&"wait_for_element"));
+        assert_eq!(tools.len(), 14);
     }
 
     #[test]
