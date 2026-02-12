@@ -1,5 +1,5 @@
 use super::provider::{
-    build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics,
+    build_system_prompt_with_instruction, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics,
 };
 use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
@@ -98,7 +98,11 @@ impl LlmProvider for GlmProvider {
         on_chunk: ChunkCallback,
     ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt(screen_width, screen_height);
+        let system_prompt = build_system_prompt_with_instruction(
+            screen_width,
+            screen_height,
+            history.original_instruction(),
+        );
 
         // Build messages from conversation history
         let mut messages = vec![GlmMessage {

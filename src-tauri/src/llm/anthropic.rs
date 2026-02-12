@@ -1,5 +1,5 @@
 use super::provider::{
-    build_system_prompt, build_system_prompt_for_tools, build_tools, ChunkCallback, LlmError,
+    build_system_prompt_for_tools_with_instruction, build_tools, ChunkCallback, LlmError,
     LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse, history_to_messages,
 };
 use super::sse::append_bytes_to_buffer;
@@ -129,7 +129,11 @@ impl LlmProvider for AnthropicProvider {
         on_chunk: ChunkCallback,
     ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt_for_tools(screen_width, screen_height);
+        let system_prompt = build_system_prompt_for_tools_with_instruction(
+            screen_width,
+            screen_height,
+            history.original_instruction(),
+        );
         let tools = build_tools();
 
         // Convert conversation history to Anthropic message format

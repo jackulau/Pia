@@ -1,4 +1,5 @@
 use crate::agent::conversation::{ConversationHistory, Message};
+use crate::agent::task_classifier::{classify_instruction, get_task_specific_guidance};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -384,8 +385,31 @@ pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String
         .collect()
 }
 
-/// Build system prompt for tool-based providers (simplified, tools are defined via API)
+/// Build system prompt for tool-based providers (simplified, tools are defined via API).
+/// When `instruction` is provided, task-specific guidance is appended.
 pub fn build_system_prompt_for_tools(screen_width: u32, screen_height: u32) -> String {
+    build_system_prompt_for_tools_with_instruction(screen_width, screen_height, None)
+}
+
+/// Build system prompt for tool-based providers with optional task-specific guidance.
+pub fn build_system_prompt_for_tools_with_instruction(
+    screen_width: u32,
+    screen_height: u32,
+    instruction: Option<&str>,
+) -> String {
+    let task_guidance = instruction
+        .map(|instr| {
+            let task_type = classify_instruction(instr);
+            get_task_specific_guidance(&task_type)
+        })
+        .unwrap_or("");
+
+    let guidance_section = if task_guidance.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n{}", task_guidance)
+    };
+
     format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
 
@@ -397,14 +421,37 @@ Guidelines:
 - Be precise with click locations
 - Wait for UI to update between actions (the system handles this)
 - Use the "complete" tool when the task is done
-- Use the "error" tool if you cannot proceed
+- Use the "error" tool if you cannot proceed{guidance_section}
 
 Use one of the provided tools to perform your next action."#
     )
 }
 
-/// Build system prompt for JSON-based providers (includes action definitions in prompt)
+/// Build system prompt for JSON-based providers (includes action definitions in prompt).
+/// When `instruction` is provided, task-specific guidance is appended.
 pub fn build_system_prompt(screen_width: u32, screen_height: u32) -> String {
+    build_system_prompt_with_instruction(screen_width, screen_height, None)
+}
+
+/// Build system prompt for JSON-based providers with optional task-specific guidance.
+pub fn build_system_prompt_with_instruction(
+    screen_width: u32,
+    screen_height: u32,
+    instruction: Option<&str>,
+) -> String {
+    let task_guidance = instruction
+        .map(|instr| {
+            let task_type = classify_instruction(instr);
+            get_task_specific_guidance(&task_type)
+        })
+        .unwrap_or("");
+
+    let guidance_section = if task_guidance.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n{}", task_guidance)
+    };
+
     format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
 
@@ -483,7 +530,7 @@ Note: Actions are automatically retried up to 3 times if they fail or have no vi
 If an action consistently fails, try:
 - Adjusting coordinates slightly (elements may have shifted)
 - Using a different approach (e.g., keyboard navigation instead of clicking)
-- Waiting longer for elements to load by trying again
+- Waiting longer for elements to load by trying again{guidance_section}
 
 Respond with ONLY the JSON action, no other text."#
     )
@@ -696,5 +743,43 @@ mod tests {
         let required_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
         assert!(required_strs.contains(&"x"));
         assert!(required_strs.contains(&"y"));
+    }
+
+    #[test]
+    fn test_build_system_prompt_with_form_instruction() {
+        let prompt = build_system_prompt_with_instruction(1920, 1080, Some("Fill out the registration form"));
+        assert!(prompt.contains("form filling"), "Prompt should contain form filling guidance");
+        assert!(prompt.contains("Tab between fields"));
+    }
+
+    #[test]
+    fn test_build_system_prompt_with_general_instruction() {
+        let prompt = build_system_prompt_with_instruction(1920, 1080, Some("do something"));
+        // General type should not add guidance
+        assert!(!prompt.contains("Task-specific guidance"));
+    }
+
+    #[test]
+    fn test_build_system_prompt_with_no_instruction() {
+        let prompt_no_instr = build_system_prompt_with_instruction(1920, 1080, None);
+        let prompt_compat = build_system_prompt(1920, 1080);
+        assert_eq!(prompt_no_instr, prompt_compat);
+    }
+
+    #[test]
+    fn test_build_system_prompt_for_tools_with_nav_instruction() {
+        let prompt = build_system_prompt_for_tools_with_instruction(
+            1920, 1080,
+            Some("Navigate to google.com and search for Rust"),
+        );
+        assert!(prompt.contains("web navigation"), "Prompt should contain web navigation guidance");
+        assert!(prompt.contains("address bar"));
+    }
+
+    #[test]
+    fn test_build_system_prompt_for_tools_with_no_instruction() {
+        let prompt_no_instr = build_system_prompt_for_tools_with_instruction(1920, 1080, None);
+        let prompt_compat = build_system_prompt_for_tools(1920, 1080);
+        assert_eq!(prompt_no_instr, prompt_compat);
     }
 }

@@ -7,6 +7,7 @@ pub mod queue;
 pub mod recovery;
 pub mod retry;
 pub mod state;
+pub mod task_classifier;
 
 pub use delay::*;
 pub use history::*;
