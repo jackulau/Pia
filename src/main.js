@@ -470,6 +470,21 @@ async function loadTemplates() {
   }
 }
 
+// Extract {{variable}} names from instruction text (frontend mirror of backend logic)
+function extractVariableNames(instruction) {
+  const re = /\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g;
+  const seen = new Set();
+  const names = [];
+  let match;
+  while ((match = re.exec(instruction)) !== null) {
+    if (!seen.has(match[1])) {
+      seen.add(match[1]);
+      names.push(match[1]);
+    }
+  }
+  return names;
+}
+
 // Update template dropdown
 function updateTemplateDropdown() {
   // Clear existing options (keep the placeholder)
@@ -481,7 +496,8 @@ function updateTemplateDropdown() {
   sorted.forEach(template => {
     const option = document.createElement('option');
     option.value = template.id;
-    option.textContent = template.name;
+    const varCount = (template.variables || []).length;
+    option.textContent = varCount > 0 ? `${template.name} (${varCount} var${varCount === 1 ? '' : 's'})` : template.name;
     templateSelect.appendChild(option);
   });
 }
@@ -495,11 +511,17 @@ function updateTemplateList() {
 
   const sorted = [...cachedTemplates].sort((a, b) => a.name.localeCompare(b.name));
 
-  templateList.innerHTML = sorted.map(template => `
+  templateList.innerHTML = sorted.map(template => {
+    const vars = template.variables || [];
+    const varTags = vars.length > 0
+      ? `<div class="template-var-tags">${vars.map(v => `<span class="template-var-tag">${escapeHtml(v.name)}</span>`).join('')}</div>`
+      : '';
+    return `
     <div class="template-item" data-id="${template.id}">
       <div class="template-item-info">
         <div class="template-item-name">${escapeHtml(template.name)}</div>
         <div class="template-item-preview">${escapeHtml(template.instruction.substring(0, 60))}${template.instruction.length > 60 ? '...' : ''}</div>
+        ${varTags}
       </div>
       <div class="template-item-actions">
         <button class="template-delete-btn" data-id="${template.id}" title="Delete template">
@@ -509,8 +531,8 @@ function updateTemplateList() {
           </svg>
         </button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 
   // Add delete handlers
   templateList.querySelectorAll('.template-delete-btn').forEach(btn => {
@@ -525,15 +547,76 @@ function updateTemplateList() {
 // Select a template
 function selectTemplate(id) {
   if (!id) {
-    instructionInput.value = '';
     return;
   }
 
   const template = cachedTemplates.find(t => t.id === id);
-  if (template) {
+  if (!template) return;
+
+  const vars = template.variables || [];
+  if (vars.length === 0) {
+    // No variables - directly set instruction
     instructionInput.value = template.instruction;
     instructionInput.focus();
+  } else {
+    // Has variables - show fill-in dialog
+    showVariableFillInDialog(template);
   }
+
+  // Reset dropdown
+  templateSelect.value = '';
+}
+
+// Show variable fill-in dialog for a template
+function showVariableFillInDialog(template) {
+  const dialog = document.getElementById('variable-fill-dialog');
+  const form = document.getElementById('variable-fill-form');
+  const templateNameEl = document.getElementById('variable-fill-template-name');
+
+  templateNameEl.textContent = template.name;
+
+  const vars = template.variables || [];
+  form.innerHTML = vars.map(v => `
+    <div class="variable-fill-field">
+      <label class="variable-fill-label" for="var-input-${escapeHtml(v.name)}">${escapeHtml(v.name)}</label>
+      <input type="text" class="variable-fill-input" id="var-input-${escapeHtml(v.name)}"
+        data-var-name="${escapeHtml(v.name)}"
+        placeholder="${v.default_value ? escapeHtml(v.default_value) : 'Enter value...'}"
+        value="${v.default_value ? escapeHtml(v.default_value) : ''}"
+        autocomplete="off">
+    </div>
+  `).join('');
+
+  dialog.classList.remove('hidden');
+  dialog.dataset.templateId = template.id;
+
+  // Focus first input
+  const firstInput = form.querySelector('.variable-fill-input');
+  if (firstInput) firstInput.focus();
+}
+
+// Apply variable values and populate instruction
+function applyVariableFillIn() {
+  const dialog = document.getElementById('variable-fill-dialog');
+  const templateId = dialog.dataset.templateId;
+  const template = cachedTemplates.find(t => t.id === templateId);
+  if (!template) return;
+
+  const inputs = document.querySelectorAll('#variable-fill-form .variable-fill-input');
+  let instruction = template.instruction;
+
+  inputs.forEach(input => {
+    const varName = input.dataset.varName;
+    const value = input.value || input.placeholder;
+    if (value && value !== 'Enter value...') {
+      const regex = new RegExp(`\\{\\{${varName}\\}\\}`, 'g');
+      instruction = instruction.replace(regex, value);
+    }
+  });
+
+  instructionInput.value = instruction;
+  instructionInput.focus();
+  dialog.classList.add('hidden');
 }
 
 // Save current instruction as template
@@ -584,6 +667,21 @@ async function deleteTemplate(id) {
   } catch (error) {
     console.error('Failed to delete template:', error);
     showToast(error, 'error');
+  }
+}
+
+// Update variable preview in the save template dialog
+function updateSaveTemplateVariablePreview(instruction) {
+  const preview = document.getElementById('save-template-var-preview');
+  if (!preview) return;
+  const varNames = extractVariableNames(instruction);
+  if (varNames.length === 0) {
+    preview.classList.add('hidden');
+    preview.innerHTML = '';
+  } else {
+    preview.classList.remove('hidden');
+    preview.innerHTML = '<span class="var-preview-label">Variables:</span> ' +
+      varNames.map(n => `<span class="template-var-tag">${escapeHtml(n)}</span>`).join('');
   }
 }
 
@@ -696,6 +794,7 @@ function setupEventListeners() {
       return;
     }
     templateNameInput.value = '';
+    updateSaveTemplateVariablePreview(instruction);
     saveTemplateDialog.classList.remove('hidden');
     templateNameInput.focus();
   });
@@ -723,6 +822,31 @@ function setupEventListeners() {
       saveTemplateDialog.classList.add('hidden');
     }
   });
+
+  // Variable fill-in dialog events
+  const varFillApplyBtn = document.getElementById('variable-fill-apply');
+  const varFillCancelBtn = document.getElementById('variable-fill-cancel');
+  const varFillDialog = document.getElementById('variable-fill-dialog');
+
+  if (varFillApplyBtn) {
+    varFillApplyBtn.addEventListener('click', applyVariableFillIn);
+  }
+  if (varFillCancelBtn) {
+    varFillCancelBtn.addEventListener('click', () => {
+      varFillDialog.classList.add('hidden');
+    });
+  }
+  if (varFillDialog) {
+    // Enter to submit, Escape to close
+    varFillDialog.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        applyVariableFillIn();
+      } else if (e.key === 'Escape') {
+        varFillDialog.classList.add('hidden');
+      }
+    });
+  }
 
   // Close button
   closeBtn.addEventListener('click', async () => {

@@ -707,8 +707,85 @@
       margin-bottom: 4px;
     }
     .save-template-content input:focus { border-color: rgba(10, 132, 255, 0.5); background: rgba(255, 255, 255, 0.12); }
-    .save-template-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-bottom: 16px; }
+    .save-template-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-bottom: 8px; }
+    .save-template-var-preview {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+      padding: 8px;
+      margin-bottom: 12px;
+      background: rgba(10, 132, 255, 0.08);
+      border: 1px solid rgba(10, 132, 255, 0.15);
+      border-radius: 6px;
+      font-size: 10px;
+    }
+    .var-preview-label { color: rgba(255, 255, 255, 0.5); font-size: 10px; }
     .save-template-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+    /* Template variable tags */
+    .template-var-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+    .template-var-tag {
+      display: inline-block;
+      padding: 1px 6px;
+      background: rgba(10, 132, 255, 0.15);
+      color: rgba(10, 132, 255, 0.9);
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+    }
+
+    /* Variable fill-in dialog */
+    .variable-fill-dialog {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 110;
+    }
+    .variable-fill-content {
+      background: rgba(40, 40, 40, 0.95);
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 20px;
+      width: 300px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .variable-fill-content h3 { font-size: 15px; margin-bottom: 4px; }
+    .variable-fill-template-name {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+      margin-bottom: 14px;
+    }
+    .variable-fill-form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+    .variable-fill-field { display: flex; flex-direction: column; gap: 4px; }
+    .variable-fill-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: rgba(10, 132, 255, 0.9);
+    }
+    .variable-fill-input {
+      width: 100%;
+      height: 34px;
+      padding: 0 10px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+    }
+    .variable-fill-input:focus {
+      border-color: rgba(10, 132, 255, 0.5);
+      background: rgba(255, 255, 255, 0.12);
+    }
+    .variable-fill-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
     .thinking-display { padding: 10px 12px 6px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
     .thinking-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
@@ -2386,10 +2463,23 @@
       <div class="save-template-content">
         <h3>Save as Template</h3>
         <input type="text" id="template-name-input" placeholder="Template name" maxlength="50" autocomplete="off">
-        <div class="save-template-hint">Max 50 characters</div>
+        <div class="save-template-hint">Max 50 characters. Use {{variable_name}} for placeholders.</div>
+        <div class="save-template-var-preview hidden" id="save-template-var-preview"></div>
         <div class="save-template-actions">
           <button class="btn btn-cancel" id="cancel-template-btn">Cancel</button>
           <button class="btn btn-confirm" id="confirm-template-btn">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="variable-fill-dialog hidden" id="variable-fill-dialog">
+      <div class="variable-fill-content">
+        <h3>Fill In Variables</h3>
+        <div class="variable-fill-template-name" id="variable-fill-template-name"></div>
+        <div class="variable-fill-form" id="variable-fill-form"></div>
+        <div class="variable-fill-actions">
+          <button class="btn btn-cancel" id="variable-fill-cancel">Cancel</button>
+          <button class="btn btn-confirm" id="variable-fill-apply">Apply</button>
         </div>
       </div>
     </div>

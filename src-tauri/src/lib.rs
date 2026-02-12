@@ -8,6 +8,7 @@ mod llm;
 use agent::{validate_speed_multiplier, ActionHistory, AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse, InstructionQueue, QueueFailureMode, QueueManager, RecordedAction};
 use agent::action::execute_action;
 use config::{Config, TaskTemplate};
+use config::settings::extract_variables;
 use config::credentials::{self, DetectedCredentialPayload};
 use history::{HistoryEntry, InstructionHistory};
 use llm::{
@@ -388,6 +389,7 @@ async fn update_template(
         .ok_or_else(|| "Template not found".to_string())?;
 
     template.name = name;
+    template.variables = extract_variables(&instruction);
     template.instruction = instruction;
     let updated = template.clone();
 
