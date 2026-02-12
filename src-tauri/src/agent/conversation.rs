@@ -22,9 +22,20 @@ pub enum Message {
     },
     /// Assistant response with the action JSON
     Assistant { content: String },
+    /// Assistant response using native tool_use (Anthropic)
+    AssistantToolUse {
+        tool_use_id: String,
+        tool_name: String,
+        tool_input: serde_json::Value,
+        /// Optional text content before tool_use (thinking/reasoning)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+    },
     /// Result of executing a tool/action
     ToolResult {
         success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tool_use_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         message: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -90,10 +101,43 @@ impl ConversationHistory {
         });
     }
 
-    /// Adds a tool result message.
+    /// Adds an assistant tool_use message (for native tool_use providers like Anthropic).
+    pub fn add_assistant_tool_use(
+        &mut self,
+        tool_use_id: String,
+        tool_name: String,
+        tool_input: serde_json::Value,
+        text: Option<String>,
+    ) {
+        self.add_message(Message::AssistantToolUse {
+            tool_use_id,
+            tool_name,
+            tool_input,
+            text,
+        });
+    }
+
+    /// Adds a tool result message (backward compatible, no tool_use_id).
     pub fn add_tool_result(&mut self, success: bool, message: Option<String>, error: Option<String>) {
         self.add_message(Message::ToolResult {
             success,
+            tool_use_id: None,
+            message,
+            error,
+        });
+    }
+
+    /// Adds a tool result with tool_use_id for proper pairing.
+    pub fn add_tool_result_with_id(
+        &mut self,
+        tool_use_id: String,
+        success: bool,
+        message: Option<String>,
+        error: Option<String>,
+    ) {
+        self.add_message(Message::ToolResult {
+            success,
+            tool_use_id: Some(tool_use_id),
             message,
             error,
         });
@@ -139,13 +183,12 @@ impl ConversationHistory {
     }
 
     /// Gets the last assistant message if available.
+    /// Returns content from both `Assistant` and `AssistantToolUse` variants.
     pub fn last_assistant_message(&self) -> Option<&str> {
-        self.messages.iter().rev().find_map(|m| {
-            if let Message::Assistant { content } = m {
-                Some(content.as_str())
-            } else {
-                None
-            }
+        self.messages.iter().rev().find_map(|m| match m {
+            Message::Assistant { content } => Some(content.as_str()),
+            Message::AssistantToolUse { text, .. } => text.as_deref(),
+            _ => None,
         })
     }
 }
@@ -199,8 +242,9 @@ mod tests {
 
         assert_eq!(conv.len(), 1);
         match &conv.get_messages()[0] {
-            Message::ToolResult { success, message, error } => {
+            Message::ToolResult { success, tool_use_id, message, error } => {
                 assert!(*success);
+                assert!(tool_use_id.is_none());
                 assert_eq!(message.as_deref(), Some("Clicked successfully"));
                 assert!(error.is_none());
             }
@@ -276,5 +320,268 @@ mod tests {
 
         assert_eq!(deserialized.len(), 2);
         assert_eq!(deserialized.original_instruction(), Some("Test"));
+    }
+
+    #[test]
+    fn test_add_assistant_tool_use() {
+        let mut conv = ConversationHistory::new();
+        let input = serde_json::json!({"x": 100, "y": 200});
+        conv.add_assistant_tool_use(
+            "toolu_abc123".to_string(),
+            "click".to_string(),
+            input.clone(),
+            Some("I'll click the button.".to_string()),
+        );
+
+        assert_eq!(conv.len(), 1);
+        match &conv.get_messages()[0] {
+            Message::AssistantToolUse { tool_use_id, tool_name, tool_input, text } => {
+                assert_eq!(tool_use_id, "toolu_abc123");
+                assert_eq!(tool_name, "click");
+                assert_eq!(*tool_input, input);
+                assert_eq!(text.as_deref(), Some("I'll click the button."));
+            }
+            _ => panic!("Expected AssistantToolUse message"),
+        }
+    }
+
+    #[test]
+    fn test_add_assistant_tool_use_without_text() {
+        let mut conv = ConversationHistory::new();
+        conv.add_assistant_tool_use(
+            "toolu_def456".to_string(),
+            "screenshot".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+
+        assert_eq!(conv.len(), 1);
+        match &conv.get_messages()[0] {
+            Message::AssistantToolUse { tool_use_id, tool_name, tool_input, text } => {
+                assert_eq!(tool_use_id, "toolu_def456");
+                assert_eq!(tool_name, "screenshot");
+                assert_eq!(*tool_input, serde_json::json!({}));
+                assert!(text.is_none());
+            }
+            _ => panic!("Expected AssistantToolUse message"),
+        }
+    }
+
+    #[test]
+    fn test_add_tool_result_with_id() {
+        let mut conv = ConversationHistory::new();
+        conv.add_tool_result_with_id(
+            "toolu_abc123".to_string(),
+            true,
+            Some("Clicked successfully".to_string()),
+            None,
+        );
+
+        assert_eq!(conv.len(), 1);
+        match &conv.get_messages()[0] {
+            Message::ToolResult { success, tool_use_id, message, error } => {
+                assert!(*success);
+                assert_eq!(tool_use_id.as_deref(), Some("toolu_abc123"));
+                assert_eq!(message.as_deref(), Some("Clicked successfully"));
+                assert!(error.is_none());
+            }
+            _ => panic!("Expected ToolResult message"),
+        }
+    }
+
+    #[test]
+    fn test_add_tool_result_backward_compatible() {
+        let mut conv = ConversationHistory::new();
+        conv.add_tool_result(false, None, Some("Element not found".to_string()));
+
+        assert_eq!(conv.len(), 1);
+        match &conv.get_messages()[0] {
+            Message::ToolResult { success, tool_use_id, message, error } => {
+                assert!(!*success);
+                assert!(tool_use_id.is_none());
+                assert!(message.is_none());
+                assert_eq!(error.as_deref(), Some("Element not found"));
+            }
+            _ => panic!("Expected ToolResult message"),
+        }
+    }
+
+    #[test]
+    fn test_last_assistant_message_with_tool_use() {
+        let mut conv = ConversationHistory::new();
+
+        conv.add_assistant_message("Plain response");
+        conv.add_assistant_tool_use(
+            "toolu_1".to_string(),
+            "click".to_string(),
+            serde_json::json!({}),
+            Some("Thinking text".to_string()),
+        );
+
+        // Last assistant message should be from the AssistantToolUse (most recent)
+        assert_eq!(conv.last_assistant_message(), Some("Thinking text"));
+    }
+
+    #[test]
+    fn test_last_assistant_message_tool_use_no_text() {
+        let mut conv = ConversationHistory::new();
+
+        conv.add_assistant_message("Plain response");
+        conv.add_assistant_tool_use(
+            "toolu_1".to_string(),
+            "click".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+
+        // AssistantToolUse has no text, so it should fall back to the plain Assistant message
+        assert_eq!(conv.last_assistant_message(), Some("Plain response"));
+    }
+
+    #[test]
+    fn test_serialization_assistant_tool_use() {
+        let mut conv = ConversationHistory::new();
+        let input = serde_json::json!({"x": 100, "y": 200});
+        conv.add_assistant_tool_use(
+            "toolu_abc123".to_string(),
+            "click".to_string(),
+            input.clone(),
+            Some("Thinking...".to_string()),
+        );
+
+        let json = serde_json::to_string(&conv).unwrap();
+        let deserialized: ConversationHistory = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.len(), 1);
+        match deserialized.messages().next().unwrap() {
+            Message::AssistantToolUse { tool_use_id, tool_name, tool_input, text } => {
+                assert_eq!(tool_use_id, "toolu_abc123");
+                assert_eq!(tool_name, "click");
+                assert_eq!(*tool_input, input);
+                assert_eq!(text.as_deref(), Some("Thinking..."));
+            }
+            _ => panic!("Expected AssistantToolUse message"),
+        };
+    }
+
+    #[test]
+    fn test_serialization_tool_result_with_id() {
+        let mut conv = ConversationHistory::new();
+        conv.add_tool_result_with_id(
+            "toolu_abc123".to_string(),
+            true,
+            Some("Success".to_string()),
+            None,
+        );
+
+        let json = serde_json::to_string(&conv).unwrap();
+        let deserialized: ConversationHistory = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.len(), 1);
+        match deserialized.messages().next().unwrap() {
+            Message::ToolResult { success, tool_use_id, message, error } => {
+                assert!(*success);
+                assert_eq!(tool_use_id.as_deref(), Some("toolu_abc123"));
+                assert_eq!(message.as_deref(), Some("Success"));
+                assert!(error.is_none());
+            }
+            _ => panic!("Expected ToolResult message"),
+        };
+    }
+
+    #[test]
+    fn test_serialization_tool_result_without_id() {
+        let mut conv = ConversationHistory::new();
+        conv.add_tool_result(true, Some("Done".to_string()), None);
+
+        let json = serde_json::to_string(&conv).unwrap();
+
+        // tool_use_id should not appear in JSON when None (skip_serializing_if)
+        assert!(!json.contains("tool_use_id"));
+
+        let deserialized: ConversationHistory = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.len(), 1);
+        match deserialized.messages().next().unwrap() {
+            Message::ToolResult { tool_use_id, .. } => {
+                assert!(tool_use_id.is_none());
+            }
+            _ => panic!("Expected ToolResult message"),
+        };
+    }
+
+    #[test]
+    fn test_serialization_assistant_tool_use_without_text() {
+        let mut conv = ConversationHistory::new();
+        conv.add_assistant_tool_use(
+            "toolu_1".to_string(),
+            "screenshot".to_string(),
+            serde_json::json!({}),
+            None,
+        );
+
+        let json = serde_json::to_string(&conv).unwrap();
+
+        // text should not appear when None (skip_serializing_if)
+        assert!(!json.contains("\"text\""));
+
+        let deserialized: ConversationHistory = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.len(), 1);
+        match deserialized.messages().next().unwrap() {
+            Message::AssistantToolUse { text, .. } => {
+                assert!(text.is_none());
+            }
+            _ => panic!("Expected AssistantToolUse message"),
+        };
+    }
+
+    #[test]
+    fn test_full_tool_use_roundtrip() {
+        let mut conv = ConversationHistory::new();
+
+        // Simulate a full tool_use conversation flow
+        conv.add_user_message("Click the submit button", None, None, None);
+        conv.add_assistant_tool_use(
+            "toolu_abc123".to_string(),
+            "click".to_string(),
+            serde_json::json!({"x": 500, "y": 300}),
+            Some("I'll click the submit button.".to_string()),
+        );
+        conv.add_tool_result_with_id(
+            "toolu_abc123".to_string(),
+            true,
+            Some("Clicked at (500, 300)".to_string()),
+            None,
+        );
+
+        assert_eq!(conv.len(), 3);
+
+        // Serialize and deserialize the full conversation
+        let json = serde_json::to_string_pretty(&conv).unwrap();
+        let deserialized: ConversationHistory = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.len(), 3);
+
+        let msgs: Vec<&Message> = deserialized.messages().collect();
+
+        // Verify user message
+        assert!(matches!(msgs[0], Message::User { .. }));
+
+        // Verify assistant tool_use
+        match msgs[1] {
+            Message::AssistantToolUse { tool_use_id, tool_name, .. } => {
+                assert_eq!(tool_use_id, "toolu_abc123");
+                assert_eq!(tool_name, "click");
+            }
+            _ => panic!("Expected AssistantToolUse"),
+        }
+
+        // Verify tool result with matching ID
+        match msgs[2] {
+            Message::ToolResult { tool_use_id, success, .. } => {
+                assert_eq!(tool_use_id.as_deref(), Some("toolu_abc123"));
+                assert!(*success);
+            }
+            _ => panic!("Expected ToolResult"),
+        }
     }
 }
