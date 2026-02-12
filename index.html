@@ -1890,6 +1890,51 @@
       visibility: visible;
     }
 
+    /* Minimize Mode */
+    .modal.minimized .drag-handle {
+      height: 20px;
+    }
+    .modal.minimized .drag-handle::after {
+      width: 30px;
+      height: 4px;
+    }
+    .modal.minimized .preview-toggle-container,
+    .modal.minimized .template-row,
+    .modal.minimized .metrics-bar,
+    .modal.minimized .screenshot-preview,
+    .modal.minimized .thinking-display,
+    .modal.minimized .action-display,
+    .modal.minimized .action-timeline,
+    .modal.minimized .action-history,
+    .modal.minimized .queue-panel,
+    .modal.minimized .recording-panel,
+    .modal.minimized .export-btn,
+    .modal.minimized .undo-btn,
+    .modal.minimized .resize-handle {
+      display: none !important;
+    }
+    /* Hide non-essential header buttons in minimized mode */
+    .modal.minimized .size-selector,
+    .modal.minimized .position-menu-container,
+    .modal.minimized #expand-btn,
+    .modal.minimized .kill-switch,
+    .modal.minimized #settings-btn {
+      display: none !important;
+    }
+    .modal.minimized .modal-header {
+      padding: 2px 12px 4px;
+    }
+    .modal.minimized .input-area {
+      padding: 0 12px 8px;
+    }
+    .modal.minimized .status-text {
+      font-size: 11px;
+    }
+    .minimize-btn {
+      font-size: 14px;
+      line-height: 1;
+    }
+
     /* Prevent text selection during touch interactions */
     .touch-no-select {
       -webkit-user-select: none;
@@ -1976,6 +2021,7 @@
               <line x1="3" y1="21" x2="10" y2="14"></line>
             </svg>
           </button>
+          <button class="icon-btn minimize-btn" id="minimize-btn" title="Minimize to prompt only" aria-label="Minimize to prompt only">&#x2581;</button>
           <div class="kill-switch kill-switch--idle" id="kill-switch">
             <span class="kill-switch-icon">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
