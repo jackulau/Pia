@@ -85,6 +85,15 @@
       "frameworks": [],
       "providerShortName": null,
       "signingIdentity": null
+    },
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    },
+    "nsis": {
+      "installMode": "currentUser",
+      "displayLanguageSelector": false
     }
   }
 }
