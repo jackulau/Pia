@@ -345,22 +345,56 @@ pub trait LlmProvider: Send + Sync {
     fn name(&self) -> &str;
 }
 
+/// Number of recent screenshots to include in conversation history.
+/// Older screenshots are stripped to save tokens.
+const MAX_SCREENSHOTS_IN_HISTORY: usize = 2;
+
 /// Helper to convert conversation history to provider-specific message format.
 /// Returns a Vec of tuples: (role, text_content, optional_image_base64)
 /// The image_base64 is Arc-wrapped to avoid cloning large screenshot strings.
+///
+/// Only the most recent `MAX_SCREENSHOTS_IN_HISTORY` user messages retain their
+/// screenshots. Older user messages have their screenshot replaced with `None`
+/// and their text prefixed with "[Screenshot omitted] ".
 pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String, Option<Arc<String>>)> {
-    history
-        .messages()
-        .map(|msg| match msg {
+    let messages: Vec<&Message> = history.messages().collect();
+
+    // Count user messages that have screenshots, from the end
+    let mut screenshots_remaining = MAX_SCREENSHOTS_IN_HISTORY;
+    let mut keep_screenshot: Vec<bool> = vec![false; messages.len()];
+
+    for i in (0..messages.len()).rev() {
+        if let Message::User { screenshot_base64: Some(_), .. } = messages[i] {
+            if screenshots_remaining > 0 {
+                keep_screenshot[i] = true;
+                screenshots_remaining -= 1;
+            }
+        }
+    }
+
+    messages
+        .into_iter()
+        .enumerate()
+        .map(|(i, msg)| match msg {
             Message::User {
                 instruction,
                 screenshot_base64,
                 ..
-            } => (
-                "user".to_string(),
-                instruction.clone(),
-                screenshot_base64.clone(),
-            ),
+            } => {
+                if screenshot_base64.is_some() && !keep_screenshot[i] {
+                    (
+                        "user".to_string(),
+                        format!("[Screenshot omitted] {}", instruction),
+                        None,
+                    )
+                } else {
+                    (
+                        "user".to_string(),
+                        instruction.clone(),
+                        screenshot_base64.clone(),
+                    )
+                }
+            }
             Message::Assistant { content } => ("assistant".to_string(), content.clone(), None),
             Message::ToolResult {
                 success,
@@ -667,6 +701,140 @@ mod tests {
         let history = ConversationHistory::new();
         let messages = history_to_messages(&history);
         assert!(messages.is_empty());
+    }
+
+    #[test]
+    fn test_history_to_messages_strips_old_screenshots() {
+        let mut history = ConversationHistory::new();
+        // Add 4 user messages with screenshots
+        history.add_user_message("First", Some(Arc::new("img1".to_string())), Some(1920), Some(1080));
+        history.add_assistant_message(r#"{"action": "click", "x": 10, "y": 20}"#);
+        history.add_user_message("Second", Some(Arc::new("img2".to_string())), Some(1920), Some(1080));
+        history.add_assistant_message(r#"{"action": "click", "x": 30, "y": 40}"#);
+        history.add_user_message("Third", Some(Arc::new("img3".to_string())), Some(1920), Some(1080));
+        history.add_assistant_message(r#"{"action": "click", "x": 50, "y": 60}"#);
+        history.add_user_message("Fourth", Some(Arc::new("img4".to_string())), Some(1920), Some(1080));
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 7);
+
+        // First two user messages (index 0, 2) should have screenshots stripped
+        assert!(messages[0].1.starts_with("[Screenshot omitted]"));
+        assert!(messages[0].2.is_none());
+
+        assert!(messages[2].1.starts_with("[Screenshot omitted]"));
+        assert!(messages[2].2.is_none());
+
+        // Last two user messages (index 4, 6) should keep their screenshots
+        assert_eq!(messages[4].1, "Third");
+        assert_eq!(messages[4].2.as_deref(), Some(&"img3".to_string()));
+
+        assert_eq!(messages[6].1, "Fourth");
+        assert_eq!(messages[6].2.as_deref(), Some(&"img4".to_string()));
+    }
+
+    #[test]
+    fn test_history_to_messages_preserves_text_in_stripped_messages() {
+        let mut history = ConversationHistory::new();
+        history.add_user_message("Open the file manager", Some(Arc::new("img1".to_string())), Some(1920), Some(1080));
+        history.add_assistant_message("ok");
+        history.add_user_message("Click save", Some(Arc::new("img2".to_string())), Some(1920), Some(1080));
+        history.add_assistant_message("ok");
+        history.add_user_message("Confirm dialog", Some(Arc::new("img3".to_string())), Some(1920), Some(1080));
+
+        let messages = history_to_messages(&history);
+
+        // First user message stripped - text preserved with prefix
+        assert_eq!(messages[0].1, "[Screenshot omitted] Open the file manager");
+        assert!(messages[0].2.is_none());
+
+        // Last two keep screenshots
+        assert_eq!(messages[2].1, "Click save");
+        assert!(messages[2].2.is_some());
+
+        assert_eq!(messages[4].1, "Confirm dialog");
+        assert!(messages[4].2.is_some());
+    }
+
+    #[test]
+    fn test_history_to_messages_fewer_than_max_screenshots() {
+        let mut history = ConversationHistory::new();
+        // Only 1 user message with screenshot - should keep it
+        history.add_user_message("Only one", Some(Arc::new("img1".to_string())), Some(1920), Some(1080));
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].1, "Only one");
+        assert!(messages[0].2.is_some());
+    }
+
+    #[test]
+    fn test_history_to_messages_exactly_max_screenshots() {
+        let mut history = ConversationHistory::new();
+        // Exactly 2 user messages with screenshots - both should keep
+        history.add_user_message("First", Some(Arc::new("img1".to_string())), Some(1920), Some(1080));
+        history.add_assistant_message("ok");
+        history.add_user_message("Second", Some(Arc::new("img2".to_string())), Some(1920), Some(1080));
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].1, "First");
+        assert!(messages[0].2.is_some());
+        assert_eq!(messages[2].1, "Second");
+        assert!(messages[2].2.is_some());
+    }
+
+    #[test]
+    fn test_history_to_messages_user_without_screenshot_not_affected() {
+        let mut history = ConversationHistory::new();
+        // Mix of user messages with and without screenshots
+        history.add_user_message("With screenshot 1", Some(Arc::new("img1".to_string())), Some(1920), Some(1080));
+        history.add_user_message("No screenshot", None, None, None);
+        history.add_user_message("With screenshot 2", Some(Arc::new("img2".to_string())), Some(1920), Some(1080));
+        history.add_user_message("With screenshot 3", Some(Arc::new("img3".to_string())), Some(1920), Some(1080));
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 4);
+
+        // First user with screenshot: stripped
+        assert!(messages[0].1.starts_with("[Screenshot omitted]"));
+        assert!(messages[0].2.is_none());
+
+        // User without screenshot: unchanged (no prefix added)
+        assert_eq!(messages[1].1, "No screenshot");
+        assert!(messages[1].2.is_none());
+
+        // Last 2 with screenshots: kept
+        assert_eq!(messages[2].1, "With screenshot 2");
+        assert!(messages[2].2.is_some());
+        assert_eq!(messages[3].1, "With screenshot 3");
+        assert!(messages[3].2.is_some());
+    }
+
+    #[test]
+    fn test_history_to_messages_tool_results_unaffected_by_stripping() {
+        let mut history = ConversationHistory::new();
+        history.add_user_message("Step 1", Some(Arc::new("img1".to_string())), Some(1920), Some(1080));
+        history.add_tool_result(true, Some("Done".to_string()), None);
+        history.add_user_message("Step 2", Some(Arc::new("img2".to_string())), Some(1920), Some(1080));
+        history.add_tool_result(false, None, Some("Error".to_string()));
+        history.add_user_message("Step 3", Some(Arc::new("img3".to_string())), Some(1920), Some(1080));
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 5);
+
+        // First user message: stripped
+        assert!(messages[0].1.starts_with("[Screenshot omitted]"));
+
+        // Tool results: unchanged
+        assert!(messages[1].1.contains("successfully"));
+        assert!(messages[3].1.contains("failed"));
+
+        // Last 2 user messages with screenshots: kept
+        assert_eq!(messages[2].1, "Step 2");
+        assert!(messages[2].2.is_some());
+        assert_eq!(messages[4].1, "Step 3");
+        assert!(messages[4].2.is_some());
     }
 
     #[test]
