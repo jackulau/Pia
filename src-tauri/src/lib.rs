@@ -1023,7 +1023,22 @@ pub fn run() {
                 }
             })?;
 
-            // Show main window on startup
+            // Set overlay windows as click-through on Windows
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(overlay) = app.get_webview_window("overlay") {
+                    if let Err(e) = overlay.set_ignore_cursor_events(true) {
+                        log::warn!("Failed to set overlay click-through on Windows: {}", e);
+                    }
+                }
+                if let Some(cursor_overlay) = app.get_webview_window("cursor-overlay") {
+                    if let Err(e) = cursor_overlay.set_ignore_cursor_events(true) {
+                        log::warn!("Failed to set cursor-overlay click-through on Windows: {}", e);
+                    }
+                }
+            }
+
+            // Show main window on startup (starts hidden to prevent white flash)
             if let Some(window) = app.get_webview_window("main") {
                 println!("Window found, showing...");
                 let _ = window.show();
@@ -1048,7 +1063,7 @@ pub fn run() {
 
             if show_visual_feedback {
                 if let Some(overlay) = app.get_webview_window("overlay") {
-                    // Make window click-through on macOS
+                    // Make overlay window click-through on macOS
                     #[cfg(target_os = "macos")]
                     {
                         if let Err(e) = overlay.set_ignore_cursor_events(true) {

@@ -50,7 +50,8 @@
       max-width: none;
       display: flex;
       flex-direction: column;
-      background: rgba(30, 30, 32, 0.95);
+      /* Solid fallback for platforms without backdrop-filter (e.g. some Windows WebView2 configs) */
+      background: rgb(30, 30, 32);
       -webkit-backdrop-filter: blur(50px) saturate(180%);
       backdrop-filter: blur(50px) saturate(180%);
       border-radius: 14px;
@@ -62,6 +63,12 @@
       overflow-x: hidden;
       overflow-y: auto;
       transition: box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+    }
+    /* When backdrop-filter is supported, use translucent background */
+    @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+      .modal {
+        background: rgba(30, 30, 32, 0.95);
+      }
     }
 
     .drag-handle {
