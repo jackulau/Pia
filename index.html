@@ -658,6 +658,7 @@
     .template-item-name { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.9); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .template-item-preview { font-size: 10px; color: rgba(255, 255, 255, 0.4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
     .template-item-actions { display: flex; gap: 4px; margin-left: 8px; }
+    .template-edit-btn,
     .template-delete-btn {
       width: 24px;
       height: 24px;
@@ -667,11 +668,36 @@
       background: transparent;
       border: none;
       border-radius: 4px;
-      color: rgba(255, 69, 58, 0.7);
       cursor: pointer;
       transition: all 0.15s;
     }
+    .template-edit-btn { color: rgba(10, 132, 255, 0.7); }
+    .template-edit-btn:hover { background: rgba(10, 132, 255, 0.2); color: #0a84ff; }
+    .template-delete-btn { color: rgba(255, 69, 58, 0.7); }
     .template-delete-btn:hover { background: rgba(255, 69, 58, 0.2); color: #ff453a; }
+    .template-category-badge {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.5);
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
+      padding: 1px 5px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .template-category-filter {
+      height: 24px;
+      padding: 0 6px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 10px;
+      outline: none;
+      cursor: pointer;
+    }
+    .template-category-filter option { background: #2a2a2a; color: #fff; }
     .no-templates { font-size: 11px; color: rgba(255, 255, 255, 0.4); text-align: center; padding: 20px 0; }
 
     /* Save template modal */
@@ -707,8 +733,25 @@
       margin-bottom: 4px;
     }
     .save-template-content input:focus { border-color: rgba(10, 132, 255, 0.5); background: rgba(255, 255, 255, 0.12); }
-    .save-template-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-bottom: 16px; }
+    .save-template-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-bottom: 8px; }
+    .template-category-select {
+      width: 100%;
+      height: 36px;
+      padding: 0 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 13px;
+      outline: none;
+      margin-bottom: 16px;
+      cursor: pointer;
+    }
+    .template-category-select:focus { border-color: rgba(10, 132, 255, 0.5); background: rgba(255, 255, 255, 0.12); }
+    .template-category-select option { background: #2a2a2a; color: #fff; }
     .save-template-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .template-select optgroup { color: rgba(255, 255, 255, 0.5); font-size: 11px; font-style: normal; }
+    .template-select optgroup option { color: #fff; font-size: 12px; padding-left: 8px; }
 
     .thinking-display { padding: 10px 12px 6px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
     .thinking-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
@@ -2374,6 +2417,17 @@
         <div class="templates-section">
           <div class="templates-header">
             <h3>Task Templates</h3>
+            <select id="template-category-filter" class="template-category-filter">
+              <option value="">All Categories</option>
+              <option value="Form Filling">Form Filling</option>
+              <option value="Web Navigation">Web Navigation</option>
+              <option value="Data Entry">Data Entry</option>
+              <option value="Data Extraction">Data Extraction</option>
+              <option value="File Management">File Management</option>
+              <option value="Text Editing">Text Editing</option>
+              <option value="App Interaction">App Interaction</option>
+              <option value="General">General</option>
+            </select>
           </div>
           <div class="template-list" id="template-list">
             <div class="no-templates">No templates saved yet</div>
@@ -2384,9 +2438,20 @@
 
     <div class="save-template-dialog hidden" id="save-template-dialog">
       <div class="save-template-content">
-        <h3>Save as Template</h3>
+        <h3 id="template-dialog-title">Save as Template</h3>
         <input type="text" id="template-name-input" placeholder="Template name" maxlength="50" autocomplete="off">
         <div class="save-template-hint">Max 50 characters</div>
+        <select id="template-category-select" class="template-category-select">
+          <option value="">No category</option>
+          <option value="Form Filling">Form Filling</option>
+          <option value="Web Navigation">Web Navigation</option>
+          <option value="Data Entry">Data Entry</option>
+          <option value="Data Extraction">Data Extraction</option>
+          <option value="File Management">File Management</option>
+          <option value="Text Editing">Text Editing</option>
+          <option value="App Interaction">App Interaction</option>
+          <option value="General">General</option>
+        </select>
         <div class="save-template-actions">
           <button class="btn btn-cancel" id="cancel-template-btn">Cancel</button>
           <button class="btn btn-confirm" id="confirm-template-btn">Save</button>

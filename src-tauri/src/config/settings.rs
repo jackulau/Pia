@@ -23,7 +23,21 @@ pub struct TaskTemplate {
     pub name: String,
     pub instruction: String,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub category: Option<String>,
 }
+
+/// Predefined template categories for organizing tasks.
+pub const TEMPLATE_CATEGORIES: &[&str] = &[
+    "Form Filling",
+    "Web Navigation",
+    "Data Entry",
+    "Data Extraction",
+    "File Management",
+    "Text Editing",
+    "App Interaction",
+    "General",
+];
 
 impl TaskTemplate {
     pub fn new(name: String, instruction: String) -> Self {
@@ -32,6 +46,17 @@ impl TaskTemplate {
             name,
             instruction,
             created_at: Utc::now(),
+            category: None,
+        }
+    }
+
+    pub fn new_with_category(name: String, instruction: String, category: Option<String>) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            name,
+            instruction,
+            created_at: Utc::now(),
+            category,
         }
     }
 }
@@ -298,5 +323,112 @@ impl Config {
             }
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_template_new_defaults_to_no_category() {
+        let template = TaskTemplate::new("Test".to_string(), "Do something".to_string());
+        assert_eq!(template.name, "Test");
+        assert_eq!(template.instruction, "Do something");
+        assert!(template.category.is_none());
+        assert!(!template.id.is_empty());
+    }
+
+    #[test]
+    fn test_template_new_with_category() {
+        let template = TaskTemplate::new_with_category(
+            "Fill Form".to_string(),
+            "Fill the login form".to_string(),
+            Some("Form Filling".to_string()),
+        );
+        assert_eq!(template.category, Some("Form Filling".to_string()));
+    }
+
+    #[test]
+    fn test_template_new_with_none_category() {
+        let template = TaskTemplate::new_with_category(
+            "General task".to_string(),
+            "Do it".to_string(),
+            None,
+        );
+        assert!(template.category.is_none());
+    }
+
+    #[test]
+    fn test_template_serialize_with_category() {
+        let template = TaskTemplate::new_with_category(
+            "Nav".to_string(),
+            "Go to site".to_string(),
+            Some("Web Navigation".to_string()),
+        );
+        let serialized = toml::to_string(&template).unwrap();
+        assert!(serialized.contains("category"));
+        assert!(serialized.contains("Web Navigation"));
+    }
+
+    #[test]
+    fn test_template_deserialize_without_category_backwards_compat() {
+        let toml_str = r#"
+            id = "abc-123"
+            name = "Old Template"
+            instruction = "Do old stuff"
+            created_at = "2024-01-01T00:00:00Z"
+        "#;
+        let template: TaskTemplate = toml::from_str(toml_str).unwrap();
+        assert_eq!(template.name, "Old Template");
+        assert!(template.category.is_none());
+    }
+
+    #[test]
+    fn test_template_deserialize_with_category() {
+        let toml_str = r#"
+            id = "abc-456"
+            name = "Form Template"
+            instruction = "Fill form fields"
+            created_at = "2024-06-01T00:00:00Z"
+            category = "Form Filling"
+        "#;
+        let template: TaskTemplate = toml::from_str(toml_str).unwrap();
+        assert_eq!(template.category, Some("Form Filling".to_string()));
+    }
+
+    #[test]
+    fn test_template_categories_constant() {
+        assert!(TEMPLATE_CATEGORIES.contains(&"General"));
+        assert!(TEMPLATE_CATEGORIES.contains(&"Form Filling"));
+        assert!(TEMPLATE_CATEGORIES.contains(&"Web Navigation"));
+        assert!(TEMPLATE_CATEGORIES.contains(&"Data Entry"));
+        assert!(TEMPLATE_CATEGORIES.contains(&"Data Extraction"));
+        assert!(TEMPLATE_CATEGORIES.contains(&"File Management"));
+        assert!(TEMPLATE_CATEGORIES.contains(&"Text Editing"));
+        assert!(TEMPLATE_CATEGORIES.contains(&"App Interaction"));
+        assert_eq!(TEMPLATE_CATEGORIES.len(), 8);
+    }
+
+    #[test]
+    fn test_config_with_categorized_templates() {
+        let mut config = Config::default();
+        let t1 = TaskTemplate::new_with_category(
+            "T1".to_string(),
+            "Instruction 1".to_string(),
+            Some("Data Entry".to_string()),
+        );
+        let t2 = TaskTemplate::new("T2".to_string(), "Instruction 2".to_string());
+        config.templates.push(t1);
+        config.templates.push(t2);
+
+        let serialized = toml::to_string_pretty(&config).unwrap();
+        let deserialized: Config = toml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.templates.len(), 2);
+        assert_eq!(
+            deserialized.templates[0].category,
+            Some("Data Entry".to_string())
+        );
+        assert!(deserialized.templates[1].category.is_none());
     }
 }

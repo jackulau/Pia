@@ -90,9 +90,12 @@ const templateSelect = document.getElementById('template-select');
 const saveTemplateBtn = document.getElementById('save-template-btn');
 const saveTemplateDialog = document.getElementById('save-template-dialog');
 const templateNameInput = document.getElementById('template-name-input');
+const templateCategorySelect = document.getElementById('template-category-select');
+const templateDialogTitle = document.getElementById('template-dialog-title');
 const cancelTemplateBtn = document.getElementById('cancel-template-btn');
 const confirmTemplateBtn = document.getElementById('confirm-template-btn');
 const templateList = document.getElementById('template-list');
+const templateCategoryFilter = document.getElementById('template-category-filter');
 
 // Provider-specific settings
 const providerSettings = {
@@ -158,6 +161,8 @@ let resizeDebounceTimer = null;
 let currentSizePreset = 'standard';
 let currentPosition = localStorage.getItem('pia-window-position') || null;
 let cachedTemplates = [];
+let editingTemplateId = null;
+let templateCategoryFilterValue = '';
 let killSwitchTriggered = false;
 let canUndo = false;
 let lastUndoableAction = null;
@@ -470,20 +475,53 @@ async function loadTemplates() {
   }
 }
 
-// Update template dropdown
+// Template categories
+const TEMPLATE_CATEGORIES = [
+  'Form Filling', 'Web Navigation', 'Data Entry', 'Data Extraction',
+  'File Management', 'Text Editing', 'App Interaction', 'General'
+];
+
+// Update template dropdown with optgroup grouping by category
 function updateTemplateDropdown() {
-  // Clear existing options (keep the placeholder)
   templateSelect.innerHTML = '<option value="">Select a template...</option>';
 
-  // Sort templates alphabetically by name
-  const sorted = [...cachedTemplates].sort((a, b) => a.name.localeCompare(b.name));
-
-  sorted.forEach(template => {
-    const option = document.createElement('option');
-    option.value = template.id;
-    option.textContent = template.name;
-    templateSelect.appendChild(option);
+  // Group templates by category
+  const groups = {};
+  cachedTemplates.forEach(template => {
+    const cat = template.category || 'General';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(template);
   });
+
+  // Sort categories, putting General last
+  const sortedCats = Object.keys(groups).sort((a, b) => {
+    if (a === 'General') return 1;
+    if (b === 'General') return -1;
+    return a.localeCompare(b);
+  });
+
+  if (sortedCats.length <= 1 && cachedTemplates.length > 0) {
+    // Only one category - no need for optgroups
+    const sorted = [...cachedTemplates].sort((a, b) => a.name.localeCompare(b.name));
+    sorted.forEach(template => {
+      const option = document.createElement('option');
+      option.value = template.id;
+      option.textContent = template.name;
+      templateSelect.appendChild(option);
+    });
+  } else {
+    sortedCats.forEach(cat => {
+      const optgroup = document.createElement('optgroup');
+      optgroup.label = cat;
+      groups[cat].sort((a, b) => a.name.localeCompare(b.name)).forEach(template => {
+        const option = document.createElement('option');
+        option.value = template.id;
+        option.textContent = template.name;
+        optgroup.appendChild(option);
+      });
+      templateSelect.appendChild(optgroup);
+    });
+  }
 }
 
 // Update template list in settings
@@ -493,15 +531,37 @@ function updateTemplateList() {
     return;
   }
 
-  const sorted = [...cachedTemplates].sort((a, b) => a.name.localeCompare(b.name));
+  // Filter by category if selected
+  let filtered = cachedTemplates;
+  if (templateCategoryFilterValue) {
+    filtered = cachedTemplates.filter(t => (t.category || 'General') === templateCategoryFilterValue);
+  }
 
-  templateList.innerHTML = sorted.map(template => `
+  if (filtered.length === 0) {
+    templateList.innerHTML = '<div class="no-templates">No templates in this category</div>';
+    return;
+  }
+
+  const sorted = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+
+  templateList.innerHTML = sorted.map(template => {
+    const cat = template.category || 'General';
+    return `
     <div class="template-item" data-id="${template.id}">
       <div class="template-item-info">
-        <div class="template-item-name">${escapeHtml(template.name)}</div>
+        <div class="template-item-name">
+          ${escapeHtml(template.name)}
+          <span class="template-category-badge">${escapeHtml(cat)}</span>
+        </div>
         <div class="template-item-preview">${escapeHtml(template.instruction.substring(0, 60))}${template.instruction.length > 60 ? '...' : ''}</div>
       </div>
       <div class="template-item-actions">
+        <button class="template-edit-btn" data-id="${template.id}" title="Edit template">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+          </svg>
+        </button>
         <button class="template-delete-btn" data-id="${template.id}" title="Delete template">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"></polyline>
@@ -509,8 +569,16 @@ function updateTemplateList() {
           </svg>
         </button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
+
+  // Add edit handlers
+  templateList.querySelectorAll('.template-edit-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openEditTemplateDialog(btn.dataset.id);
+    });
+  });
 
   // Add delete handlers
   templateList.querySelectorAll('.template-delete-btn').forEach(btn => {
@@ -520,6 +588,49 @@ function updateTemplateList() {
       await deleteTemplate(id);
     });
   });
+}
+
+// Open dialog to edit an existing template
+function openEditTemplateDialog(id) {
+  const template = cachedTemplates.find(t => t.id === id);
+  if (!template) return;
+
+  editingTemplateId = id;
+  templateDialogTitle.textContent = 'Edit Template';
+  templateNameInput.value = template.name;
+  templateCategorySelect.value = template.category || '';
+  confirmTemplateBtn.textContent = 'Update';
+  saveTemplateDialog.classList.remove('hidden');
+  templateNameInput.focus();
+}
+
+// Open dialog to save a new template
+function openSaveTemplateDialog() {
+  const instruction = instructionInput.value.trim();
+  if (!instruction) {
+    showToast('Enter an instruction first', 'error');
+    return;
+  }
+  editingTemplateId = null;
+  templateDialogTitle.textContent = 'Save as Template';
+  templateNameInput.value = '';
+  templateCategorySelect.value = '';
+  confirmTemplateBtn.textContent = 'Save';
+  saveTemplateDialog.classList.remove('hidden');
+  templateNameInput.focus();
+}
+
+// Handle template dialog confirm (save or update)
+async function handleTemplateDialogConfirm() {
+  const name = templateNameInput.value;
+  const category = templateCategorySelect.value || null;
+
+  if (editingTemplateId) {
+    await updateTemplate(editingTemplateId, name, category);
+  } else {
+    await saveAsTemplate(name, category);
+  }
+  saveTemplateDialog.classList.add('hidden');
 }
 
 // Select a template
@@ -537,7 +648,7 @@ function selectTemplate(id) {
 }
 
 // Save current instruction as template
-async function saveAsTemplate(name) {
+async function saveAsTemplate(name, category) {
   const instruction = instructionInput.value.trim();
 
   if (!instruction) {
@@ -556,13 +667,43 @@ async function saveAsTemplate(name) {
   }
 
   try {
-    const template = await invoke('save_template', { name: name.trim(), instruction });
+    const template = await invoke('save_template', { name: name.trim(), instruction, category });
     cachedTemplates.push(template);
     updateTemplateDropdown();
     updateTemplateList();
     showToast('Template saved', 'success');
   } catch (error) {
     console.error('Failed to save template:', error);
+    showToast(error, 'error');
+  }
+}
+
+// Update an existing template
+async function updateTemplate(id, name, category) {
+  const template = cachedTemplates.find(t => t.id === id);
+  if (!template) return;
+
+  if (!name || !name.trim()) {
+    showToast('Template name is required', 'error');
+    return;
+  }
+
+  if (name.length > 50) {
+    showToast('Template name must be 50 characters or less', 'error');
+    return;
+  }
+
+  try {
+    const updated = await invoke('update_template', {
+      id, name: name.trim(), instruction: template.instruction, category
+    });
+    const idx = cachedTemplates.findIndex(t => t.id === id);
+    if (idx !== -1) cachedTemplates[idx] = updated;
+    updateTemplateDropdown();
+    updateTemplateList();
+    showToast('Template updated', 'success');
+  } catch (error) {
+    console.error('Failed to update template:', error);
     showToast(error, 'error');
   }
 }
@@ -690,14 +831,7 @@ function setupEventListeners() {
 
   // Save as template button
   saveTemplateBtn.addEventListener('click', () => {
-    const instruction = instructionInput.value.trim();
-    if (!instruction) {
-      showToast('Enter an instruction first', 'error');
-      return;
-    }
-    templateNameInput.value = '';
-    saveTemplateDialog.classList.remove('hidden');
-    templateNameInput.focus();
+    openSaveTemplateDialog();
   });
 
   // Cancel save template
@@ -705,24 +839,28 @@ function setupEventListeners() {
     saveTemplateDialog.classList.add('hidden');
   });
 
-  // Confirm save template
+  // Confirm save/update template
   confirmTemplateBtn.addEventListener('click', async () => {
-    const name = templateNameInput.value;
-    await saveAsTemplate(name);
-    saveTemplateDialog.classList.add('hidden');
+    await handleTemplateDialogConfirm();
   });
 
   // Enter key in template name input
   templateNameInput.addEventListener('keydown', async (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const name = templateNameInput.value;
-      await saveAsTemplate(name);
-      saveTemplateDialog.classList.add('hidden');
+      await handleTemplateDialogConfirm();
     } else if (e.key === 'Escape') {
       saveTemplateDialog.classList.add('hidden');
     }
   });
+
+  // Category filter in settings
+  if (templateCategoryFilter) {
+    templateCategoryFilter.addEventListener('change', (e) => {
+      templateCategoryFilterValue = e.target.value;
+      updateTemplateList();
+    });
+  }
 
   // Close button
   closeBtn.addEventListener('click', async () => {
