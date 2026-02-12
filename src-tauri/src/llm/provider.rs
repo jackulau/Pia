@@ -364,17 +364,14 @@ pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String
             Message::Assistant { content } => ("assistant".to_string(), content.clone(), None),
             Message::ToolResult {
                 success,
-                message,
+                message: _,
                 error,
             } => {
                 let text = if *success {
-                    format!(
-                        "Action executed successfully. {}",
-                        message.as_deref().unwrap_or("")
-                    )
+                    "OK".to_string()
                 } else {
                     format!(
-                        "Action failed. {}",
+                        "FAIL: {}",
                         error.as_deref().unwrap_or("Unknown error")
                     )
                 };
@@ -630,8 +627,7 @@ mod tests {
         let messages = history_to_messages(&history);
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].0, "user");
-        assert!(messages[0].1.contains("successfully"));
-        assert!(messages[0].1.contains("Clicked successfully"));
+        assert_eq!(messages[0].1, "OK");
     }
 
     #[test]
@@ -642,8 +638,7 @@ mod tests {
         let messages = history_to_messages(&history);
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].0, "user");
-        assert!(messages[0].1.contains("failed"));
-        assert!(messages[0].1.contains("Element not found"));
+        assert_eq!(messages[0].1, "FAIL: Element not found");
     }
 
     #[test]

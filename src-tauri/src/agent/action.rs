@@ -171,18 +171,15 @@ pub struct ActionResult {
 }
 
 impl ActionResult {
-    /// Convert this ActionResult to a tool_result content string for the Anthropic API
+    /// Convert this ActionResult to a compact tool_result content string for the LLM.
+    /// Success returns "OK", failure returns "FAIL: <message>".
+    /// The LLM already knows what action it requested, so we omit redundant details.
     pub fn to_tool_result_content(&self) -> String {
-        let status = if self.success { "success" } else { "error" };
-        let result = json!({
-            "status": status,
-            "action": self.action_type,
-            "message": self.message,
-            "details": self.details,
-        });
-        serde_json::to_string(&result).unwrap_or_else(|_| {
-            format!("Action {} {}", self.action_type, status)
-        })
+        if self.success {
+            "OK".to_string()
+        } else {
+            format!("FAIL: {}", self.message.as_deref().unwrap_or("Unknown error"))
+        }
     }
 
     /// Set the tool_use_id for this result
@@ -1731,9 +1728,7 @@ mod tests {
             tool_use_id: None,
         };
         let content = result.to_tool_result_content();
-        let parsed: Value = serde_json::from_str(&content).unwrap();
-        assert_eq!(parsed["status"], "success");
-        assert_eq!(parsed["action"], "click");
+        assert_eq!(content, "OK");
     }
 
     #[test]
@@ -2142,8 +2137,21 @@ mod tests {
             tool_use_id: None,
         };
         let content = result.to_tool_result_content();
-        let parsed: Value = serde_json::from_str(&content).unwrap();
-        assert_eq!(parsed["status"], "error");
-        assert_eq!(parsed["action"], "click");
+        assert_eq!(content, "FAIL: Something failed");
+    }
+
+    #[test]
+    fn test_action_result_to_tool_result_content_error_no_message() {
+        let result = ActionResult {
+            success: false,
+            completed: true,
+            message: None,
+            retry_count: 0,
+            action_type: "click".to_string(),
+            details: None,
+            tool_use_id: None,
+        };
+        let content = result.to_tool_result_content();
+        assert_eq!(content, "FAIL: Unknown error");
     }
 }

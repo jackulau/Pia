@@ -444,8 +444,8 @@ impl AgentLoop {
 
             match execute_action_with_delay(&action, confirm_dangerous, delay_controller.click_delay()).await {
                 Ok(result) => {
-                    // Add successful tool result to conversation
-                    conversation.add_tool_result(true, result.message.clone(), None);
+                    // Add successful tool result to conversation (compact: no message needed)
+                    conversation.add_tool_result(true, None, None);
 
 
                     // Record successful action to history
