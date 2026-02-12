@@ -12,12 +12,14 @@
     html, body {
       width: 100%;
       height: 100%;
-      background: transparent;
+      background: transparent !important;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       color: #fff;
       overflow: hidden;
       -webkit-user-select: none;
       user-select: none;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
     #app {
       width: 100%;
@@ -26,7 +28,7 @@
       align-items: stretch;
       justify-content: center;
       padding: 6px;
-      background: transparent;
+      background: transparent !important;
       overflow: hidden;
     }
     .hidden { display: none !important; }
@@ -618,6 +620,7 @@
       font-size: 12px;
       outline: none;
       cursor: pointer;
+      -webkit-appearance: none;
       appearance: none;
     }
     .template-select:focus { border-color: rgba(10, 132, 255, 0.5); background: rgba(255, 255, 255, 0.1); }
@@ -1012,7 +1015,7 @@
       animation: focus-ring-pulse 0.3s ease-out;
     }
     .setting-input:focus::placeholder { opacity: 0.6; }
-    .setting-select { cursor: pointer; appearance: none; }
+    .setting-select { cursor: pointer; -webkit-appearance: none; appearance: none; }
     .setting-input:disabled,
     .setting-select:disabled {
       opacity: 0.4;
@@ -1052,6 +1055,7 @@
     .speed-slider { flex: 1; height: 6px; -webkit-appearance: none; appearance: none; background: rgba(255, 255, 255, 0.15); border-radius: 3px; outline: none; }
     .speed-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; background: #0a84ff; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
     .speed-slider::-webkit-slider-thumb:hover { transform: scale(1.1); }
+    .speed-slider::-webkit-slider-runnable-track { height: 6px; background: rgba(255, 255, 255, 0.15); border-radius: 3px; border: none; }
     .speed-slider::-moz-range-thumb { width: 16px; height: 16px; background: #0a84ff; border: none; border-radius: 50%; cursor: pointer; }
     .speed-slider::-moz-range-track { height: 6px; background: rgba(255, 255, 255, 0.15); border-radius: 3px; border: none; }
     .speed-slider-value { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.8); min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
