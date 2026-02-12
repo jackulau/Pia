@@ -3816,6 +3816,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-log",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.8.2",

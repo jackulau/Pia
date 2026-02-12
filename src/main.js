@@ -1650,7 +1650,28 @@ async function saveSettings() {
   }
 }
 
-// Detect available API subscriptions
+// Vision model prefixes (mirrors backend VISION_MODEL_PREFIXES)
+const VISION_MODEL_PREFIXES = [
+  'llava', 'bakllava', 'llama3.2-vision', 'llama3-vision',
+  'moondream', 'minicpm-v', 'nanollava', 'llava-llama3', 'llava-phi3', 'obsidian'
+];
+
+function isVisionModel(name) {
+  const lower = name.toLowerCase();
+  return VISION_MODEL_PREFIXES.some(p => lower.startsWith(p));
+}
+
+// Source type labels for display
+const SOURCE_TYPE_LABELS = {
+  env: 'ENV',
+  dotenv: '.env',
+  shell: 'Shell',
+  config: 'Config',
+  service: 'Service',
+  unknown: 'Other',
+};
+
+// Detect available API credentials from all sources
 async function detectSubscriptions() {
   const btn = document.getElementById('detect-subscriptions-btn');
   const resultsContainer = document.getElementById('detect-results');
@@ -1664,40 +1685,105 @@ async function detectSubscriptions() {
   resultsContainer.classList.add('hidden');
 
   try {
-    const detected = await invoke('detect_subscriptions');
+    const detected = await invoke('detect_credentials');
 
     if (detected && detected.length > 0) {
       resultsContainer.classList.remove('hidden');
-      detected.forEach(sub => {
-        const item = document.createElement('div');
-        item.className = 'detect-result-item';
 
-        const maskedKey = sub.api_key
-          ? sub.api_key.substring(0, 8) + '...' + sub.api_key.substring(sub.api_key.length - 4)
-          : '(detected)';
+      // Group by provider
+      const grouped = {};
+      for (const cred of detected) {
+        if (!grouped[cred.provider]) grouped[cred.provider] = [];
+        grouped[cred.provider].push(cred);
+      }
 
-        item.innerHTML = `
-          <div class="detect-result-info">
-            <span class="detect-result-provider">${escapeHtml(sub.provider)}</span>
-            <span class="detect-result-hint">${escapeHtml(maskedKey)}</span>
-          </div>
-          <button class="detect-result-apply" data-provider="${escapeHtml(sub.provider)}" data-key="${escapeHtml(sub.api_key || '')}" data-model="${escapeHtml(sub.model || '')}">Apply</button>
-        `;
-        resultsList.appendChild(item);
+      // Sort providers: those with valid keys first, then alphabetical
+      const providerNames = Object.keys(grouped).sort((a, b) => {
+        const aValid = grouped[a].some(c => c.is_valid);
+        const bValid = grouped[b].some(c => c.is_valid);
+        if (aValid !== bValid) return bValid ? 1 : -1;
+        return a.localeCompare(b);
       });
+
+      for (const provider of providerNames) {
+        const creds = grouped[provider];
+        // Sort by priority (lower = better)
+        creds.sort((a, b) => a.priority - b.priority);
+
+        const group = document.createElement('div');
+        group.className = 'detect-provider-group';
+
+        const header = document.createElement('div');
+        header.className = 'detect-provider-header';
+        header.textContent = provider;
+        group.appendChild(header);
+
+        for (const cred of creds) {
+          const item = document.createElement('div');
+          item.className = 'detect-result-item';
+
+          const sourceLabel = SOURCE_TYPE_LABELS[cred.source_type] || cred.source_type;
+          const badgeClass = 'detect-source-badge source-' + escapeHtml(cred.source_type);
+          const validClass = cred.is_valid ? 'valid' : 'invalid';
+          const validIcon = cred.is_valid ? '\u2713' : '!';
+          const validTitle = cred.is_valid ? 'Valid key format' : 'Key format not recognized';
+
+          let infoHtml = `
+            <div class="detect-result-info">
+              <div class="detect-result-top-row">
+                <span class="detect-result-provider">${escapeHtml(cred.key_preview || '(no key)')}</span>
+                <span class="${escapeHtml(badgeClass)}">${escapeHtml(sourceLabel)}</span>
+                <span class="detect-validation-icon ${escapeHtml(validClass)}" title="${escapeHtml(validTitle)}">${validIcon}</span>
+              </div>
+              <div class="detect-source-path" title="${escapeHtml(cred.source)}">${escapeHtml(cred.source)}</div>`;
+
+          // Ollama-specific: show host and model tags
+          if (cred.provider === 'ollama') {
+            if (cred.host) {
+              infoHtml += `<div class="detect-ollama-info">${escapeHtml(cred.host)}</div>`;
+            }
+            if (cred.available_models && cred.available_models.length > 0) {
+              infoHtml += '<div class="detect-ollama-models">';
+              for (const m of cred.available_models) {
+                const vision = isVisionModel(m);
+                const tagClass = vision ? 'detect-ollama-model-tag vision' : 'detect-ollama-model-tag';
+                infoHtml += `<span class="${tagClass}">${escapeHtml(m)}</span>`;
+              }
+              infoHtml += '</div>';
+            }
+          }
+
+          infoHtml += '</div>';
+
+          item.innerHTML = infoHtml +
+            `<button class="detect-result-apply" data-provider="${escapeHtml(cred.provider)}">Apply</button>`;
+          group.appendChild(item);
+        }
+
+        resultsList.appendChild(group);
+      }
 
       // Attach apply handlers
       resultsList.querySelectorAll('.detect-result-apply').forEach(applyBtn => {
         applyBtn.addEventListener('click', () => {
-          applyDetectedCredential(applyBtn.dataset.provider, applyBtn.dataset.key, applyBtn.dataset.model);
+          applyDetectedCredential(applyBtn.dataset.provider);
         });
       });
     } else {
       resultsContainer.classList.remove('hidden');
-      resultsList.innerHTML = '<div class="detect-no-results">No API subscriptions detected</div>';
+      resultsList.innerHTML = `<div class="detect-no-results">
+        No credentials detected. Checked:
+        <ul class="detect-hint-list">
+          <li>Environment variables (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)</li>
+          <li>.env files in common locations</li>
+          <li>Shell config files (~/.bashrc, ~/.zshrc)</li>
+          <li>CLI config files (~/.claude.json)</li>
+          <li>Running Ollama instances</li>
+        </ul>
+      </div>`;
     }
   } catch (error) {
-    console.error('Failed to detect subscriptions:', error);
+    console.error('Failed to detect credentials:', error);
     resultsContainer.classList.remove('hidden');
     resultsList.innerHTML = '<div class="detect-no-results">Detection failed: ' + escapeHtml(String(error)) + '</div>';
   } finally {
@@ -1712,32 +1798,17 @@ async function detectSubscriptions() {
   }
 }
 
-// Apply a detected credential to the settings UI
-function applyDetectedCredential(provider, apiKey, model) {
-  const providerMap = {
-    anthropic: { keyId: 'anthropic-key', modelId: 'anthropic-model' },
-    openai: { keyId: 'openai-key', modelId: 'openai-model' },
-    openrouter: { keyId: 'openrouter-key', modelId: 'openrouter-model' },
-    glm: { keyId: 'glm-key', modelId: 'glm-model' },
-  };
-
-  const mapping = providerMap[provider];
-  if (!mapping) {
-    showToast('Unknown provider: ' + provider, 'error');
-    return;
+// Apply a detected credential via the backend
+async function applyDetectedCredential(provider) {
+  try {
+    await invoke('apply_detected_credential', { provider });
+    providerSelect.value = provider;
+    showProviderSettings(provider);
+    showToast('Applied ' + provider + ' credentials', 'success');
+  } catch (error) {
+    console.error('Failed to apply credential:', error);
+    showToast('Failed to apply: ' + String(error), 'error');
   }
-
-  const keyInput = document.getElementById(mapping.keyId);
-  const modelInput = document.getElementById(mapping.modelId);
-
-  if (keyInput && apiKey) keyInput.value = apiKey;
-  if (modelInput && model) modelInput.value = model;
-
-  // Switch to detected provider
-  providerSelect.value = provider;
-  showProviderSettings(provider);
-
-  showToast('Applied ' + provider + ' credentials', 'success');
 }
 
 // Export session to file

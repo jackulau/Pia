@@ -11,6 +11,8 @@ use std::time::Duration;
 pub struct DetectedCredentialPayload {
     pub provider: String,
     pub source: String,
+    pub source_type: String,
+    pub priority: u8,
     pub model_hint: Option<String>,
     pub key_preview: String,
     pub is_valid: bool,
@@ -35,9 +37,12 @@ impl DetectedCredential {
     pub fn to_payload(&self) -> DetectedCredentialPayload {
         let key_preview = mask_key(&self.api_key);
         let is_valid = validate_key_format(&self.provider, &self.api_key);
+        let (source_type, priority) = classify_source(&self.source);
         DetectedCredentialPayload {
             provider: self.provider.clone(),
             source: self.source.clone(),
+            source_type,
+            priority,
             model_hint: self.model_hint.clone(),
             key_preview,
             is_valid,
@@ -56,6 +61,28 @@ fn mask_key(key: &str) -> String {
     let prefix = &trimmed[..4];
     let suffix = &trimmed[trimmed.len() - 4..];
     format!("{}...{}", prefix, suffix)
+}
+
+/// Classify a source string into a type and priority.
+/// Priority: 1=env, 2=dotenv, 3=shell, 4=config, 5=service
+fn classify_source(source: &str) -> (String, u8) {
+    if source.starts_with("env:") {
+        ("env".to_string(), 1)
+    } else if source.starts_with("file:") {
+        // Distinguish .env files from shell RC files
+        let path = &source[5..];
+        if path.contains(".env") {
+            ("dotenv".to_string(), 2)
+        } else {
+            ("shell".to_string(), 3)
+        }
+    } else if source.starts_with("config:") || source == "claude-cli" {
+        ("config".to_string(), 4)
+    } else if source.starts_with("running:") {
+        ("service".to_string(), 5)
+    } else {
+        ("unknown".to_string(), 6)
+    }
 }
 
 /// A value found in a file source: the key value and where it was found.
@@ -879,6 +906,8 @@ mod tests {
         assert_eq!(payload.key_preview, "sk-a...cdef");
         assert_eq!(payload.provider, "anthropic");
         assert!(payload.is_valid);
+        assert_eq!(payload.source_type, "env");
+        assert_eq!(payload.priority, 1);
         assert!(payload.host.is_none());
         assert!(payload.available_models.is_none());
     }
