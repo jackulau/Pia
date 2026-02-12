@@ -1048,18 +1048,22 @@ pub fn run() {
 
             if show_visual_feedback {
                 if let Some(overlay) = app.get_webview_window("overlay") {
-                    // Make window click-through on macOS
-                    #[cfg(target_os = "macos")]
-                    {
-                        if let Err(e) = overlay.set_ignore_cursor_events(true) {
-                            log::warn!("Failed to set overlay click-through: {}", e);
-                        }
+                    // Make window click-through (supported on macOS and Windows in Tauri 2.x)
+                    if let Err(e) = overlay.set_ignore_cursor_events(true) {
+                        log::warn!("Failed to set overlay click-through: {}", e);
                     }
 
                     let _ = overlay.show();
                     println!("Overlay window initialized");
                 } else {
                     println!("WARN: Overlay window not found");
+                }
+            }
+
+            // Make cursor-overlay click-through (supported on macOS and Windows in Tauri 2.x)
+            if let Some(cursor_overlay) = app.get_webview_window("cursor-overlay") {
+                if let Err(e) = cursor_overlay.set_ignore_cursor_events(true) {
+                    log::warn!("Failed to set cursor-overlay click-through: {}", e);
                 }
             }
 
