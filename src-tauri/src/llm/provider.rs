@@ -569,6 +569,139 @@ mod tests {
     }
 
     #[test]
+    fn test_all_tools_have_matching_from_tool_use_handler() {
+        use crate::agent::action::from_tool_use;
+
+        // Build minimal valid inputs for each tool
+        let tool_inputs: Vec<(&str, Value)> = vec![
+            ("click", json!({"x": 100, "y": 200})),
+            ("double_click", json!({"x": 100, "y": 200})),
+            ("move", json!({"x": 100, "y": 200})),
+            ("type", json!({"text": "hello"})),
+            ("key", json!({"key": "enter"})),
+            ("scroll", json!({"x": 100, "y": 200, "direction": "down"})),
+            ("complete", json!({"message": "done"})),
+            ("error", json!({"message": "fail"})),
+        ];
+
+        let tools = build_tools();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+
+        for (name, input) in &tool_inputs {
+            // Verify the tool is in build_tools()
+            assert!(tool_names.contains(name), "Tool '{}' not found in build_tools()", name);
+
+            // Verify from_tool_use can parse it
+            let tool_use = ToolUse {
+                id: format!("test_{}", name),
+                name: name.to_string(),
+                input: input.clone(),
+            };
+            let result = from_tool_use(&tool_use);
+            assert!(result.is_ok(), "from_tool_use failed for tool '{}': {:?}", name, result.err());
+        }
+    }
+
+    #[test]
+    fn test_tool_names_match_build_tools() {
+        let tools = build_tools();
+        let expected_names = ["click", "double_click", "move", "type", "key", "scroll", "complete", "error"];
+        let actual_names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+
+        for expected in &expected_names {
+            assert!(actual_names.contains(expected), "Missing tool: {}", expected);
+        }
+        // No unexpected tools
+        for actual in &actual_names {
+            assert!(expected_names.contains(actual), "Unexpected tool: {}", actual);
+        }
+    }
+
+    #[test]
+    fn test_all_tool_schemas_are_objects_with_properties() {
+        let tools = build_tools();
+        for tool in &tools {
+            let schema = &tool.input_schema;
+            assert_eq!(schema["type"], "object", "Tool '{}' schema type should be 'object'", tool.name);
+            assert!(schema["properties"].is_object(), "Tool '{}' should have properties", tool.name);
+            assert!(schema["required"].is_array(), "Tool '{}' should have required array", tool.name);
+        }
+    }
+
+    #[test]
+    fn test_history_to_messages_handles_assistant_as_text_fallback() {
+        // Non-Anthropic providers receive assistant messages as plain text
+        let mut history = ConversationHistory::new();
+        history.add_assistant_message(r#"{"action": "click", "x": 100, "y": 200}"#);
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, "assistant");
+        // The full JSON text is preserved as-is for non-Anthropic fallback
+        assert!(messages[0].1.contains("click"));
+        assert!(messages[0].1.contains("100"));
+        assert!(messages[0].2.is_none());
+    }
+
+    #[test]
+    fn test_tool_result_to_json_includes_is_error_true() {
+        let result = ToolResult::error("toolu_err_1".to_string(), "Action timed out".to_string());
+        let json = result.to_json();
+        assert_eq!(json["type"], "tool_result");
+        assert_eq!(json["tool_use_id"], "toolu_err_1");
+        assert_eq!(json["is_error"], true);
+        assert_eq!(json["content"], "Action timed out");
+    }
+
+    #[test]
+    fn test_tool_result_to_json_includes_is_error_false() {
+        let result = ToolResult::success("toolu_ok_1".to_string(), "Clicked at (100, 200)".to_string());
+        let json = result.to_json();
+        assert_eq!(json["type"], "tool_result");
+        assert_eq!(json["tool_use_id"], "toolu_ok_1");
+        assert_eq!(json["is_error"], false);
+        assert_eq!(json["content"], "Clicked at (100, 200)");
+    }
+
+    #[test]
+    fn test_llm_response_tool_use_to_string_repr_is_valid_json() {
+        let resp = LlmResponse::ToolUse(ToolUse {
+            id: "toolu_123".to_string(),
+            name: "click".to_string(),
+            input: json!({"x": 100, "y": 200}),
+        });
+        let repr = resp.to_string_repr();
+        let parsed: Value = serde_json::from_str(&repr).unwrap();
+        assert_eq!(parsed["id"], "toolu_123");
+        assert_eq!(parsed["name"], "click");
+        assert_eq!(parsed["input"]["x"], 100);
+    }
+
+    #[test]
+    fn test_tool_use_serde_roundtrip() {
+        let original = ToolUse {
+            id: "toolu_abc".to_string(),
+            name: "scroll".to_string(),
+            input: json!({"x": 50, "y": 100, "direction": "up", "amount": 5}),
+        };
+        let serialized = serde_json::to_string(&original).unwrap();
+        let deserialized: ToolUse = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.id, original.id);
+        assert_eq!(deserialized.name, original.name);
+        assert_eq!(deserialized.input, original.input);
+    }
+
+    #[test]
+    fn test_tool_result_serde_roundtrip() {
+        let original = ToolResult::error("toolu_xyz".to_string(), "timeout".to_string());
+        let serialized = serde_json::to_string(&original).unwrap();
+        let deserialized: ToolResult = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.tool_use_id, "toolu_xyz");
+        assert!(deserialized.is_error);
+        assert_eq!(deserialized.content, "timeout");
+    }
+
+    #[test]
     fn test_build_system_prompt_contains_dimensions() {
         let prompt = build_system_prompt(1920, 1080);
         assert!(prompt.contains("1920x1080"));

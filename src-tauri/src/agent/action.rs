@@ -2146,4 +2146,189 @@ mod tests {
         assert_eq!(parsed["status"], "error");
         assert_eq!(parsed["action"], "click");
     }
+
+    // ── from_tool_use completeness: all 8 supported tool actions ──────
+
+    #[test]
+    fn test_from_tool_use_all_8_supported_actions() {
+        // All 8 tool actions that build_tools() defines and from_tool_use() handles
+        let cases: Vec<(&str, Value)> = vec![
+            ("click", json!({"x": 100, "y": 200, "button": "left"})),
+            ("double_click", json!({"x": 50, "y": 60})),
+            ("move", json!({"x": 300, "y": 400})),
+            ("type", json!({"text": "hello world"})),
+            ("key", json!({"key": "enter", "modifiers": ["ctrl"]})),
+            ("scroll", json!({"x": 100, "y": 200, "direction": "down", "amount": 5})),
+            ("complete", json!({"message": "Task done"})),
+            ("error", json!({"message": "Cannot proceed"})),
+        ];
+
+        for (name, input) in cases {
+            let tool_use = ToolUse {
+                id: format!("toolu_{}", name),
+                name: name.to_string(),
+                input,
+            };
+            let result = from_tool_use(&tool_use);
+            assert!(result.is_ok(), "from_tool_use failed for '{}': {:?}", name, result.err());
+        }
+    }
+
+    #[test]
+    fn test_from_tool_use_unknown_returns_error() {
+        // Actions that exist as Action variants but not as tool definitions:
+        // drag, triple_click, right_click, wait, wait_for_element, batch
+        let unknown_tools = vec![
+            ("drag", json!({"start_x": 0, "start_y": 0, "end_x": 100, "end_y": 100})),
+            ("triple_click", json!({"x": 50, "y": 60})),
+            ("right_click", json!({"x": 50, "y": 60})),
+            ("wait", json!({"duration_ms": 1000})),
+            ("wait_for_element", json!({"description": "loading"})),
+            ("batch", json!({"actions": []})),
+        ];
+
+        for (name, input) in unknown_tools {
+            let tool_use = ToolUse {
+                id: format!("toolu_{}", name),
+                name: name.to_string(),
+                input,
+            };
+            let result = from_tool_use(&tool_use);
+            assert!(
+                matches!(&result, Err(ActionError::UnknownAction(n)) if n == name),
+                "Expected UnknownAction for '{}', got {:?}", name, result
+            );
+        }
+    }
+
+    #[test]
+    fn test_from_tool_use_preserves_all_fields() {
+        // Verify every field is correctly extracted for complex actions
+
+        // Click with explicit button
+        let tu = ToolUse {
+            id: "t1".into(), name: "click".into(),
+            input: json!({"x": 42, "y": 84, "button": "right"}),
+        };
+        match from_tool_use(&tu).unwrap() {
+            Action::Click { x, y, button } => {
+                assert_eq!(x, 42);
+                assert_eq!(y, 84);
+                assert_eq!(button, "right");
+            }
+            _ => panic!("Expected Click"),
+        }
+
+        // Key with multiple modifiers
+        let tu = ToolUse {
+            id: "t2".into(), name: "key".into(),
+            input: json!({"key": "v", "modifiers": ["ctrl", "shift"]}),
+        };
+        match from_tool_use(&tu).unwrap() {
+            Action::Key { key, modifiers } => {
+                assert_eq!(key, "v");
+                assert_eq!(modifiers, vec!["ctrl", "shift"]);
+            }
+            _ => panic!("Expected Key"),
+        }
+
+        // Scroll with all fields
+        let tu = ToolUse {
+            id: "t3".into(), name: "scroll".into(),
+            input: json!({"x": 500, "y": 300, "direction": "left", "amount": 10}),
+        };
+        match from_tool_use(&tu).unwrap() {
+            Action::Scroll { x, y, direction, amount } => {
+                assert_eq!(x, 500);
+                assert_eq!(y, 300);
+                assert_eq!(direction, "left");
+                assert_eq!(amount, 10);
+            }
+            _ => panic!("Expected Scroll"),
+        }
+    }
+
+    #[test]
+    fn test_parse_llm_response_tool_use_for_each_tool() {
+        // Verify parse_llm_response works with ToolUse variant for all 8 tools
+        let cases: Vec<(&str, Value)> = vec![
+            ("click", json!({"x": 10, "y": 20})),
+            ("double_click", json!({"x": 10, "y": 20})),
+            ("move", json!({"x": 10, "y": 20})),
+            ("type", json!({"text": "test"})),
+            ("key", json!({"key": "tab"})),
+            ("scroll", json!({"x": 0, "y": 0, "direction": "up"})),
+            ("complete", json!({"message": "finished"})),
+            ("error", json!({"message": "stuck"})),
+        ];
+
+        for (name, input) in cases {
+            let response = LlmResponse::ToolUse(ToolUse {
+                id: format!("toolu_{}", name),
+                name: name.to_string(),
+                input,
+            });
+            let action = parse_llm_response(&response);
+            assert!(action.is_ok(), "parse_llm_response failed for tool '{}': {:?}", name, action.err());
+        }
+    }
+
+    #[test]
+    fn test_parse_llm_response_text_vs_tool_use_equivalence() {
+        // Both paths should produce the same Action variant for click
+        let text_response = LlmResponse::Text(
+            r#"{"action": "click", "x": 100, "y": 200}"#.to_string(),
+        );
+        let tool_response = LlmResponse::ToolUse(ToolUse {
+            id: "toolu_abc".to_string(),
+            name: "click".to_string(),
+            input: json!({"x": 100, "y": 200}),
+        });
+
+        let from_text = parse_llm_response(&text_response).unwrap();
+        let from_tool = parse_llm_response(&tool_response).unwrap();
+
+        // Both should produce Click with same coordinates
+        match (&from_text, &from_tool) {
+            (Action::Click { x: tx, y: ty, button: tb }, Action::Click { x: ux, y: uy, button: ub }) => {
+                assert_eq!(tx, ux);
+                assert_eq!(ty, uy);
+                assert_eq!(tb, ub);
+            }
+            _ => panic!("Expected matching Click actions, got {:?} and {:?}", from_text, from_tool),
+        }
+    }
+
+    #[test]
+    fn test_action_result_tool_use_id_threading() {
+        // Simulate the flow: ToolUse has an ID, ActionResult carries it through
+        let tool_use = ToolUse {
+            id: "toolu_threading_test".to_string(),
+            name: "click".to_string(),
+            input: json!({"x": 100, "y": 200}),
+        };
+
+        // Parse the action
+        let action = from_tool_use(&tool_use).unwrap();
+        assert!(matches!(action, Action::Click { .. }));
+
+        // Create result and thread the ID
+        let result = ActionResult {
+            success: true,
+            completed: false,
+            message: Some("Clicked".to_string()),
+            retry_count: 0,
+            action_type: "click".to_string(),
+            details: None,
+            tool_use_id: None,
+        };
+        let result = result.with_tool_use_id(tool_use.id.clone());
+        assert_eq!(result.tool_use_id, Some("toolu_threading_test".to_string()));
+
+        // Verify tool_result_content is valid JSON
+        let content = result.to_tool_result_content();
+        let parsed: Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["status"], "success");
+        assert_eq!(parsed["action"], "click");
+    }
 }

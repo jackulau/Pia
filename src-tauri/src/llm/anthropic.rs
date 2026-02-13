@@ -326,3 +326,274 @@ impl LlmProvider for AnthropicProvider {
         "anthropic"
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_anthropic_message_text_serializes_correctly() {
+        let msg = AnthropicMessage {
+            role: "user".to_string(),
+            content: vec![AnthropicContent::Text {
+                text: "Click the button".to_string(),
+            }],
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["role"], "user");
+        let content = json["content"].as_array().unwrap();
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0]["type"], "text");
+        assert_eq!(content[0]["text"], "Click the button");
+    }
+
+    #[test]
+    fn test_anthropic_message_image_serializes_correctly() {
+        let msg = AnthropicMessage {
+            role: "user".to_string(),
+            content: vec![AnthropicContent::Image {
+                source: ImageSource {
+                    source_type: "base64".to_string(),
+                    media_type: "image/png".to_string(),
+                    data: Arc::new("abc123data".to_string()),
+                },
+            }],
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        let content = json["content"].as_array().unwrap();
+        assert_eq!(content[0]["type"], "image");
+        assert_eq!(content[0]["source"]["type"], "base64");
+        assert_eq!(content[0]["source"]["media_type"], "image/png");
+        assert_eq!(content[0]["source"]["data"], "abc123data");
+    }
+
+    #[test]
+    fn test_anthropic_message_mixed_image_and_text() {
+        let msg = AnthropicMessage {
+            role: "user".to_string(),
+            content: vec![
+                AnthropicContent::Image {
+                    source: ImageSource {
+                        source_type: "base64".to_string(),
+                        media_type: "image/png".to_string(),
+                        data: Arc::new("screenshot_data".to_string()),
+                    },
+                },
+                AnthropicContent::Text {
+                    text: "User instruction: Click the button\n\nAnalyze the screenshot and respond with a single JSON action.".to_string(),
+                },
+            ],
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        let content = json["content"].as_array().unwrap();
+        assert_eq!(content.len(), 2);
+        // Image comes first (Anthropic prefers image before text)
+        assert_eq!(content[0]["type"], "image");
+        assert_eq!(content[1]["type"], "text");
+        assert!(content[1]["text"].as_str().unwrap().contains("Click the button"));
+    }
+
+    #[test]
+    fn test_anthropic_request_serializes_with_tools() {
+        let tools = build_tools();
+        let request = AnthropicRequest {
+            model: "claude-sonnet-4-5-20250514".to_string(),
+            max_tokens: 1024,
+            system: "Test system prompt".to_string(),
+            messages: vec![AnthropicMessage {
+                role: "user".to_string(),
+                content: vec![AnthropicContent::Text {
+                    text: "test".to_string(),
+                }],
+            }],
+            tools,
+            stream: true,
+        };
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["model"], "claude-sonnet-4-5-20250514");
+        assert_eq!(json["max_tokens"], 1024);
+        assert_eq!(json["stream"], true);
+        let tools = json["tools"].as_array().unwrap();
+        assert!(!tools.is_empty());
+        // Each tool has name, description, input_schema
+        for tool in tools {
+            assert!(tool["name"].is_string());
+            assert!(tool["description"].is_string());
+            assert!(tool["input_schema"].is_object());
+        }
+    }
+
+    #[test]
+    fn test_multi_turn_message_sequence_from_history() {
+        // Create a multi-turn conversation history
+        let mut history = ConversationHistory::new();
+        history.add_user_message(
+            "Click the button",
+            Some(Arc::new("screenshot1".to_string())),
+            Some(1920),
+            Some(1080),
+        );
+        history.add_assistant_message(r#"{"action": "click", "x": 100, "y": 200}"#);
+        history.add_tool_result(true, Some("Clicked at (100, 200)".to_string()), None);
+        history.add_user_message(
+            "Now type hello",
+            Some(Arc::new("screenshot2".to_string())),
+            Some(1920),
+            Some(1080),
+        );
+        history.add_assistant_message(r#"{"action": "type", "text": "hello"}"#);
+        history.add_tool_result(true, Some("Typed: hello".to_string()), None);
+
+        // Convert to Anthropic message format
+        let messages: Vec<AnthropicMessage> = history_to_messages(&history)
+            .into_iter()
+            .map(|(role, text, image_base64)| {
+                let mut content = Vec::new();
+                if let Some(img_data) = image_base64 {
+                    content.push(AnthropicContent::Image {
+                        source: ImageSource {
+                            source_type: "base64".to_string(),
+                            media_type: "image/png".to_string(),
+                            data: img_data,
+                        },
+                    });
+                }
+                let text_content = if role == "user" && content.iter().any(|c| matches!(c, AnthropicContent::Image { .. })) {
+                    format!("User instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.", text)
+                } else {
+                    text
+                };
+                content.push(AnthropicContent::Text { text: text_content });
+                AnthropicMessage { role, content }
+            })
+            .collect();
+
+        // Verify the 6-message sequence
+        assert_eq!(messages.len(), 6);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[1].role, "assistant");
+        assert_eq!(messages[2].role, "user"); // tool result
+        assert_eq!(messages[3].role, "user");
+        assert_eq!(messages[4].role, "assistant");
+        assert_eq!(messages[5].role, "user"); // tool result
+
+        // User messages with screenshots have 2 content blocks (image + text)
+        assert_eq!(messages[0].content.len(), 2);
+        assert_eq!(messages[3].content.len(), 2);
+
+        // Assistant messages have 1 content block (text)
+        assert_eq!(messages[1].content.len(), 1);
+
+        // Tool result messages have 1 content block (text, no image)
+        assert_eq!(messages[2].content.len(), 1);
+    }
+
+    #[test]
+    fn test_tool_result_success_message_format() {
+        let mut history = ConversationHistory::new();
+        history.add_tool_result(true, Some("Clicked successfully".to_string()), None);
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, "user");
+        assert!(messages[0].1.contains("successfully"));
+        assert!(messages[0].1.contains("Clicked successfully"));
+    }
+
+    #[test]
+    fn test_tool_result_error_message_format() {
+        let mut history = ConversationHistory::new();
+        history.add_tool_result(false, None, Some("Element not found".to_string()));
+
+        let messages = history_to_messages(&history);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].0, "user");
+        assert!(messages[0].1.contains("failed"));
+        assert!(messages[0].1.contains("Element not found"));
+    }
+
+    #[test]
+    fn test_stream_event_content_block_tool_use_deserializes() {
+        let json_str = r#"{"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_123", "name": "click"}}"#;
+        let event: StreamEvent = serde_json::from_str(json_str).unwrap();
+        assert_eq!(event.event_type, "content_block_start");
+        assert_eq!(event.index, Some(0));
+        match event.content_block {
+            Some(ContentBlock::ToolUse { id, name }) => {
+                assert_eq!(id, "toolu_123");
+                assert_eq!(name, "click");
+            }
+            _ => panic!("Expected ToolUse content block"),
+        }
+    }
+
+    #[test]
+    fn test_stream_event_content_block_text_deserializes() {
+        let json_str = r#"{"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": "I'll click the button"}}"#;
+        let event: StreamEvent = serde_json::from_str(json_str).unwrap();
+        match event.content_block {
+            Some(ContentBlock::Text { text }) => {
+                assert_eq!(text, "I'll click the button");
+            }
+            _ => panic!("Expected Text content block"),
+        }
+    }
+
+    #[test]
+    fn test_stream_event_content_delta_text_deserializes() {
+        let json_str = r#"{"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "some text"}}"#;
+        let event: StreamEvent = serde_json::from_str(json_str).unwrap();
+        assert_eq!(event.event_type, "content_block_delta");
+        let delta = event.delta.unwrap();
+        assert_eq!(delta.text, Some("some text".to_string()));
+    }
+
+    #[test]
+    fn test_stream_event_content_delta_partial_json_deserializes() {
+        let json_str = r#"{"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"x\": 100"}}"#;
+        let event: StreamEvent = serde_json::from_str(json_str).unwrap();
+        let delta = event.delta.unwrap();
+        assert_eq!(delta.partial_json, Some("{\"x\": 100".to_string()));
+    }
+
+    #[test]
+    fn test_stream_event_message_start_with_usage() {
+        let json_str = r#"{"type": "message_start", "message": {"usage": {"input_tokens": 500, "output_tokens": 0}}}"#;
+        let event: StreamEvent = serde_json::from_str(json_str).unwrap();
+        assert_eq!(event.event_type, "message_start");
+        let msg = event.message.unwrap();
+        let usage = msg.usage.unwrap();
+        assert_eq!(usage.input_tokens, Some(500));
+        assert_eq!(usage.output_tokens, Some(0));
+    }
+
+    #[test]
+    fn test_stream_event_message_delta_with_output_tokens() {
+        let json_str = r#"{"type": "message_delta", "usage": {"output_tokens": 42}}"#;
+        let event: StreamEvent = serde_json::from_str(json_str).unwrap();
+        assert_eq!(event.event_type, "message_delta");
+        let usage = event.usage.unwrap();
+        assert_eq!(usage.output_tokens, Some(42));
+    }
+
+    #[test]
+    fn test_anthropic_provider_new() {
+        let provider = AnthropicProvider::new("test-key".to_string(), "claude-sonnet-4-5-20250514".to_string());
+        assert_eq!(provider.name(), "anthropic");
+        assert_eq!(provider.api_key, "test-key");
+        assert_eq!(provider.model, "claude-sonnet-4-5-20250514");
+    }
+
+    #[test]
+    fn test_anthropic_provider_with_timeouts() {
+        let provider = AnthropicProvider::with_timeouts(
+            "test-key".to_string(),
+            "claude-sonnet-4-5-20250514".to_string(),
+            Duration::from_secs(5),
+            Duration::from_secs(30),
+        );
+        assert_eq!(provider.name(), "anthropic");
+        assert_eq!(provider.api_key, "test-key");
+    }
+}
