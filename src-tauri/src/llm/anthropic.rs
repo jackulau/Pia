@@ -1,9 +1,9 @@
 use super::provider::{
-    build_system_prompt, build_system_prompt_for_tools, build_tools, ChunkCallback, LlmError,
-    LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse, history_to_messages,
+    build_system_prompt_for_tools, build_tools, ChunkCallback, LlmError,
+    LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse,
 };
 use super::sse::append_bytes_to_buffer;
-use crate::agent::conversation::ConversationHistory;
+use crate::agent::conversation::{ConversationHistory, Message};
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
@@ -40,6 +40,19 @@ enum AnthropicContent {
     Text { text: String },
     #[serde(rename = "image")]
     Image { source: ImageSource },
+    #[serde(rename = "tool_use")]
+    ToolUseBlock {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    #[serde(rename = "tool_result")]
+    ToolResultBlock {
+        tool_use_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        is_error: Option<bool>,
+        content: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -132,35 +145,105 @@ impl LlmProvider for AnthropicProvider {
         let system_prompt = build_system_prompt_for_tools(screen_width, screen_height);
         let tools = build_tools();
 
-        // Convert conversation history to Anthropic message format
-        let messages: Vec<AnthropicMessage> = history_to_messages(history)
-            .into_iter()
-            .map(|(role, text, image_base64)| {
-                let mut content = Vec::new();
-
-                // Add image first if present (Anthropic prefers image before text)
-                if let Some(img_data) = image_base64 {
-                    content.push(AnthropicContent::Image {
-                        source: ImageSource {
-                            source_type: "base64".to_string(),
-                            media_type: "image/png".to_string(),
-                            data: img_data,
-                        },
-                    });
+        // Convert conversation history to Anthropic message format with native content blocks
+        let messages: Vec<AnthropicMessage> = history
+            .messages()
+            .map(|msg| match msg {
+                Message::User {
+                    instruction,
+                    screenshot_base64,
+                    ..
+                } => {
+                    let mut content = Vec::new();
+                    if let Some(img_data) = screenshot_base64 {
+                        content.push(AnthropicContent::Image {
+                            source: ImageSource {
+                                source_type: "base64".to_string(),
+                                media_type: "image/png".to_string(),
+                                data: img_data.clone(),
+                            },
+                        });
+                    }
+                    let text_content = if !content.is_empty() {
+                        format!(
+                            "User instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.",
+                            instruction
+                        )
+                    } else {
+                        instruction.clone()
+                    };
+                    content.push(AnthropicContent::Text { text: text_content });
+                    AnthropicMessage {
+                        role: "user".to_string(),
+                        content,
+                    }
                 }
-
-                // Add text content
-                let text_content = if role == "user" && content.iter().any(|c| matches!(c, AnthropicContent::Image { .. })) {
-                    format!(
-                        "User instruction: {}\n\nAnalyze the screenshot and respond with a single JSON action.",
-                        text
-                    )
-                } else {
-                    text
-                };
-                content.push(AnthropicContent::Text { text: text_content });
-
-                AnthropicMessage { role, content }
+                Message::Assistant { content: text } => AnthropicMessage {
+                    role: "assistant".to_string(),
+                    content: vec![AnthropicContent::Text { text: text.clone() }],
+                },
+                Message::AssistantToolUse {
+                    tool_use_id,
+                    tool_name,
+                    tool_input,
+                    text,
+                } => {
+                    let mut content = Vec::new();
+                    if let Some(t) = text {
+                        content.push(AnthropicContent::Text { text: t.clone() });
+                    }
+                    content.push(AnthropicContent::ToolUseBlock {
+                        id: tool_use_id.clone(),
+                        name: tool_name.clone(),
+                        input: tool_input.clone(),
+                    });
+                    AnthropicMessage {
+                        role: "assistant".to_string(),
+                        content,
+                    }
+                }
+                Message::ToolResult {
+                    success,
+                    tool_use_id,
+                    message,
+                    error,
+                } => {
+                    if let Some(id) = tool_use_id {
+                        let result_text = if *success {
+                            message
+                                .as_deref()
+                                .unwrap_or("Action executed successfully")
+                                .to_string()
+                        } else {
+                            error.as_deref().unwrap_or("Action failed").to_string()
+                        };
+                        AnthropicMessage {
+                            role: "user".to_string(),
+                            content: vec![AnthropicContent::ToolResultBlock {
+                                tool_use_id: id.clone(),
+                                is_error: if *success { None } else { Some(true) },
+                                content: result_text,
+                            }],
+                        }
+                    } else {
+                        // Fallback for tool results without ID (legacy)
+                        let text = if *success {
+                            format!(
+                                "Action executed successfully. {}",
+                                message.as_deref().unwrap_or("")
+                            )
+                        } else {
+                            format!(
+                                "Action failed. {}",
+                                error.as_deref().unwrap_or("Unknown error")
+                            )
+                        };
+                        AnthropicMessage {
+                            role: "user".to_string(),
+                            content: vec![AnthropicContent::Text { text }],
+                        }
+                    }
+                }
             })
             .collect();
 

@@ -20,11 +20,21 @@ pub enum Message {
         #[serde(skip_serializing_if = "Option::is_none")]
         screen_height: Option<u32>,
     },
-    /// Assistant response with the action JSON
+    /// Assistant response with the action JSON (non-tool-use turns)
     Assistant { content: String },
+    /// Assistant response with native tool_use metadata
+    AssistantToolUse {
+        tool_use_id: String,
+        tool_name: String,
+        tool_input: serde_json::Value,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+    },
     /// Result of executing a tool/action
     ToolResult {
         success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tool_use_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         message: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -90,10 +100,43 @@ impl ConversationHistory {
         });
     }
 
+    /// Adds an assistant tool_use message with native metadata.
+    pub fn add_assistant_tool_use(
+        &mut self,
+        tool_use_id: String,
+        tool_name: String,
+        tool_input: serde_json::Value,
+        text: Option<String>,
+    ) {
+        self.add_message(Message::AssistantToolUse {
+            tool_use_id,
+            tool_name,
+            tool_input,
+            text,
+        });
+    }
+
     /// Adds a tool result message.
     pub fn add_tool_result(&mut self, success: bool, message: Option<String>, error: Option<String>) {
         self.add_message(Message::ToolResult {
             success,
+            tool_use_id: None,
+            message,
+            error,
+        });
+    }
+
+    /// Adds a tool result message with a tool_use_id for native tool flow.
+    pub fn add_tool_result_with_id(
+        &mut self,
+        tool_use_id: String,
+        success: bool,
+        message: Option<String>,
+        error: Option<String>,
+    ) {
+        self.add_message(Message::ToolResult {
+            success,
+            tool_use_id: Some(tool_use_id),
             message,
             error,
         });
@@ -140,12 +183,10 @@ impl ConversationHistory {
 
     /// Gets the last assistant message if available.
     pub fn last_assistant_message(&self) -> Option<&str> {
-        self.messages.iter().rev().find_map(|m| {
-            if let Message::Assistant { content } = m {
-                Some(content.as_str())
-            } else {
-                None
-            }
+        self.messages.iter().rev().find_map(|m| match m {
+            Message::Assistant { content } => Some(content.as_str()),
+            Message::AssistantToolUse { tool_name, .. } => Some(tool_name.as_str()),
+            _ => None,
         })
     }
 }
@@ -199,12 +240,52 @@ mod tests {
 
         assert_eq!(conv.len(), 1);
         match &conv.get_messages()[0] {
-            Message::ToolResult { success, message, error } => {
+            Message::ToolResult { success, tool_use_id, message, error } => {
                 assert!(*success);
+                assert!(tool_use_id.is_none());
                 assert_eq!(message.as_deref(), Some("Clicked successfully"));
                 assert!(error.is_none());
             }
             _ => panic!("Expected ToolResult message"),
+        }
+    }
+
+    #[test]
+    fn test_add_tool_result_with_id() {
+        let mut conv = ConversationHistory::new();
+        conv.add_tool_result_with_id("toolu_123".to_string(), true, Some("Done".to_string()), None);
+
+        assert_eq!(conv.len(), 1);
+        match &conv.get_messages()[0] {
+            Message::ToolResult { success, tool_use_id, message, error } => {
+                assert!(*success);
+                assert_eq!(tool_use_id.as_deref(), Some("toolu_123"));
+                assert_eq!(message.as_deref(), Some("Done"));
+                assert!(error.is_none());
+            }
+            _ => panic!("Expected ToolResult message"),
+        }
+    }
+
+    #[test]
+    fn test_add_assistant_tool_use() {
+        let mut conv = ConversationHistory::new();
+        conv.add_assistant_tool_use(
+            "toolu_abc".to_string(),
+            "click".to_string(),
+            serde_json::json!({"x": 100, "y": 200}),
+            None,
+        );
+
+        assert_eq!(conv.len(), 1);
+        match &conv.get_messages()[0] {
+            Message::AssistantToolUse { tool_use_id, tool_name, tool_input, text } => {
+                assert_eq!(tool_use_id, "toolu_abc");
+                assert_eq!(tool_name, "click");
+                assert_eq!(tool_input["x"], 100);
+                assert!(text.is_none());
+            }
+            _ => panic!("Expected AssistantToolUse message"),
         }
     }
 

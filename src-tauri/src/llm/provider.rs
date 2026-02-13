@@ -362,10 +362,23 @@ pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String
                 screenshot_base64.clone(),
             ),
             Message::Assistant { content } => ("assistant".to_string(), content.clone(), None),
+            Message::AssistantToolUse { tool_name, tool_input, text, .. } => {
+                // For non-Anthropic providers, serialize tool_use as JSON text
+                let mut content = text.as_deref().unwrap_or("").to_string();
+                if let Ok(json_str) = serde_json::to_string(tool_input) {
+                    if !content.is_empty() {
+                        content.push(' ');
+                    }
+                    content.push_str(&format!("{{\"action\": \"{}\", {}}}", tool_name,
+                        json_str.trim_start_matches('{').trim_end_matches('}')));
+                }
+                ("assistant".to_string(), content, None)
+            }
             Message::ToolResult {
                 success,
                 message,
                 error,
+                ..
             } => {
                 let text = if *success {
                     format!(

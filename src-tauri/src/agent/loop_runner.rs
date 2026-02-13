@@ -12,7 +12,7 @@ use crate::capture::{capture_primary_screen, CaptureError, Screenshot};
 use crate::config::Config;
 use crate::llm::{
     AnthropicProvider, GlmProvider, LlmProvider, OllamaProvider, OpenAICompatibleProvider,
-    OpenAIProvider, OpenRouterProvider, ToolResult,
+    OpenAIProvider, OpenRouterProvider,
 };
 use chrono::Utc;
 use serde::Serialize;
@@ -366,9 +366,21 @@ impl AgentLoop {
                 }
             };
 
-            // Add assistant response to conversation
+            // Add assistant response to conversation with native content blocks
+            match &response {
+                crate::llm::LlmResponse::ToolUse(tool_use) => {
+                    conversation.add_assistant_tool_use(
+                        tool_use.id.clone(),
+                        tool_use.name.clone(),
+                        tool_use.input.clone(),
+                        None,
+                    );
+                }
+                crate::llm::LlmResponse::Text(text) => {
+                    conversation.add_assistant_message(text);
+                }
+            }
             let response_str = response.to_string_repr();
-            conversation.add_assistant_message(&response_str);
 
             let llm_elapsed = llm_start.elapsed();
 
@@ -439,13 +451,23 @@ impl AgentLoop {
             // Brief pause to let user see the indicator
             sleep(Duration::from_millis(300)).await;
 
+            // Extract tool_use_id for threading to tool results
+            let tool_use_id = match &response {
+                crate::llm::LlmResponse::ToolUse(tu) => Some(tu.id.clone()),
+                _ => None,
+            };
+
             // Prepare action details for history logging (reuse serialized value)
             let action_type = Self::get_action_type(&action);
 
             match execute_action_with_delay(&action, confirm_dangerous, delay_controller.click_delay()).await {
                 Ok(result) => {
                     // Add successful tool result to conversation
-                    conversation.add_tool_result(true, result.message.clone(), None);
+                    if let Some(ref id) = tool_use_id {
+                        conversation.add_tool_result_with_id(id.clone(), true, result.message.clone(), None);
+                    } else {
+                        conversation.add_tool_result(true, result.message.clone(), None);
+                    }
 
 
                     // Record successful action to history
@@ -505,11 +527,16 @@ impl AgentLoop {
                 }
                 Err(ActionError::RequiresConfirmation(msg)) => {
                     // Add pending confirmation to conversation
-                    conversation.add_tool_result(
-                        false,
-                        None,
-                        Some(format!("Action requires confirmation: {}", msg)),
-                    );
+                    let confirm_err = format!("Action requires confirmation: {}", msg);
+                    if let Some(ref id) = tool_use_id {
+                        conversation.add_tool_result_with_id(id.clone(), false, None, Some(confirm_err));
+                    } else {
+                        conversation.add_tool_result(
+                            false,
+                            None,
+                            Some(format!("Action requires confirmation: {}", msg)),
+                        );
+                    }
 
                     // Record confirmation-required action to history
                     let entry = ActionEntry {
@@ -569,7 +596,11 @@ impl AgentLoop {
                 }
                 Err(e) => {
                     // Add error to conversation before returning
-                    conversation.add_tool_result(false, None, Some(e.to_string()));
+                    if let Some(ref id) = tool_use_id {
+                        conversation.add_tool_result_with_id(id.clone(), false, None, Some(e.to_string()));
+                    } else {
+                        conversation.add_tool_result(false, None, Some(e.to_string()));
+                    }
 
                     // Record failed action to history
                     let entry = ActionEntry {
