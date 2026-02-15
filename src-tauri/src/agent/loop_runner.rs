@@ -1,4 +1,6 @@
-use super::action::{execute_action, execute_action_with_delay, execute_action_with_retry, parse_llm_response_with_reasoning, Action, ActionError, ActionResult, ScreenBounds};
+#![allow(dead_code, unused_variables)]
+
+use super::action::{execute_action_with_delay, parse_llm_response_with_reasoning, Action, ActionError, ScreenBounds};
 use super::conversation::ConversationHistory;
 use super::delay::DelayController;
 use super::history::{ActionEntry, ActionHistory, ActionRecord};
@@ -12,7 +14,7 @@ use crate::capture::{capture_primary_screen_with_config, CaptureError, Screensho
 use crate::config::Config;
 use crate::llm::{
     AnthropicProvider, GlmProvider, LlmProvider, OllamaProvider, OpenAICompatibleProvider,
-    OpenAIProvider, OpenRouterProvider, ToolResult,
+    OpenAIProvider, OpenRouterProvider,
 };
 use chrono::Utc;
 use serde::Serialize;

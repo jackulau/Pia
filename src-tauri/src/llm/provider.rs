@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::agent::conversation::{ConversationHistory, Message};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

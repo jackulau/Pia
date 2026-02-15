@@ -1,5 +1,7 @@
+#![allow(dead_code)]
+
 use super::provider::{
-    build_system_prompt, build_system_prompt_with_context, history_to_messages, ChunkCallback,
+    build_system_prompt_with_context, history_to_messages, ChunkCallback,
     LlmError, LlmProvider, LlmResponse, TokenMetrics,
 };
 use super::sse::{append_bytes_to_buffer, process_sse_buffer};
@@ -8,7 +10,7 @@ use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::time::{Duration, Instant};
 
 pub struct OpenAIProvider {

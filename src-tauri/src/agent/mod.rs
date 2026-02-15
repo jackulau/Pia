@@ -12,5 +12,4 @@ pub use delay::*;
 pub use history::*;
 pub use loop_runner::*;
 pub use queue::*;
-pub use recovery::*;
 pub use state::*;

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use image::{imageops::FilterType, DynamicImage, ImageFormat};
 use once_cell::sync::Lazy;

@@ -1,5 +1,7 @@
+#![allow(dead_code)]
+
 use super::provider::{
-    build_system_prompt, build_system_prompt_with_context, history_to_messages, ChunkCallback,
+    build_system_prompt_with_context, history_to_messages, ChunkCallback,
     LlmError, LlmProvider, LlmResponse, TokenMetrics,
 };
 use serde_json::Value;

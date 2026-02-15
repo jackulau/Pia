@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::time::Duration;
 
 const BASE_ITERATION_DELAY_MS: u64 = 500;

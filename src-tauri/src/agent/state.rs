@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use chrono::Utc;
 use super::history::HistoryManager;
 use serde::{Deserialize, Serialize};

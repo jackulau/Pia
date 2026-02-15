@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::capture::{capture_primary_screen, Screenshot};
 use crate::input::{
     is_dangerous_key_combination, parse_key, parse_modifier, KeyboardController, Modifier,

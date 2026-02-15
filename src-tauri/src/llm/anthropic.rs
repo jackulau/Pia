@@ -1,5 +1,7 @@
+#![allow(dead_code)]
+
 use super::provider::{
-    build_system_prompt, build_system_prompt_for_tools, build_system_prompt_for_tools_with_context,
+    build_system_prompt_for_tools_with_context,
     build_tools, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse,
     history_to_messages,
 };
@@ -209,7 +211,7 @@ impl LlmProvider for AnthropicProvider {
 
         let mut stream = response.bytes_stream();
         // Pre-allocate response buffer with typical response size (~4KB)
-        let mut full_response = String::with_capacity(4096);
+        let _full_response = String::with_capacity(4096);
         let mut input_tokens = 0u64;
         let mut output_tokens = 0u64;
         let mut buffer = String::new();
