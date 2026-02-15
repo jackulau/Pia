@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PermissionStatus {
     pub screen_capture: bool,
     pub accessibility: bool,

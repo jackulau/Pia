@@ -229,5 +229,35 @@ pub fn is_dangerous_key_combination(key: &str, modifiers: &[Modifier]) -> bool {
         return true;
     }
 
+    // Force quit (Cmd+Shift+Q on macOS)
+    if key_lower == "q"
+        && modifiers.contains(&Modifier::Meta)
+        && modifiers.contains(&Modifier::Shift)
+    {
+        return true;
+    }
+
+    // Clear browsing data (Cmd+Shift+Delete / Ctrl+Shift+Delete)
+    if (key_lower == "delete" || key_lower == "backspace")
+        && modifiers.contains(&Modifier::Shift)
+        && (modifiers.contains(&Modifier::Meta) || modifiers.contains(&Modifier::Ctrl))
+    {
+        return true;
+    }
+
+    // Task manager / Force quit dialog (Ctrl+Alt+Delete / Cmd+Option+Escape)
+    if key_lower == "delete"
+        && modifiers.contains(&Modifier::Ctrl)
+        && modifiers.contains(&Modifier::Alt)
+    {
+        return true;
+    }
+    if key_lower == "escape"
+        && modifiers.contains(&Modifier::Meta)
+        && modifiers.contains(&Modifier::Alt)
+    {
+        return true;
+    }
+
     false
 }

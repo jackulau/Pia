@@ -85,14 +85,10 @@ pub struct GeneralConfig {
     pub screenshot_quality: u8,
     #[serde(default = "default_screenshot_max_width")]
     pub screenshot_max_width: u32,
-}
-
-fn default_screenshot_quality() -> u8 {
-    80
-}
-
-fn default_screenshot_max_width() -> u32 {
-    1920
+    #[serde(default)]
+    pub max_tokens_per_task: Option<u64>,
+    #[serde(default)]
+    pub onboarding_complete: bool,
 }
 
 fn default_global_hotkey() -> Option<String> {
@@ -141,6 +137,14 @@ fn default_connect_timeout_secs() -> u64 {
 
 fn default_response_timeout_secs() -> u64 {
     300
+}
+
+fn default_screenshot_quality() -> u8 {
+    80
+}
+
+fn default_screenshot_max_width() -> u32 {
+    1920
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -234,6 +238,8 @@ impl Default for Config {
                 temperature: None,
                 screenshot_quality: default_screenshot_quality(),
                 screenshot_max_width: default_screenshot_max_width(),
+                max_tokens_per_task: None,
+                onboarding_complete: false,
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {
