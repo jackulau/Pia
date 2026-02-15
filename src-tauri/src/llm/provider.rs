@@ -720,9 +720,15 @@ mod tests {
         assert!(names.contains(&"type"));
         assert!(names.contains(&"key"));
         assert!(names.contains(&"scroll"));
+        assert!(names.contains(&"drag"));
+        assert!(names.contains(&"triple_click"));
+        assert!(names.contains(&"right_click"));
+        assert!(names.contains(&"wait"));
+        assert!(names.contains(&"wait_for_element"));
+        assert!(names.contains(&"batch"));
         assert!(names.contains(&"complete"));
         assert!(names.contains(&"error"));
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 14);
     }
 
     #[test]
