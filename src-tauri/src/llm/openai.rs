@@ -15,6 +15,7 @@ pub struct OpenAIProvider {
     client: Client,
     api_key: String,
     model: String,
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -24,6 +25,8 @@ struct OpenAIRequest {
     messages: Vec<OpenAIMessage>,
     stream: bool,
     stream_options: StreamOptions,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -64,6 +67,7 @@ impl OpenAIProvider {
             client: Client::new(),
             api_key,
             model,
+            temperature: None,
         }
     }
 
@@ -77,7 +81,13 @@ impl OpenAIProvider {
             client,
             api_key,
             model,
+            temperature: None,
         }
+    }
+
+    pub fn with_temperature(mut self, temperature: Option<f32>) -> Self {
+        self.temperature = temperature;
+        self
     }
 }
 
@@ -129,6 +139,7 @@ impl LlmProvider for OpenAIProvider {
             stream_options: StreamOptions {
                 include_usage: true,
             },
+            temperature: self.temperature,
         };
 
         let response = self

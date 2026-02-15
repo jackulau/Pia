@@ -15,6 +15,7 @@ pub struct AnthropicProvider {
     client: Client,
     api_key: String,
     model: String,
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -25,6 +26,8 @@ struct AnthropicRequest {
     messages: Vec<AnthropicMessage>,
     tools: Vec<Tool>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -102,6 +105,7 @@ impl AnthropicProvider {
             client: Client::new(),
             api_key,
             model,
+            temperature: None,
         }
     }
 
@@ -115,7 +119,13 @@ impl AnthropicProvider {
             client,
             api_key,
             model,
+            temperature: None,
         }
+    }
+
+    pub fn with_temperature(mut self, temperature: Option<f32>) -> Self {
+        self.temperature = temperature;
+        self
     }
 }
 
@@ -171,6 +181,7 @@ impl LlmProvider for AnthropicProvider {
             messages,
             tools,
             stream: true,
+            temperature: self.temperature,
         };
 
         let response = self

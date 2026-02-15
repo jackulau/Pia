@@ -191,7 +191,7 @@ impl Default for Config {
                 max_iterations: 150,
                 confirm_dangerous_actions: true,
                 show_coordinate_overlay: false,
-                show_visual_feedback: false,
+                show_visual_feedback: true,
                 global_hotkey: default_global_hotkey(),
                 queue_failure_mode: "stop".to_string(),
                 queue_delay_ms: 500,

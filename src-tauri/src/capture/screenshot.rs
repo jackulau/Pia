@@ -19,6 +19,9 @@ pub enum CaptureError {
 pub struct Screenshot {
     pub width: u32,
     pub height: u32,
+    /// Physical (pre-downscale) pixel dimensions for HiDPI coordinate mapping.
+    pub physical_width: u32,
+    pub physical_height: u32,
     /// Base64-encoded screenshot data wrapped in Arc to avoid expensive clones.
     /// Screenshots are typically 1-2MB and are shared across conversation history,
     /// action history, and state without copying.
@@ -78,7 +81,8 @@ impl Default for ScreenshotConfig {
 static CACHED_PRIMARY_MONITOR: Lazy<Mutex<Option<CachedMonitor>>> = Lazy::new(|| Mutex::new(None));
 
 /// Pre-allocated buffer for image encoding (reused across captures)
-static ENCODE_BUFFER: Lazy<Mutex<Vec<u8>>> = Lazy::new(|| Mutex::new(Vec::with_capacity(1024 * 1024)));
+static ENCODE_BUFFER: Lazy<Mutex<Vec<u8>>> =
+    Lazy::new(|| Mutex::new(Vec::with_capacity(1024 * 1024)));
 
 struct CachedMonitor {
     monitor: Monitor,
@@ -123,14 +127,19 @@ pub fn invalidate_monitor_cache() {
     }
 }
 
-/// Process an image: optionally downsample and encode
+/// Process an image: optionally downsample and encode.
+/// Returns (final_width, final_height, physical_width, physical_height, base64).
 fn process_image(
     image: image::RgbaImage,
     config: &ScreenshotConfig,
-) -> Result<(u32, u32, String), CaptureError> {
+) -> Result<(u32, u32, u32, u32, String), CaptureError> {
     let mut dynamic_image = DynamicImage::ImageRgba8(image);
     let original_width = dynamic_image.width();
     let original_height = dynamic_image.height();
+
+    // Physical dimensions are the original capture size (before any downsampling)
+    let physical_width = original_width;
+    let physical_height = original_height;
 
     // Downsample if needed
     let (final_width, final_height) = if let Some(max_width) = config.max_width {
@@ -181,7 +190,13 @@ fn process_image(
         *pooled = buffer;
     }
 
-    Ok((final_width, final_height, base64))
+    Ok((
+        final_width,
+        final_height,
+        physical_width,
+        physical_height,
+        base64,
+    ))
 }
 
 /// Capture the primary screen with default configuration
@@ -214,11 +229,13 @@ pub fn capture_primary_screen_with_config(
         }
     };
 
-    let (width, height, base64) = process_image(image, config)?;
+    let (width, height, physical_width, physical_height, base64) = process_image(image, config)?;
 
     Ok(Screenshot {
         width,
         height,
+        physical_width,
+        physical_height,
         base64: Arc::new(base64),
     })
 }
@@ -241,11 +258,14 @@ pub fn capture_all_screens_with_config(
             .capture_image()
             .map_err(|e| CaptureError::CaptureError(e.to_string()))?;
 
-        let (width, height, base64) = process_image(image, config)?;
+        let (width, height, physical_width, physical_height, base64) =
+            process_image(image, config)?;
 
         screenshots.push(Screenshot {
             width,
             height,
+            physical_width,
+            physical_height,
             base64: Arc::new(base64),
         });
     }

@@ -1,4 +1,4 @@
-use super::action::{execute_action, execute_action_with_delay, execute_action_with_retry, parse_llm_response, Action, ActionError, ActionResult};
+use super::action::{execute_action, execute_action_with_delay, execute_action_with_retry, parse_llm_response, Action, ActionError, ActionResult, ScreenBounds};
 use super::conversation::ConversationHistory;
 use super::delay::DelayController;
 use super::history::{ActionEntry, ActionHistory, ActionRecord};
@@ -442,7 +442,19 @@ impl AgentLoop {
             // Prepare action details for history logging (reuse serialized value)
             let action_type = Self::get_action_type(&action);
 
-            match execute_action_with_delay(&action, confirm_dangerous, delay_controller.click_delay()).await {
+            // Build screen bounds for HiDPI coordinate scaling (B2)
+            let screen_bounds = if screenshot.physical_width > 0 && screenshot.physical_height > 0 {
+                Some(ScreenBounds::new(
+                    screenshot.width,
+                    screenshot.height,
+                    screenshot.physical_width,
+                    screenshot.physical_height,
+                ))
+            } else {
+                None
+            };
+
+            match execute_action_with_delay(&action, confirm_dangerous, delay_controller.click_delay(), screen_bounds).await {
                 Ok(result) => {
                     // Add successful tool result to conversation
                     conversation.add_tool_result(true, result.message.clone(), None);

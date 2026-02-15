@@ -16,6 +16,7 @@ pub struct OllamaProvider {
     client: Client,
     host: String,
     model: String,
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -31,6 +32,8 @@ struct OllamaChatRequest {
     model: String,
     messages: Vec<OllamaChatMessage>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Deserialize)]
@@ -56,6 +59,7 @@ impl OllamaProvider {
             client: Client::new(),
             host,
             model,
+            temperature: None,
         }
     }
 
@@ -69,7 +73,13 @@ impl OllamaProvider {
             client,
             host,
             model,
+            temperature: None,
         }
+    }
+
+    pub fn with_temperature(mut self, temperature: Option<f32>) -> Self {
+        self.temperature = temperature;
+        self
     }
 }
 
@@ -116,6 +126,7 @@ impl LlmProvider for OllamaProvider {
             model: self.model.clone(),
             messages,
             stream: true,
+            temperature: self.temperature,
         };
 
         let response = self
@@ -278,6 +289,7 @@ mod tests {
                 },
             ],
             stream: true,
+            temperature: None,
         };
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["model"], "llava");

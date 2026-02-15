@@ -15,6 +15,7 @@ pub struct OpenAICompatibleProvider {
     base_url: String,
     api_key: Option<String>,
     model: String,
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -23,6 +24,8 @@ struct ChatRequest {
     max_tokens: u32,
     messages: Vec<ChatMessage>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -84,7 +87,13 @@ impl OpenAICompatibleProvider {
             base_url,
             api_key,
             model,
+            temperature: None,
         }
+    }
+
+    pub fn with_temperature(mut self, temperature: Option<f32>) -> Self {
+        self.temperature = temperature;
+        self
     }
 }
 
@@ -132,6 +141,7 @@ impl LlmProvider for OpenAICompatibleProvider {
             max_tokens: 1024,
             messages,
             stream: true,
+            temperature: self.temperature,
         };
 
         let url = format!("{}/v1/chat/completions", self.base_url);
@@ -293,6 +303,7 @@ mod tests {
                 content: ChatContent::Text("Hello".to_string()),
             }],
             stream: true,
+            temperature: None,
         };
 
         let json = serde_json::to_value(&request).unwrap();

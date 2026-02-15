@@ -9,6 +9,33 @@ use serde_json::{json, Value};
 use std::time::Duration;
 use thiserror::Error;
 
+#[derive(Debug, Clone, Copy)]
+pub struct ScreenBounds {
+    pub width: u32,
+    pub height: u32,
+    pub scale_x: f64,
+    pub scale_y: f64,
+}
+
+impl ScreenBounds {
+    pub fn new(image_width: u32, image_height: u32, physical_width: u32, physical_height: u32) -> Self {
+        Self {
+            width: image_width,
+            height: image_height,
+            scale_x: physical_width as f64 / image_width as f64,
+            scale_y: physical_height as f64 / image_height as f64,
+        }
+    }
+
+    pub fn transform(&self, x: i32, y: i32) -> (i32, i32) {
+        let clamped_x = x.max(0).min(self.width as i32 - 1);
+        let clamped_y = y.max(0).min(self.height as i32 - 1);
+        let physical_x = (clamped_x as f64 * self.scale_x) as i32;
+        let physical_y = (clamped_y as f64 * self.scale_y) as i32;
+        (physical_x, physical_y)
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum ActionError {
     #[error("Failed to parse action: {0}")]
@@ -396,6 +423,7 @@ pub async fn execute_action(
         action,
         confirm_dangerous,
         std::time::Duration::from_millis(50),
+        None,
     )
     .await
 }
@@ -404,6 +432,7 @@ pub async fn execute_action_with_delay(
     action: &Action,
     confirm_dangerous: bool,
     click_delay: std::time::Duration,
+    bounds: Option<ScreenBounds>,
 ) -> Result<ActionResult, ActionError> {
     match action {
         Action::Click { x, y, button } => {
@@ -414,8 +443,7 @@ pub async fn execute_action_with_delay(
                 _ => MouseButton::Left,
             };
 
-            let x = *x;
-            let y = *y;
+            let (x, y) = if let Some(b) = bounds { b.transform(*x, *y) } else { (*x, *y) };
             let button_str = button.clone();
             let delay = click_delay;
 
@@ -442,8 +470,7 @@ pub async fn execute_action_with_delay(
         }
 
         Action::DoubleClick { x, y } => {
-            let x = *x;
-            let y = *y;
+            let (x, y) = if let Some(b) = bounds { b.transform(*x, *y) } else { (*x, *y) };
             let delay = click_delay;
 
             tokio::task::spawn_blocking(move || {
@@ -467,8 +494,14 @@ pub async fn execute_action_with_delay(
         }
 
         Action::Move { x, y } => {
-            let mut mouse = MouseController::new()?;
-            mouse.move_to(*x, *y)?;
+            let (x, y) = if let Some(b) = bounds { b.transform(*x, *y) } else { (*x, *y) };
+
+            tokio::task::spawn_blocking(move || {
+                let mut mouse = MouseController::new()?;
+                mouse.move_to(x, y)
+            })
+            .await
+            .map_err(|e| ActionError::MouseError(crate::input::MouseError::ActionError(e.to_string())))??;
 
             Ok(ActionResult {
                 success: true,
@@ -476,24 +509,32 @@ pub async fn execute_action_with_delay(
                 message: Some(format!("Moved mouse to ({}, {})", x, y)),
                 retry_count: 0,
                 action_type: "move".to_string(),
-                details: Some(ActionDetails::Move { x: *x, y: *y }),
+                details: Some(ActionDetails::Move { x, y }),
                 tool_use_id: None,
             })
         }
 
         Action::Type { text } => {
-            let mut keyboard = KeyboardController::new()?;
-            keyboard.type_text(text)?;
+            let text_clone = text.clone();
+            let text_preview = truncate_string(text, 50);
+            let text_len = text.len();
+
+            tokio::task::spawn_blocking(move || {
+                let mut keyboard = KeyboardController::new()?;
+                keyboard.type_text(&text_clone)
+            })
+            .await
+            .map_err(|e| ActionError::KeyboardError(crate::input::KeyboardError::ActionError(e.to_string())))??;
 
             Ok(ActionResult {
                 success: true,
                 completed: false,
-                message: Some(format!("Typed: {}", truncate_string(text, 50))),
+                message: Some(format!("Typed: {}", text_preview)),
                 retry_count: 0,
                 action_type: "type".to_string(),
                 details: Some(ActionDetails::Type {
-                    text_length: text.len(),
-                    preview: truncate_string(text, 50),
+                    text_length: text_len,
+                    preview: text_preview,
                 }),
                 tool_use_id: None,
             })
@@ -513,14 +554,21 @@ pub async fn execute_action_with_delay(
                 )));
             }
 
-            let mut keyboard = KeyboardController::new()?;
+            let key_clone = key.clone();
+            let mods_clone = mods.clone();
 
-            if mods.is_empty() {
-                let k = parse_key(key)?;
-                keyboard.key_press(k)?;
-            } else {
-                keyboard.key_with_modifiers(key, &mods)?;
-            }
+            tokio::task::spawn_blocking(move || {
+                let mut keyboard = KeyboardController::new()?;
+                if mods_clone.is_empty() {
+                    let k = parse_key(&key_clone)?;
+                    keyboard.key_press(k)?;
+                } else {
+                    keyboard.key_with_modifiers(&key_clone, &mods_clone)?;
+                }
+                Ok::<(), ActionError>(())
+            })
+            .await
+            .map_err(|e| ActionError::KeyboardError(crate::input::KeyboardError::ActionError(e.to_string())))??;
 
             Ok(ActionResult {
                 success: true,
@@ -550,8 +598,7 @@ pub async fn execute_action_with_delay(
                 _ => ScrollDirection::Down,
             };
 
-            let x = *x;
-            let y = *y;
+            let (x, y) = if let Some(b) = bounds { b.transform(*x, *y) } else { (*x, *y) };
             let amount = *amount;
             let direction_str = direction.clone();
             let delay = click_delay;
@@ -609,10 +656,8 @@ pub async fn execute_action_with_delay(
                 duration
             );
 
-            let sx = *start_x;
-            let sy = *start_y;
-            let ex = *end_x;
-            let ey = *end_y;
+            let (sx, sy) = if let Some(b) = bounds { b.transform(*start_x, *start_y) } else { (*start_x, *start_y) };
+            let (ex, ey) = if let Some(b) = bounds { b.transform(*end_x, *end_y) } else { (*end_x, *end_y) };
 
             tokio::task::spawn_blocking(move || {
                 let mut mouse = MouseController::new()?;
@@ -636,8 +681,7 @@ pub async fn execute_action_with_delay(
         }
 
         Action::TripleClick { x, y } => {
-            let x = *x;
-            let y = *y;
+            let (x, y) = if let Some(b) = bounds { b.transform(*x, *y) } else { (*x, *y) };
 
             tokio::task::spawn_blocking(move || {
                 let mut mouse = MouseController::new()?;
@@ -659,8 +703,7 @@ pub async fn execute_action_with_delay(
         }
 
         Action::RightClick { x, y } => {
-            let x = *x;
-            let y = *y;
+            let (x, y) = if let Some(b) = bounds { b.transform(*x, *y) } else { (*x, *y) };
 
             tokio::task::spawn_blocking(move || {
                 let mut mouse = MouseController::new()?;
@@ -837,8 +880,10 @@ pub async fn execute_action_with_delay(
 }
 
 fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() > max_len {
-        format!("{}...", &s[..max_len])
+    let char_count = s.chars().count();
+    if char_count > max_len {
+        let truncated: String = s.chars().take(max_len).collect();
+        format!("{}...", truncated)
     } else {
         s.to_string()
     }
@@ -867,9 +912,10 @@ impl Action {
             Action::Type { text } => !text.is_empty(),
             // Key presses that are simple characters can be reversed with backspace
             Action::Key { key, modifiers } => {
-                // Don't try to reverse undo itself or other complex key combos
+                // Cmd+V (paste) and Cmd+X (cut) can be reversed with Cmd+Z
                 if modifiers.iter().any(|m| m.to_lowercase() == "cmd" || m.to_lowercase() == "ctrl") {
-                    return false;
+                    let k = key.to_lowercase();
+                    return k == "v" || k == "x";
                 }
                 // Simple key presses can be reversed
                 key.len() == 1 || key.to_lowercase() == "space" || key.to_lowercase() == "enter"
@@ -882,8 +928,8 @@ impl Action {
             // Terminal actions
             Action::Complete { .. } => false,
             Action::Error { .. } => false,
-            // Extended actions cannot be reversed
-            Action::Drag { .. } => false,
+            // Drag can be reversed by dragging back
+            Action::Drag { .. } => true,
             Action::TripleClick { .. } => false,
             Action::RightClick { .. } => false,
             Action::Wait { .. } => false,
@@ -916,22 +962,25 @@ impl Action {
                 })
             }
             Action::Type { text } => {
-                // Reverse typing by sending backspaces for each character
-                let char_count = text.chars().count();
-                if char_count == 0 {
+                if text.is_empty() {
                     return None;
                 }
-                // We'll represent this as a series of backspace key presses
-                // For simplicity, we create a single key action that represents "delete N chars"
-                // The actual implementation will need to handle this specially
+                // Use Cmd+Z (undo) to reverse typed text — more reliable than backspaces
                 Some(Action::Key {
-                    key: "Backspace".to_string(),
-                    modifiers: vec![format!("repeat:{}", char_count)],
+                    key: "z".to_string(),
+                    modifiers: vec!["cmd".to_string()],
                 })
             }
             Action::Key { key, modifiers } => {
-                // Only reverse simple character input
+                // Cmd+V (paste) and Cmd+X (cut) can be reversed with Cmd+Z
                 if modifiers.iter().any(|m| m.to_lowercase() == "cmd" || m.to_lowercase() == "ctrl") {
+                    let k = key.to_lowercase();
+                    if k == "v" || k == "x" {
+                        return Some(Action::Key {
+                            key: "z".to_string(),
+                            modifiers: vec!["cmd".to_string()],
+                        });
+                    }
                     return None;
                 }
                 // Simple character or space/enter can be reversed with backspace
@@ -943,6 +992,17 @@ impl Action {
                 } else {
                     None
                 }
+            }
+            Action::Drag { start_x, start_y, end_x, end_y, button, duration_ms } => {
+                // Reverse a drag by dragging back from end to start
+                Some(Action::Drag {
+                    start_x: *end_x,
+                    start_y: *end_y,
+                    end_x: *start_x,
+                    end_y: *start_y,
+                    button: button.clone(),
+                    duration_ms: *duration_ms,
+                })
             }
             _ => None,
         }
@@ -1834,6 +1894,13 @@ mod tests {
         assert_eq!(truncate_string("hello world", 5), "hello...");
     }
 
+    #[test]
+    fn test_truncate_string_unicode() {
+        // B9: char-based truncation should not panic on multi-byte chars
+        assert_eq!(truncate_string("こんにちは世界", 3), "こんに...");
+        assert_eq!(truncate_string("🌍🌎🌏", 2), "🌍🌎...");
+    }
+
     // ── LlmResponse tests ──────────────────────────────────────────────
 
     #[test]
@@ -2015,8 +2082,15 @@ mod tests {
 
     #[test]
     fn test_is_reversible_key_with_cmd_modifier() {
+        // Cmd+C (copy) is not reversible
         let action = Action::Key { key: "c".into(), modifiers: vec!["cmd".into()] };
         assert!(!action.is_reversible());
+        // Cmd+V (paste) is reversible via Cmd+Z
+        let action = Action::Key { key: "v".into(), modifiers: vec!["cmd".into()] };
+        assert!(action.is_reversible());
+        // Cmd+X (cut) is reversible via Cmd+Z
+        let action = Action::Key { key: "x".into(), modifiers: vec!["cmd".into()] };
+        assert!(action.is_reversible());
     }
 
     #[test]
@@ -2032,7 +2106,7 @@ mod tests {
     #[test]
     fn test_is_reversible_drag() {
         let action = Action::Drag { start_x: 0, start_y: 0, end_x: 100, end_y: 100, button: "left".into(), duration_ms: 500 };
-        assert!(!action.is_reversible());
+        assert!(action.is_reversible());
     }
 
     // ── create_reverse tests ─────────────────────────────────────────────
@@ -2073,10 +2147,10 @@ mod tests {
         let reverse = action.create_reverse().unwrap();
         match reverse {
             Action::Key { key, modifiers } => {
-                assert_eq!(key, "Backspace");
-                assert_eq!(modifiers, vec!["repeat:5"]);
+                assert_eq!(key, "z");
+                assert_eq!(modifiers, vec!["cmd"]);
             }
-            _ => panic!("Expected Key reverse for type"),
+            _ => panic!("Expected Key reverse for type (Cmd+Z undo)"),
         }
     }
 
@@ -2101,8 +2175,51 @@ mod tests {
 
     #[test]
     fn test_create_reverse_key_with_cmd() {
+        // Cmd+C (copy) has no reverse
         let action = Action::Key { key: "c".into(), modifiers: vec!["cmd".into()] };
         assert!(action.create_reverse().is_none());
+
+        // Cmd+V (paste) reverses to Cmd+Z
+        let action = Action::Key { key: "v".into(), modifiers: vec!["cmd".into()] };
+        let reverse = action.create_reverse().unwrap();
+        match reverse {
+            Action::Key { key, modifiers } => {
+                assert_eq!(key, "z");
+                assert_eq!(modifiers, vec!["cmd"]);
+            }
+            _ => panic!("Expected Key reverse (Cmd+Z)"),
+        }
+
+        // Cmd+X (cut) reverses to Cmd+Z
+        let action = Action::Key { key: "x".into(), modifiers: vec!["cmd".into()] };
+        let reverse = action.create_reverse().unwrap();
+        match reverse {
+            Action::Key { key, modifiers } => {
+                assert_eq!(key, "z");
+                assert_eq!(modifiers, vec!["cmd"]);
+            }
+            _ => panic!("Expected Key reverse (Cmd+Z)"),
+        }
+    }
+
+    #[test]
+    fn test_create_reverse_drag() {
+        let action = Action::Drag {
+            start_x: 10, start_y: 20, end_x: 300, end_y: 400,
+            button: "left".into(), duration_ms: 500,
+        };
+        let reverse = action.create_reverse().unwrap();
+        match reverse {
+            Action::Drag { start_x, start_y, end_x, end_y, button, duration_ms } => {
+                assert_eq!(start_x, 300);
+                assert_eq!(start_y, 400);
+                assert_eq!(end_x, 10);
+                assert_eq!(end_y, 20);
+                assert_eq!(button, "left");
+                assert_eq!(duration_ms, 500);
+            }
+            _ => panic!("Expected Drag reverse"),
+        }
     }
 
     #[test]

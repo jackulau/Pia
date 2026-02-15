@@ -12,6 +12,7 @@ pub struct GlmProvider {
     client: Client,
     api_key: String,
     model: String,
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -21,6 +22,8 @@ struct GlmRequest {
     messages: Vec<GlmMessage>,
     stream: bool,
     stream_options: StreamOptions,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -84,7 +87,13 @@ impl GlmProvider {
             client: Client::new(),
             api_key,
             model,
+            temperature: None,
         }
+    }
+
+    pub fn with_temperature(mut self, temperature: Option<f32>) -> Self {
+        self.temperature = temperature;
+        self
     }
 }
 
@@ -136,6 +145,7 @@ impl LlmProvider for GlmProvider {
             stream_options: StreamOptions {
                 include_usage: true,
             },
+            temperature: self.temperature,
         };
 
         let response = self
@@ -193,6 +203,43 @@ impl LlmProvider for GlmProvider {
         };
 
         Ok((LlmResponse::Text(full_response), metrics))
+    }
+
+    async fn health_check(&self) -> Result<bool, LlmError> {
+        let response = self
+            .client
+            .get("https://open.bigmodel.cn/api/paas/v4/models")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await?;
+        Ok(response.status().is_success())
+    }
+
+    async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        let response = self
+            .client
+            .get("https://open.bigmodel.cn/api/paas/v4/models")
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(LlmError::ApiError(format!(
+                "Failed to list models: HTTP {}",
+                response.status()
+            )));
+        }
+        let body: serde_json::Value = response.json().await.map_err(|e| {
+            LlmError::ParseError(format!("Failed to parse model list: {}", e))
+        })?;
+        let models = body["data"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m["id"].as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(models)
     }
 
     fn name(&self) -> &str {

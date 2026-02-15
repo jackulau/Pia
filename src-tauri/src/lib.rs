@@ -11,8 +11,8 @@ use config::{Config, TaskTemplate};
 use config::credentials::{self, DetectedCredentialPayload};
 use history::{HistoryEntry, InstructionHistory};
 use llm::{
-    AnthropicProvider, LlmProvider, OllamaProvider, OpenAICompatibleProvider, OpenAIProvider,
-    OpenRouterProvider,
+    AnthropicProvider, GlmProvider, LlmProvider, OllamaProvider, OpenAICompatibleProvider,
+    OpenAIProvider, OpenRouterProvider,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -870,6 +870,17 @@ fn create_provider_from_config(
                 .as_ref()
                 .ok_or("OpenRouter not configured")?;
             Ok(Box::new(OpenRouterProvider::new(
+                cfg.api_key.clone(),
+                cfg.model.clone(),
+            )))
+        }
+        "glm" => {
+            let cfg = config
+                .providers
+                .glm
+                .as_ref()
+                .ok_or("GLM not configured")?;
+            Ok(Box::new(GlmProvider::new(
                 cfg.api_key.clone(),
                 cfg.model.clone(),
             )))
