@@ -1,8 +1,0 @@
-id: undo-last-action
-status: complete
-branch: pia/undo-last-action
-worktree_path: .claude-workspace/worktrees/undo-last-action/worktree
-completed_at: 2026-01-29T08:25:00Z
-commit_sha: 9cced79
-tests_passing: true
-dependencies_met: true

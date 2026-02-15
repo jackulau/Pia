@@ -1,4 +1,5 @@
 use enigo::{Button, Coordinate, Direction, Enigo, Mouse, Settings};
+use std::cell::RefCell;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -9,8 +10,12 @@ pub enum MouseError {
     ActionError(String),
 }
 
+thread_local! {
+    static THREAD_MOUSE_ENIGO: RefCell<Option<Enigo>> = RefCell::new(None);
+}
+
 pub struct MouseController {
-    enigo: Enigo,
+    enigo: Option<Enigo>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -40,19 +45,29 @@ pub enum ScrollDirection {
 
 impl MouseController {
     pub fn new() -> Result<Self, MouseError> {
-        let enigo =
-            Enigo::new(&Settings::default()).map_err(|e| MouseError::InitError(e.to_string()))?;
-        Ok(Self { enigo })
+        let enigo = THREAD_MOUSE_ENIGO.with(|cell| {
+            let mut opt = cell.borrow_mut();
+            if let Some(existing) = opt.take() {
+                Ok(existing)
+            } else {
+                Enigo::new(&Settings::default()).map_err(|e| MouseError::InitError(e.to_string()))
+            }
+        })?;
+        Ok(Self { enigo: Some(enigo) })
+    }
+
+    fn enigo(&mut self) -> &mut Enigo {
+        self.enigo.as_mut().unwrap()
     }
 
     pub fn move_to(&mut self, x: i32, y: i32) -> Result<(), MouseError> {
-        self.enigo
+        self.enigo()
             .move_mouse(x, y, Coordinate::Abs)
             .map_err(|e| MouseError::ActionError(e.to_string()))
     }
 
     pub fn click(&mut self, button: MouseButton) -> Result<(), MouseError> {
-        self.enigo
+        self.enigo()
             .button(button.into(), Direction::Click)
             .map_err(|e| MouseError::ActionError(e.to_string()))
     }
@@ -64,13 +79,13 @@ impl MouseController {
     }
 
     pub fn mouse_down(&mut self, button: MouseButton) -> Result<(), MouseError> {
-        self.enigo
+        self.enigo()
             .button(button.into(), Direction::Press)
             .map_err(|e| MouseError::ActionError(e.to_string()))
     }
 
     pub fn mouse_up(&mut self, button: MouseButton) -> Result<(), MouseError> {
-        self.enigo
+        self.enigo()
             .button(button.into(), Direction::Release)
             .map_err(|e| MouseError::ActionError(e.to_string()))
     }
@@ -78,19 +93,19 @@ impl MouseController {
     pub fn scroll(&mut self, direction: ScrollDirection, amount: i32) -> Result<(), MouseError> {
         match direction {
             ScrollDirection::Up => self
-                .enigo
+                .enigo()
                 .scroll(amount, enigo::Axis::Vertical)
                 .map_err(|e| MouseError::ActionError(e.to_string())),
             ScrollDirection::Down => self
-                .enigo
+                .enigo()
                 .scroll(-amount, enigo::Axis::Vertical)
                 .map_err(|e| MouseError::ActionError(e.to_string())),
             ScrollDirection::Left => self
-                .enigo
+                .enigo()
                 .scroll(-amount, enigo::Axis::Horizontal)
                 .map_err(|e| MouseError::ActionError(e.to_string())),
             ScrollDirection::Right => self
-                .enigo
+                .enigo()
                 .scroll(amount, enigo::Axis::Horizontal)
                 .map_err(|e| MouseError::ActionError(e.to_string())),
         }
@@ -156,5 +171,15 @@ impl MouseController {
         self.mouse_up(button)?;
 
         Ok(())
+    }
+}
+
+impl Drop for MouseController {
+    fn drop(&mut self) {
+        if let Some(enigo) = self.enigo.take() {
+            THREAD_MOUSE_ENIGO.with(|cell| {
+                *cell.borrow_mut() = Some(enigo);
+            });
+        }
     }
 }

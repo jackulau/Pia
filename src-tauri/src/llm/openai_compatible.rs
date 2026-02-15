@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
 use super::provider::{
-    build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse,
-    TokenMetrics,
+    build_system_prompt_with_context, history_to_messages, ChunkCallback,
+    LlmError, LlmProvider, LlmResponse, TokenMetrics,
 };
 use serde_json::Value;
 use crate::agent::conversation::ConversationHistory;
@@ -15,6 +17,7 @@ pub struct OpenAICompatibleProvider {
     base_url: String,
     api_key: Option<String>,
     model: String,
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -23,6 +26,8 @@ struct ChatRequest {
     max_tokens: u32,
     messages: Vec<ChatMessage>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -76,7 +81,7 @@ struct UsageInfo {
 }
 
 impl OpenAICompatibleProvider {
-    pub fn new(base_url: String, api_key: Option<String>, model: String) -> Self {
+    pub fn new(base_url: String, api_key: Option<String>, model: String, temperature: Option<f32>) -> Self {
         // Strip trailing slash for consistent URL building
         let base_url = base_url.trim_end_matches('/').to_string();
         Self {
@@ -84,7 +89,13 @@ impl OpenAICompatibleProvider {
             base_url,
             api_key,
             model,
+            temperature,
         }
+    }
+
+    pub fn with_temperature(mut self, temperature: Option<f32>) -> Self {
+        self.temperature = temperature;
+        self
     }
 }
 
@@ -98,7 +109,14 @@ impl LlmProvider for OpenAICompatibleProvider {
         on_chunk: ChunkCallback,
     ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt(screen_width, screen_height);
+        let instruction = history.original_instruction().map(|s| s.to_string());
+        let system_prompt = build_system_prompt_with_context(
+            screen_width,
+            screen_height,
+            instruction.as_deref(),
+            history.iteration,
+            history.max_iterations,
+        );
 
         let mut messages = vec![ChatMessage {
             role: "system".to_string(),
@@ -132,6 +150,7 @@ impl LlmProvider for OpenAICompatibleProvider {
             max_tokens: 1024,
             messages,
             stream: true,
+            temperature: self.temperature,
         };
 
         let url = format!("{}/v1/chat/completions", self.base_url);
@@ -243,14 +262,14 @@ mod tests {
     #[test]
     fn test_new_strips_trailing_slash() {
         let provider =
-            OpenAICompatibleProvider::new("http://localhost:1234/".to_string(), None, "model".to_string());
+            OpenAICompatibleProvider::new("http://localhost:1234/".to_string(), None, "model".to_string(), None);
         assert_eq!(provider.base_url, "http://localhost:1234");
     }
 
     #[test]
     fn test_new_no_trailing_slash() {
         let provider =
-            OpenAICompatibleProvider::new("http://localhost:1234".to_string(), None, "model".to_string());
+            OpenAICompatibleProvider::new("http://localhost:1234".to_string(), None, "model".to_string(), None);
         assert_eq!(provider.base_url, "http://localhost:1234");
     }
 
@@ -260,6 +279,7 @@ mod tests {
             "http://localhost:1234".to_string(),
             Some("sk-test-key".to_string()),
             "gpt-4".to_string(),
+            None,
         );
         assert_eq!(provider.api_key, Some("sk-test-key".to_string()));
         assert_eq!(provider.model, "gpt-4");
@@ -271,6 +291,7 @@ mod tests {
             "http://localhost:11434".to_string(),
             None,
             "llama3".to_string(),
+            None,
         );
         assert_eq!(provider.api_key, None);
         assert_eq!(provider.model, "llama3");
@@ -279,7 +300,7 @@ mod tests {
     #[test]
     fn test_name() {
         let provider =
-            OpenAICompatibleProvider::new("http://localhost:1234".to_string(), None, "model".to_string());
+            OpenAICompatibleProvider::new("http://localhost:1234".to_string(), None, "model".to_string(), None);
         assert_eq!(provider.name(), "openai-compatible");
     }
 
@@ -293,6 +314,7 @@ mod tests {
                 content: ChatContent::Text("Hello".to_string()),
             }],
             stream: true,
+            temperature: None,
         };
 
         let json = serde_json::to_value(&request).unwrap();
@@ -350,6 +372,7 @@ mod tests {
             "http://localhost:1234".to_string(),
             None,
             "model".to_string(),
+            None,
         );
         let url = format!("{}/v1/models", provider.base_url);
         assert_eq!(url, "http://localhost:1234/v1/models");
@@ -361,6 +384,7 @@ mod tests {
             "http://localhost:1234/".to_string(),
             None,
             "model".to_string(),
+            None,
         );
         let url = format!("{}/v1/models", provider.base_url);
         assert_eq!(url, "http://localhost:1234/v1/models");

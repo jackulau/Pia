@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use super::action::Action;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

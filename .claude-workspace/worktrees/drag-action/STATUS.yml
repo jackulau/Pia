@@ -1,8 +1,0 @@
-id: drag-action
-status: complete
-branch: pia/drag-action
-worktree_path: .claude-workspace/worktrees/drag-action/worktree
-started_at: 2026-01-28T00:00:00Z
-completed_at: 2026-01-28T00:30:00Z
-commit_sha: 7ed67f0
-tests_passing: true

@@ -1,4 +1,6 @@
-use super::action::{execute_action, execute_action_with_delay, execute_action_with_retry, parse_llm_response, Action, ActionError, ActionResult};
+#![allow(dead_code, unused_variables)]
+
+use super::action::{execute_action_with_delay, parse_llm_response_with_reasoning, Action, ActionError, ScreenBounds};
 use super::conversation::ConversationHistory;
 use super::delay::DelayController;
 use super::history::{ActionEntry, ActionHistory, ActionRecord};
@@ -8,11 +10,11 @@ use super::recovery::{
     RetryPolicy,
 };
 use super::state::{AgentStateManager, AgentStatus, ConfirmationResponse, ExecutionMode};
-use crate::capture::{capture_primary_screen, CaptureError, Screenshot};
+use crate::capture::{capture_primary_screen_with_config, CaptureError, Screenshot, ScreenshotConfig};
 use crate::config::Config;
 use crate::llm::{
     AnthropicProvider, GlmProvider, LlmProvider, OllamaProvider, OpenAICompatibleProvider,
-    OpenAIProvider, OpenRouterProvider, ToolResult,
+    OpenAIProvider, OpenRouterProvider,
 };
 use chrono::Utc;
 use serde::Serialize;
@@ -71,6 +73,7 @@ pub struct AgentLoop {
     queue: Option<QueueManager>,
     preview_mode: bool,
     action_history: Arc<RwLock<ActionHistory>>,
+    delay_controller: DelayController,
     /// Tracks last state emission time for debouncing
     last_emission: std::sync::Mutex<Instant>,
 }
@@ -83,6 +86,7 @@ impl AgentLoop {
         action_history: Arc<RwLock<ActionHistory>>,
     ) -> Self {
         let preview_mode = config.general.preview_mode;
+        let delay_controller = DelayController::new(config.general.speed_multiplier);
         Self {
             state,
             config,
@@ -90,6 +94,7 @@ impl AgentLoop {
             queue: None,
             preview_mode,
             action_history,
+            delay_controller,
             last_emission: std::sync::Mutex::new(Instant::now()),
         }
     }
@@ -115,6 +120,7 @@ impl AgentLoop {
                 Ok(Box::new(OllamaProvider::with_timeouts(
                     config.host.clone(),
                     config.model.clone(),
+                    config.temperature,
                     connect_timeout,
                     response_timeout,
                 )))
@@ -129,6 +135,7 @@ impl AgentLoop {
                 Ok(Box::new(AnthropicProvider::with_timeouts(
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                     connect_timeout,
                     response_timeout,
                 )))
@@ -143,6 +150,7 @@ impl AgentLoop {
                 Ok(Box::new(OpenAIProvider::with_timeouts(
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                     connect_timeout,
                     response_timeout,
                 )))
@@ -157,6 +165,7 @@ impl AgentLoop {
                 Ok(Box::new(OpenRouterProvider::with_timeouts(
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                     connect_timeout,
                     response_timeout,
                 )))
@@ -171,6 +180,7 @@ impl AgentLoop {
                 Ok(Box::new(GlmProvider::new(
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                 )))
             }
             "openai-compatible" => {
@@ -184,6 +194,7 @@ impl AgentLoop {
                     config.base_url.clone(),
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                 )))
             }
             _ => Err(LoopError::NoProvider),
@@ -289,6 +300,25 @@ impl AgentLoop {
                 self.emit_state_update_immediate().await;
             }
 
+            // Check token budget
+            if let Some(max_tokens) = self.config.general.max_tokens_per_task {
+                if max_tokens > 0 {
+                    let (_tps, input_tokens, output_tokens) = self.state.get_token_metrics();
+                    let total_tokens = input_tokens + output_tokens;
+                    if total_tokens > max_tokens {
+                        let _ = self.app_handle.emit("token-budget-exceeded", json!({
+                            "total_tokens": total_tokens,
+                            "max_tokens": max_tokens,
+                        }));
+                        self.state
+                            .set_error(format!("Token budget exceeded ({} > {})", total_tokens, max_tokens))
+                            .await;
+                        self.emit_state_update_immediate().await;
+                        return Err(LoopError::MaxIterations);
+                    }
+                }
+            }
+
             // Check iteration limit (now uses atomic, no await needed)
             let iteration = self.state.increment_iteration();
             if iteration > max_iterations {
@@ -310,9 +340,19 @@ impl AgentLoop {
                 }
             };
 
+            // Set iteration/max_iterations for progress context in system prompt
+            conversation.iteration = Some(iteration);
+            conversation.max_iterations = Some(max_iterations);
+
             // Add user message with current screenshot to conversation
+            // First message includes full instruction; subsequent messages use a short continuation prompt
+            let user_text = if conversation.is_empty() {
+                instruction.to_string()
+            } else {
+                "Here is the current screenshot. Continue working on the task.".to_string()
+            };
             conversation.add_user_message(
-                &instruction,
+                &user_text,
                 Some(screenshot.base64.clone()),
                 Some(screenshot.width),
                 Some(screenshot.height),
@@ -354,15 +394,27 @@ impl AgentLoop {
                     self.state.set_error(e.to_string()).await;
                     self.emit_state_update_immediate().await;
 
-                    // Check if we should continue or bail
+                    // Classify error and apply retry policy
                     let classification = classify_llm_error(&e);
-                    if matches!(classification, ErrorClassification::Fatal) {
-                        return Err(e.into());
+                    match classification {
+                        ErrorClassification::Fatal => {
+                            return Err(e.into());
+                        }
+                        ErrorClassification::RateLimited { wait_seconds } => {
+                            log::warn!("Rate limited, waiting {} seconds before retry", wait_seconds);
+                            sleep(Duration::from_secs(wait_seconds)).await;
+                            continue;
+                        }
+                        ErrorClassification::Retryable => {
+                            // Use exponential backoff from RetryPolicy
+                            let policy = RetryPolicy::for_llm_calls();
+                            let consecutive = self.state.get_consecutive_errors();
+                            let delay = policy.delay_for_attempt(consecutive);
+                            log::warn!("LLM error (attempt {}), retrying after {:?}: {}", consecutive, delay, e);
+                            sleep(delay).await;
+                            continue;
+                        }
                     }
-
-                    // Non-fatal error, continue to next iteration
-                    sleep(Duration::from_secs(1)).await;
-                    continue;
                 }
             };
 
@@ -380,9 +432,13 @@ impl AgentLoop {
             );
             self.state.history().update_metrics(metrics.input_tokens, metrics.output_tokens).await;
 
-            // Parse action - on parse error, send feedback to LLM
-            let action = match parse_llm_response(&response) {
-                Ok(a) => a,
+            // Parse action with reasoning extraction
+            let action = match parse_llm_response_with_reasoning(&response) {
+                Ok(parsed) => {
+                    // Store reasoning for UI display
+                    self.state.set_last_reasoning(parsed.reasoning).await;
+                    parsed.action
+                }
                 Err(parse_err) => {
                     self.state.increment_consecutive_errors();
 
@@ -392,9 +448,19 @@ impl AgentLoop {
                         format!("Failed to parse LLM response: {}", parse_err),
                     );
 
+                    // Add parse error feedback to conversation so LLM knows its response was unparseable
+                    conversation.add_tool_result(
+                        false,
+                        None,
+                        Some(format!(
+                            "Your response could not be parsed as a valid action. Error: {}. Please respond with a valid JSON action object.",
+                            parse_err
+                        )),
+                    );
+
                     // Continue to next iteration - the LLM will see the error
                     // in subsequent iterations via conversation context
-                    sleep(Duration::from_millis(500)).await;
+                    sleep(delay_controller.parse_error_delay()).await;
                     continue;
                 }
             };
@@ -421,7 +487,7 @@ impl AgentLoop {
                     return Ok(());
                 }
                 // Continue to next iteration without executing
-                sleep(Duration::from_millis(500)).await;
+                sleep(delay_controller.preview_delay()).await;
                 continue;
             }
 
@@ -437,12 +503,24 @@ impl AgentLoop {
             self.show_cursor_indicator(&action).await;
 
             // Brief pause to let user see the indicator
-            sleep(Duration::from_millis(300)).await;
+            sleep(delay_controller.indicator_pause()).await;
 
             // Prepare action details for history logging (reuse serialized value)
             let action_type = Self::get_action_type(&action);
 
-            match execute_action_with_delay(&action, confirm_dangerous, delay_controller.click_delay()).await {
+            // Build screen bounds for HiDPI coordinate scaling (B2)
+            let screen_bounds = if screenshot.physical_width > 0 && screenshot.physical_height > 0 {
+                Some(ScreenBounds::new(
+                    screenshot.width,
+                    screenshot.height,
+                    screenshot.physical_width,
+                    screenshot.physical_height,
+                ))
+            } else {
+                None
+            };
+
+            match execute_action_with_delay(&action, confirm_dangerous, delay_controller.click_delay(), screen_bounds).await {
                 Ok(result) => {
                     // Add successful tool result to conversation
                     conversation.add_tool_result(true, result.message.clone(), None);
@@ -568,7 +646,7 @@ impl AgentLoop {
                     }
                 }
                 Err(e) => {
-                    // Add error to conversation before returning
+                    // Add error to conversation
                     conversation.add_tool_result(false, None, Some(e.to_string()));
 
                     // Record failed action to history
@@ -597,7 +675,17 @@ impl AgentLoop {
                     history.push(record);
                     drop(history);
 
+                    // Check if error is recoverable
+                    if e.is_recoverable() {
+                        log::warn!("Recoverable action error (consecutive: {}): {}", 
+                            self.state.get_consecutive_errors(), e);
+                        self.state.set_error(e.to_string()).await;
+                        self.emit_state_update().await;
+                        sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
 
+                    // Non-recoverable error - terminate
                     self.state.set_error(e.to_string()).await;
                     self.emit_state_update_immediate().await;
 
@@ -610,7 +698,6 @@ impl AgentLoop {
                         },
                     );
 
-                    // Action errors are generally not retryable
                     return Err(e.into());
                 }
             }
@@ -624,12 +711,27 @@ impl AgentLoop {
         }
     }
 
-    /// Capture screenshot with retry logic
+    /// Build screenshot config from user settings
+    fn screenshot_config(&self) -> ScreenshotConfig {
+        ScreenshotConfig {
+            jpeg_quality: self.config.general.screenshot_quality,
+            max_width: Some(self.config.general.screenshot_max_width),
+            ..ScreenshotConfig::default()
+        }
+    }
+
+    /// Capture screenshot with retry logic, offloaded to a blocking thread
     async fn capture_with_retry(&self) -> Result<Screenshot, CaptureError> {
         let policy = RetryPolicy::for_screenshots();
+        let config = self.screenshot_config();
 
-        let result = retry_with_policy(&policy, classify_capture_error, || async {
-            capture_primary_screen()
+        let result = retry_with_policy(&policy, classify_capture_error, || {
+            let cfg = config.clone();
+            async move {
+                tokio::task::spawn_blocking(move || capture_primary_screen_with_config(&cfg))
+                    .await
+                    .map_err(|e| CaptureError::CaptureError(e.to_string()))?
+            }
         })
         .await;
 
@@ -977,7 +1079,7 @@ impl AgentLoop {
         if let Some(overlay) = self.app_handle.get_webview_window("cursor-overlay") {
             let _ = overlay.emit("hide-cursor-indicator", ());
             // Wait for animation
-            sleep(Duration::from_millis(150)).await;
+            sleep(self.delay_controller.cursor_hide_delay()).await;
             let _ = overlay.hide();
         }
     }

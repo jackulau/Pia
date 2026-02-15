@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::capture::{capture_primary_screen, CaptureError, Screenshot};
 use std::time::Duration;
 use thiserror::Error;

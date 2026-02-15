@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::agent::conversation::{ConversationHistory, Message};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -58,8 +60,8 @@ pub struct ToolUse {
 /// Response from an LLM provider - can be either a tool use or raw text
 #[derive(Debug, Clone)]
 pub enum LlmResponse {
-    /// Native tool use response (from Anthropic)
-    ToolUse(ToolUse),
+    /// Native tool use response (from Anthropic), with optional reasoning text
+    ToolUse { tool_use: ToolUse, reasoning: Option<String> },
     /// Raw text response (fallback for JSON parsing)
     Text(String),
 }
@@ -68,8 +70,13 @@ impl LlmResponse {
     /// Convert to a string representation for logging/conversation history
     pub fn to_string_repr(&self) -> String {
         match self {
-            LlmResponse::ToolUse(tool_use) => {
-                serde_json::to_string(tool_use).unwrap_or_else(|_| format!("{:?}", tool_use))
+            LlmResponse::ToolUse { tool_use, reasoning } => {
+                let tool_json = serde_json::to_string(tool_use).unwrap_or_else(|_| format!("{:?}", tool_use));
+                if let Some(r) = reasoning {
+                    format!("{}\n{}", r, tool_json)
+                } else {
+                    tool_json
+                }
             }
             LlmResponse::Text(text) => text.clone(),
         }
@@ -202,6 +209,85 @@ pub fn build_tools() -> Vec<Tool> {
                     }
                 },
                 "required": ["x", "y", "direction"]
+            }),
+        },
+        Tool {
+            name: "drag".to_string(),
+            description: "Click and drag from one position to another. Use for moving files, resizing windows, adjusting sliders, or selecting text.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "start_x": { "type": "integer", "description": "X coordinate of drag start" },
+                    "start_y": { "type": "integer", "description": "Y coordinate of drag start" },
+                    "end_x": { "type": "integer", "description": "X coordinate of drag end" },
+                    "end_y": { "type": "integer", "description": "Y coordinate of drag end" },
+                    "button": { "type": "string", "enum": ["left", "right", "middle"], "default": "left", "description": "Mouse button" },
+                    "duration_ms": { "type": "integer", "default": 500, "description": "Drag duration in ms (max 5000)" }
+                },
+                "required": ["start_x", "start_y", "end_x", "end_y"]
+            }),
+        },
+        Tool {
+            name: "triple_click".to_string(),
+            description: "Triple click at coordinates to select an entire line of text".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": { "type": "integer", "description": "X coordinate" },
+                    "y": { "type": "integer", "description": "Y coordinate" }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "right_click".to_string(),
+            description: "Right click at coordinates to open a context menu".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": { "type": "integer", "description": "X coordinate" },
+                    "y": { "type": "integer", "description": "Y coordinate" }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "wait".to_string(),
+            description: "Wait/pause execution. Useful when waiting for UI to load or animations to complete.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "duration_ms": { "type": "integer", "default": 1000, "description": "Duration to wait in milliseconds" }
+                },
+                "required": []
+            }),
+        },
+        Tool {
+            name: "wait_for_element".to_string(),
+            description: "Wait for a UI element or screen change before proceeding. Use after clicking buttons that trigger loading or navigating to new pages.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "description": { "type": "string", "description": "What to wait for (e.g., 'page to load')" },
+                    "timeout_ms": { "type": "integer", "default": 5000, "description": "Max wait time in ms (max 10000)" }
+                },
+                "required": ["description"]
+            }),
+        },
+        Tool {
+            name: "batch".to_string(),
+            description: "Execute multiple actions in sequence without intermediate screenshots. Max 10 actions. Stops on first failure.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "actions": {
+                        "type": "array",
+                        "description": "Array of action objects to execute in sequence",
+                        "items": { "type": "object" },
+                        "maxItems": 10
+                    }
+                },
+                "required": ["actions"]
             }),
         },
         Tool {
@@ -348,7 +434,15 @@ pub trait LlmProvider: Send + Sync {
 /// Helper to convert conversation history to provider-specific message format.
 /// Returns a Vec of tuples: (role, text_content, optional_image_base64)
 /// The image_base64 is Arc-wrapped to avoid cloning large screenshot strings.
+///
+/// To reduce token usage, only the 2 most recent User messages retain their screenshots;
+/// older screenshots are stripped (replaced with None).
 pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String, Option<Arc<String>>)> {
+    // Count total User messages to determine which ones keep screenshots
+    let user_msg_count = history.messages().filter(|m| matches!(m, Message::User { .. })).count();
+    let keep_threshold = user_msg_count.saturating_sub(2);
+
+    let mut user_index = 0usize;
     history
         .messages()
         .map(|msg| match msg {
@@ -356,11 +450,15 @@ pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String
                 instruction,
                 screenshot_base64,
                 ..
-            } => (
-                "user".to_string(),
-                instruction.clone(),
-                screenshot_base64.clone(),
-            ),
+            } => {
+                let keep_screenshot = user_index >= keep_threshold;
+                user_index += 1;
+                (
+                    "user".to_string(),
+                    instruction.clone(),
+                    if keep_screenshot { screenshot_base64.clone() } else { None },
+                )
+            }
             Message::Assistant { content } => ("assistant".to_string(), content.clone(), None),
             Message::ToolResult {
                 success,
@@ -386,7 +484,18 @@ pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String
 
 /// Build system prompt for tool-based providers (simplified, tools are defined via API)
 pub fn build_system_prompt_for_tools(screen_width: u32, screen_height: u32) -> String {
-    format!(
+    build_system_prompt_for_tools_with_context(screen_width, screen_height, None, None, None)
+}
+
+/// Build system prompt for tool-based providers with optional task context and progress info
+pub fn build_system_prompt_for_tools_with_context(
+    screen_width: u32,
+    screen_height: u32,
+    instruction: Option<&str>,
+    iteration: Option<u32>,
+    max_iterations: Option<u32>,
+) -> String {
+    let mut prompt = format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
 
 Screen dimensions: {screen_width}x{screen_height} pixels
@@ -400,7 +509,44 @@ Guidelines:
 - Use the "error" tool if you cannot proceed
 
 Use one of the provided tools to perform your next action."#
-    )
+    );
+
+    if let Some(instr) = instruction {
+        prompt.push_str(&format!("\n\n## Current Task\n{}", instr));
+    }
+
+    if let (Some(iter), Some(max)) = (iteration, max_iterations) {
+        prompt.push_str(&format!("\n\n## Progress\nStep {} of {}.", iter, max));
+        if max > 0 && iter > (max * 3) / 4 {
+            prompt.push_str("\nYou are running low on steps. Focus on completing the task efficiently.");
+        }
+    }
+
+    prompt
+}
+
+/// Build system prompt for JSON-based providers with optional task context and progress info
+pub fn build_system_prompt_with_context(
+    screen_width: u32,
+    screen_height: u32,
+    instruction: Option<&str>,
+    iteration: Option<u32>,
+    max_iterations: Option<u32>,
+) -> String {
+    let mut prompt = build_system_prompt(screen_width, screen_height);
+
+    if let Some(instr) = instruction {
+        prompt.push_str(&format!("\n\n## Current Task\n{}", instr));
+    }
+
+    if let (Some(iter), Some(max)) = (iteration, max_iterations) {
+        prompt.push_str(&format!("\n\n## Progress\nStep {} of {}.", iter, max));
+        if max > 0 && iter > (max * 3) / 4 {
+            prompt.push_str("\nYou are running low on steps. Focus on completing the task efficiently.");
+        }
+    }
+
+    prompt
 }
 
 /// Build system prompt for JSON-based providers (includes action definitions in prompt)
@@ -485,7 +631,20 @@ If an action consistently fails, try:
 - Using a different approach (e.g., keyboard navigation instead of clicking)
 - Waiting longer for elements to load by trying again
 
-Respond with ONLY the JSON action, no other text."#
+You may think briefly about what you see and what action to take, then respond with a JSON action.
+Format: optional reasoning text, followed by the JSON object. Example:
+
+I can see the search bar at the top of the page. I'll click on it to start typing.
+{{"action": "click", "x": 540, "y": 35}}
+
+If an action doesn't seem to work or the screen hasn't changed:
+- Try slightly different coordinates (UI elements may have shifted)
+- Try keyboard navigation instead of clicking a menu
+- Scroll to find elements that may be off-screen
+- Wait briefly for slow-loading UI: {{"action": "wait", "duration_ms": 2000}}
+- If truly stuck after multiple attempts, report: {{"action": "error", "message": "description"}}
+
+Your response must contain exactly one JSON action object."#
     )
 }
 
@@ -563,9 +722,15 @@ mod tests {
         assert!(names.contains(&"type"));
         assert!(names.contains(&"key"));
         assert!(names.contains(&"scroll"));
+        assert!(names.contains(&"drag"));
+        assert!(names.contains(&"triple_click"));
+        assert!(names.contains(&"right_click"));
+        assert!(names.contains(&"wait"));
+        assert!(names.contains(&"wait_for_element"));
+        assert!(names.contains(&"batch"));
         assert!(names.contains(&"complete"));
         assert!(names.contains(&"error"));
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 14);
     }
 
     #[test]
@@ -588,11 +753,14 @@ mod tests {
 
     #[test]
     fn test_llm_response_to_string_repr_tool_use() {
-        let resp = LlmResponse::ToolUse(ToolUse {
-            id: "id1".to_string(),
-            name: "click".to_string(),
-            input: json!({"x": 1}),
-        });
+        let resp = LlmResponse::ToolUse {
+            tool_use: ToolUse {
+                id: "id1".to_string(),
+                name: "click".to_string(),
+                input: json!({"x": 1}),
+            },
+            reasoning: None,
+        };
         let repr = resp.to_string_repr();
         assert!(repr.contains("click"));
         assert!(repr.contains("id1"));

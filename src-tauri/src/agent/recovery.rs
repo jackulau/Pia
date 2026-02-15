@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::llm::LlmError;
 use std::future::Future;
 use std::time::Duration;

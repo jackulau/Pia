@@ -4,6 +4,7 @@ mod config;
 mod history;
 mod input;
 mod llm;
+mod permissions;
 
 use agent::{validate_speed_multiplier, ActionHistory, AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse, InstructionQueue, QueueFailureMode, QueueManager, RecordedAction};
 use agent::action::execute_action;
@@ -11,8 +12,8 @@ use config::{Config, TaskTemplate};
 use config::credentials::{self, DetectedCredentialPayload};
 use history::{HistoryEntry, InstructionHistory};
 use llm::{
-    AnthropicProvider, LlmProvider, OllamaProvider, OpenAICompatibleProvider, OpenAIProvider,
-    OpenRouterProvider,
+    AnthropicProvider, GlmProvider, LlmProvider, OllamaProvider, OpenAICompatibleProvider,
+    OpenAIProvider, OpenRouterProvider,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -184,8 +185,17 @@ async fn get_config(state: State<'_, AppState>) -> Result<Config, String> {
 }
 
 #[tauri::command]
-async fn save_config(config: Config, app_handle: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+async fn save_config(mut config: Config, app_handle: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let show_overlay = config.general.show_coordinate_overlay;
+
+    // Preserve templates from existing config when new config has empty templates (B1 fix)
+    if config.templates.is_empty() {
+        let existing = state.config.read().await;
+        if !existing.templates.is_empty() {
+            config.templates = existing.templates.clone();
+        }
+    }
+
     config.save().map_err(|e| e.to_string())?;
     *state.config.write().await = config;
 
@@ -810,6 +820,7 @@ async fn apply_detected_credential(
         config.providers.ollama = Some(config::OllamaConfig {
             host,
             model,
+            temperature: None,
         });
         config.general.default_provider = "ollama".to_string();
     } else {
@@ -822,6 +833,11 @@ async fn apply_detected_credential(
 
     config.save().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+fn check_permissions() -> permissions::PermissionStatus {
+    permissions::check_permissions()
 }
 
 /// Create a provider instance from config for a given provider name
@@ -839,6 +855,7 @@ fn create_provider_from_config(
             Ok(Box::new(OllamaProvider::new(
                 cfg.host.clone(),
                 cfg.model.clone(),
+                cfg.temperature,
             )))
         }
         "anthropic" => {
@@ -850,6 +867,7 @@ fn create_provider_from_config(
             Ok(Box::new(AnthropicProvider::new(
                 cfg.api_key.clone(),
                 cfg.model.clone(),
+                cfg.temperature,
             )))
         }
         "openai" => {
@@ -861,6 +879,7 @@ fn create_provider_from_config(
             Ok(Box::new(OpenAIProvider::new(
                 cfg.api_key.clone(),
                 cfg.model.clone(),
+                cfg.temperature,
             )))
         }
         "openrouter" => {
@@ -872,6 +891,19 @@ fn create_provider_from_config(
             Ok(Box::new(OpenRouterProvider::new(
                 cfg.api_key.clone(),
                 cfg.model.clone(),
+                cfg.temperature,
+            )))
+        }
+        "glm" => {
+            let cfg = config
+                .providers
+                .glm
+                .as_ref()
+                .ok_or("GLM not configured")?;
+            Ok(Box::new(GlmProvider::new(
+                cfg.api_key.clone(),
+                cfg.model.clone(),
+                cfg.temperature,
             )))
         }
         "openai-compatible" => {
@@ -884,6 +916,7 @@ fn create_provider_from_config(
                 cfg.base_url.clone(),
                 cfg.api_key.clone(),
                 cfg.model.clone(),
+                cfg.temperature,
             )))
         }
         _ => Err(format!("Unknown provider: {}", provider_name)),
@@ -1116,6 +1149,7 @@ pub fn run() {
             apply_detected_credential,
             check_provider_health,
             list_provider_models,
+            check_permissions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

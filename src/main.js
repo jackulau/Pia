@@ -165,6 +165,8 @@ let renderQueueTimer = null;
 let tauriUnlisteners = [];
 let lastRenderedTimelineCount = 0;
 let pendingAgentStateRAF = null;
+let lastSubmittedInstruction = null;
+let errorLog = [];
 
 // Window sizes
 const COMPACT_SIZE = { width: 420, height: 380 };
@@ -209,8 +211,80 @@ async function init() {
   await loadSavedSizePreset();
   await restoreSavedPosition();
 
+  // Check onboarding after everything is loaded
+  await checkOnboarding();
+
   // Auto-focus input on app start
   instructionInput.focus();
+}
+
+// Check if onboarding should be shown
+async function checkOnboarding() {
+  if (!currentConfig) return;
+  if (currentConfig.general.onboarding_complete) return;
+  await showOnboardingWizard();
+}
+
+// Show onboarding wizard with credential detection and permission check
+async function showOnboardingWizard() {
+  const overlay = document.getElementById('onboarding-overlay');
+  if (!overlay) return;
+
+  // Update kill switch text for platform
+  const killSwitchEl = document.getElementById('onboarding-kill-switch');
+  if (killSwitchEl) {
+    killSwitchEl.innerHTML = isMac
+      ? 'Press <strong>Cmd+Shift+Escape</strong> to stop the agent at any time.'
+      : 'Press <strong>Ctrl+Shift+Escape</strong> to stop the agent at any time.';
+  }
+
+  // Detect credentials
+  const credentialsEl = document.getElementById('onboarding-credentials');
+  if (credentialsEl) {
+    try {
+      const creds = await invoke('detect_credentials');
+      if (creds && creds.length > 0) {
+        const items = creds.map(c =>
+          `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
+            <span style="color:#32d74b;font-size:12px;">&#10003;</span>
+            <span style="font-size:12px;color:rgba(255,255,255,0.8);">${escapeHtml(c.provider)}</span>
+            <span style="font-size:10px;color:rgba(255,255,255,0.4);">(${escapeHtml(c.source_type || 'detected')})</span>
+          </div>`
+        ).join('');
+        credentialsEl.innerHTML = `<p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;">Detected API Keys</p>${items}`;
+      } else {
+        credentialsEl.innerHTML = `<p style="font-size:11px;color:rgba(255,159,10,0.9);">No API keys detected. Configure a provider in Settings.</p>`;
+      }
+    } catch (e) {
+      credentialsEl.innerHTML = `<p style="font-size:11px;color:rgba(255,255,255,0.5);">Could not detect API keys.</p>`;
+    }
+  }
+
+  // Check permissions (macOS)
+  const permissionsEl = document.getElementById('onboarding-permissions');
+  if (permissionsEl && isMac) {
+    try {
+      const perms = await invoke('check_permissions');
+      const screenOk = perms.screen_capture;
+      const accessOk = perms.accessibility;
+      permissionsEl.innerHTML = `
+        <p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;">macOS Permissions</p>
+        <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
+          <span style="color:${screenOk ? '#32d74b' : '#ff453a'};font-size:12px;">${screenOk ? '&#10003;' : '&#10007;'}</span>
+          <span style="font-size:12px;color:rgba(255,255,255,0.8);">Screen Recording</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
+          <span style="color:${accessOk ? '#32d74b' : '#ff453a'};font-size:12px;">${accessOk ? '&#10003;' : '&#10007;'}</span>
+          <span style="font-size:12px;color:rgba(255,255,255,0.8);">Accessibility</span>
+        </div>
+        ${(!screenOk || !accessOk) ? '<p style="font-size:10px;color:rgba(255,159,10,0.9);margin-top:4px;">Grant permissions in System Settings &gt; Privacy &amp; Security</p>' : ''}
+      `;
+    } catch (e) {
+      permissionsEl.innerHTML = '';
+    }
+  }
+
+  overlay.classList.remove('hidden');
 }
 
 // Load preview mode state from backend
@@ -331,6 +405,17 @@ function updateSettingsUI() {
     agentSpeedValue.textContent = `${speedMultiplier.toFixed(1)}x`;
   }
 
+  // Set temperature
+  const temperature = currentConfig.general.temperature != null ? currentConfig.general.temperature : 0.7;
+  const tempSlider = document.getElementById('temperature-slider');
+  const tempSliderValue = document.getElementById('temperature-slider-value');
+  if (tempSlider) {
+    tempSlider.value = temperature;
+  }
+  if (tempSliderValue) {
+    tempSliderValue.textContent = temperature.toFixed(1);
+  }
+
   // Set safety settings
   confirmDangerous.checked = currentConfig.general.confirm_dangerous_actions;
 
@@ -359,6 +444,20 @@ function updateSettingsUI() {
   if (queueDelay) {
     queueDelay.value = currentConfig.general.queue_delay_ms || 500;
   }
+
+  // Set advanced settings
+  const maxRetriesEl = document.getElementById('max-retries');
+  if (maxRetriesEl) maxRetriesEl.value = currentConfig.general.max_retries ?? 3;
+  const retryDelayEl = document.getElementById('retry-delay-ms');
+  if (retryDelayEl) retryDelayEl.value = currentConfig.general.retry_delay_ms ?? 1000;
+  const selfCorrectionEl = document.getElementById('enable-self-correction');
+  if (selfCorrectionEl) selfCorrectionEl.checked = currentConfig.general.enable_self_correction !== false;
+  const connectTimeoutEl = document.getElementById('connect-timeout');
+  if (connectTimeoutEl) connectTimeoutEl.value = currentConfig.general.connect_timeout_secs ?? 30;
+  const responseTimeoutEl = document.getElementById('response-timeout');
+  if (responseTimeoutEl) responseTimeoutEl.value = currentConfig.general.response_timeout_secs ?? 300;
+  const maxTokensEl = document.getElementById('max-tokens-per-task');
+  if (maxTokensEl) maxTokensEl.value = currentConfig.general.max_tokens_per_task || '';
 
   // Set Ollama settings
   if (currentConfig.providers.ollama) {
@@ -667,12 +766,79 @@ function setupEventListeners() {
     } catch (e) { showToast('Save failed: ' + e, 'error'); }
   });
 
+  // Anthropic test connection and refresh models
+  document.getElementById('anthropic-test-connection')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await testConnection('anthropic', document.getElementById('anthropic-connection-status'), this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+  document.getElementById('anthropic-refresh-models')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await refreshModels('anthropic', 'anthropic-model-list', 'anthropic-model', this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+
+  // OpenAI test connection and refresh models
+  document.getElementById('openai-test-connection')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await testConnection('openai', document.getElementById('openai-connection-status'), this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+  document.getElementById('openai-refresh-models')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await refreshModels('openai', 'openai-model-list', 'openai-model', this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+
+  // OpenRouter test connection and refresh models
+  document.getElementById('openrouter-test-connection')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await testConnection('openrouter', document.getElementById('openrouter-connection-status'), this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+  document.getElementById('openrouter-refresh-models')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await refreshModels('openrouter', 'openrouter-model-list', 'openrouter-model', this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+
+  // GLM test connection and refresh models
+  document.getElementById('glm-test-connection')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await testConnection('glm', document.getElementById('glm-connection-status'), this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+  document.getElementById('glm-refresh-models')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await refreshModels('glm', 'glm-model-list', 'glm-model', this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+
   // Speed slider
   speedSlider.addEventListener('input', (e) => {
     const value = Math.min(3.0, Math.max(0.25, parseFloat(e.target.value)));
     e.target.value = value;
     speedSliderValue.textContent = `${value.toFixed(2)}x`;
   });
+
+  // Temperature slider
+  const temperatureSlider = document.getElementById('temperature-slider');
+  const temperatureSliderValue = document.getElementById('temperature-slider-value');
+  if (temperatureSlider) {
+    temperatureSlider.addEventListener('input', (e) => {
+      const value = Math.min(2.0, Math.max(0, parseFloat(e.target.value)));
+      e.target.value = value;
+      temperatureSliderValue.textContent = value.toFixed(1);
+    });
+  }
 
   // Save settings
   saveSettingsBtn.addEventListener('click', saveSettings);
@@ -859,6 +1025,48 @@ function setupEventListeners() {
 
   // Preview mode toggle
   previewToggle.addEventListener('click', togglePreviewMode);
+
+  // Auto-expand textarea
+  instructionInput.addEventListener('input', () => {
+    instructionInput.style.height = 'auto';
+    instructionInput.style.height = Math.min(instructionInput.scrollHeight, 120) + 'px';
+  });
+
+  // Retry button
+  document.getElementById('retry-btn')?.addEventListener('click', async () => {
+    if (!lastSubmittedInstruction || isRunning) return;
+    try {
+      await invoke('start_agent', { instruction: lastSubmittedInstruction });
+    } catch (error) {
+      showToast(error, 'error');
+    }
+  });
+
+  // Advanced settings toggle
+  document.getElementById('advanced-toggle')?.addEventListener('click', function() {
+    const section = document.getElementById('advanced-settings');
+    section.classList.toggle('hidden');
+    this.innerHTML = section.classList.contains('hidden') ? 'Advanced Settings &#9656;' : 'Advanced Settings &#9662;';
+  });
+
+  // Error log clear
+  document.getElementById('error-log-clear')?.addEventListener('click', () => {
+    errorLog = [];
+    updateErrorLogUI();
+  });
+
+  // Onboarding start button
+  document.getElementById('onboarding-start-btn')?.addEventListener('click', async () => {
+    document.getElementById('onboarding-overlay')?.classList.add('hidden');
+    if (currentConfig) {
+      currentConfig.general.onboarding_complete = true;
+      try {
+        await saveConfigQuiet();
+      } catch (e) {
+        console.error('Failed to save onboarding state:', e);
+      }
+    }
+  });
 }
 
 // Setup Tauri event listeners
@@ -938,6 +1146,17 @@ async function setupTauriListeners() {
   tauriUnlisteners.push(await listen('kill-switch-triggered', () => {
     handleKillSwitchTriggered();
   }));
+
+  // Token budget exceeded
+  tauriUnlisteners.push(await listen('token-budget-exceeded', (event) => {
+    showToast(`Token budget reached (${event.payload.total_tokens.toLocaleString()}). Consider stopping the agent.`, 'warning');
+  }));
+
+  // Session summary
+  tauriUnlisteners.push(await listen('session-summary', (event) => {
+    const s = event.payload;
+    showToast(`Done: ${s.total_iterations} iterations, ${s.total_actions} actions, ${(s.total_tokens || 0).toLocaleString()} tokens in ${Math.round(s.duration_seconds)}s`, 'success');
+  }));
 }
 
 // Setup kill switch display based on platform
@@ -981,12 +1200,16 @@ async function submitInstruction() {
   const instruction = instructionInput.value.trim();
   if (!instruction || isRunning || isRecording) return;
 
+  lastSubmittedInstruction = instruction;
+
   // Disable submit button immediately to prevent rapid double-clicks
   submitBtn.disabled = true;
 
   try {
     await invoke('start_agent', { instruction });
     instructionInput.value = '';
+    // Reset textarea height
+    instructionInput.style.height = 'auto';
   } catch (error) {
     console.error('Failed to start agent:', error);
     showToast(error, 'error');
@@ -1470,6 +1693,27 @@ function updateAgentState(state) {
     previewToggle.style.opacity = isRunning ? '0.5' : '1';
   }
 
+  // Show/hide retry button
+  const retryBtn = document.getElementById('retry-btn');
+  if (retryBtn) {
+    retryBtn.classList.toggle('hidden',
+      !(state.status === 'Error' || state.status === 'Completed') || !lastSubmittedInstruction);
+  }
+
+  // Update cost estimation
+  const costValue = document.getElementById('cost-value');
+  if (costValue && currentConfig) {
+    const provider = currentConfig.general?.default_provider || '';
+    let model = '';
+    if (currentConfig.providers?.[provider]) {
+      model = currentConfig.providers[provider].model || '';
+    } else if (provider === 'openai-compatible' && currentConfig.providers?.openai_compatible) {
+      model = currentConfig.providers.openai_compatible.model || '';
+    }
+    const cost = estimateCost(provider, model, state.total_input_tokens, state.total_output_tokens);
+    costValue.textContent = cost;
+  }
+
   // Update export button visibility
   updateHistoryCount();
 }
@@ -1590,32 +1834,46 @@ async function saveConfigQuiet() {
       queue_failure_mode: queueFailureMode ? queueFailureMode.value : 'stop',
       queue_delay_ms: queueDelay ? parseInt(queueDelay.value, 10) || 500 : 500,
       speed_multiplier: speedSlider ? Math.min(3.0, Math.max(0.25, parseFloat(speedSlider.value))) : 1.0,
+      temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
+      max_retries: parseInt(document.getElementById('max-retries')?.value, 10) || 3,
+      retry_delay_ms: parseInt(document.getElementById('retry-delay-ms')?.value, 10) || 1000,
+      enable_self_correction: document.getElementById('enable-self-correction')?.checked !== false,
+      connect_timeout_secs: parseInt(document.getElementById('connect-timeout')?.value, 10) || 30,
+      response_timeout_secs: parseInt(document.getElementById('response-timeout')?.value, 10) || 300,
+      max_tokens_per_task: parseInt(document.getElementById('max-tokens-per-task')?.value, 10) || null,
+      onboarding_complete: currentConfig?.general?.onboarding_complete || false,
     },
     providers: {
       ollama: {
         host: document.getElementById('ollama-host').value || 'http://localhost:11434',
         model: document.getElementById('ollama-model').value || 'llava',
+        temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
       },
       anthropic: document.getElementById('anthropic-key').value ? {
         api_key: document.getElementById('anthropic-key').value,
         model: document.getElementById('anthropic-model').value || 'claude-sonnet-4-20250514',
+        temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
       } : null,
       openai: document.getElementById('openai-key').value ? {
         api_key: document.getElementById('openai-key').value,
         model: document.getElementById('openai-model').value || 'gpt-4o',
+        temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
       } : null,
       openrouter: document.getElementById('openrouter-key').value ? {
         api_key: document.getElementById('openrouter-key').value,
         model: document.getElementById('openrouter-model').value || 'anthropic/claude-sonnet-4-20250514',
+        temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
       } : null,
       glm: document.getElementById('glm-key').value ? {
         api_key: document.getElementById('glm-key').value,
         model: document.getElementById('glm-model').value || 'glm-4v',
+        temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
       } : null,
       openai_compatible: document.getElementById('openai-compatible-url').value ? {
         base_url: document.getElementById('openai-compatible-url').value,
         api_key: document.getElementById('openai-compatible-key').value || null,
         model: document.getElementById('openai-compatible-model').value || 'default',
+        temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
       } : null,
     },
   };
@@ -1857,8 +2115,70 @@ async function updateHistoryCount() {
   }
 }
 
+// Model pricing table (per 1M tokens)
+const MODEL_PRICING = {
+  'claude-sonnet-4-20250514': { input: 3.0, output: 15.0 },
+  'claude-opus-4-20250514': { input: 15.0, output: 75.0 },
+  'claude-3-5-sonnet-20241022': { input: 3.0, output: 15.0 },
+  'claude-3-5-haiku-20241022': { input: 1.0, output: 5.0 },
+  'gpt-4o': { input: 2.5, output: 10.0 },
+  'gpt-4o-mini': { input: 0.15, output: 0.6 },
+  'gpt-4-turbo': { input: 10.0, output: 30.0 },
+  'o1': { input: 15.0, output: 60.0 },
+  'o1-mini': { input: 3.0, output: 12.0 },
+  'anthropic/claude-sonnet-4-20250514': { input: 3.0, output: 15.0 },
+  'anthropic/claude-opus-4-20250514': { input: 15.0, output: 75.0 },
+  'anthropic/claude-3-5-sonnet-20241022': { input: 3.0, output: 15.0 },
+  'openai/gpt-4o': { input: 2.5, output: 10.0 },
+};
+
+// Estimate cost from token counts
+function estimateCost(provider, model, inputTokens, outputTokens) {
+  if (!inputTokens && !outputTokens) return '--';
+  const pricing = MODEL_PRICING[model];
+  if (!pricing) return '~$?';
+  const cost = (inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output;
+  if (cost < 0.01) return `~$${cost.toFixed(4)}`;
+  if (cost < 1.0) return `~$${cost.toFixed(3)}`;
+  return `~$${cost.toFixed(2)}`;
+}
+
+// Update error log panel UI
+function updateErrorLogUI() {
+  const panel = document.getElementById('error-log-panel');
+  const content = document.getElementById('error-log-content');
+  const badge = document.getElementById('error-badge');
+  if (!panel || !content) return;
+
+  if (errorLog.length === 0) {
+    panel.classList.add('hidden');
+    if (badge) badge.textContent = '0';
+    content.innerHTML = '';
+    return;
+  }
+
+  panel.classList.remove('hidden');
+  if (badge) badge.textContent = errorLog.length.toString();
+  content.innerHTML = errorLog.map(entry =>
+    `<div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px;">
+      <span style="color:rgba(255,255,255,0.4);margin-right:6px;">${entry.time}</span>
+      <span style="color:#ff453a;">${escapeHtml(entry.message)}</span>
+    </div>`
+  ).join('');
+  content.scrollTop = content.scrollHeight;
+}
+
 // Show toast notification with animation
 function showToast(message, type = 'info') {
+  // Persist errors to error log
+  if (type === 'error') {
+    const now = new Date();
+    const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    errorLog.push({ time, message: String(message) });
+    if (errorLog.length > 50) errorLog.shift(); // cap at 50 entries
+    updateErrorLogUI();
+  }
+
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = message;
