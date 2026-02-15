@@ -149,30 +149,40 @@ pub struct ProvidersConfig {
 pub struct OllamaConfig {
     pub host: String,
     pub model: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnthropicConfig {
     pub api_key: String,
     pub model: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenAIConfig {
     pub api_key: String,
     pub model: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenRouterConfig {
     pub api_key: String,
     pub model: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlmConfig {
     pub api_key: String,
     pub model: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,6 +191,8 @@ pub struct OpenAICompatibleConfig {
     #[serde(default)]
     pub api_key: Option<String>,
     pub model: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 impl Default for Config {
@@ -210,6 +222,7 @@ impl Default for Config {
                 ollama: Some(OllamaConfig {
                     host: "http://localhost:11434".to_string(),
                     model: "llava".to_string(),
+                    temperature: None,
                 }),
                 anthropic: None,
                 openai: None,
@@ -263,6 +276,7 @@ impl Config {
                     self.providers.anthropic = Some(AnthropicConfig {
                         api_key: api_key.to_string(),
                         model: "claude-sonnet-4-20250514".to_string(),
+                        temperature: Some(0.0),
                     });
                 }
             }
@@ -273,6 +287,7 @@ impl Config {
                     self.providers.openai = Some(OpenAIConfig {
                         api_key: api_key.to_string(),
                         model: "gpt-4o".to_string(),
+                        temperature: Some(0.0),
                     });
                 }
             }
@@ -283,6 +298,7 @@ impl Config {
                     self.providers.openrouter = Some(OpenRouterConfig {
                         api_key: api_key.to_string(),
                         model: "anthropic/claude-sonnet-4-20250514".to_string(),
+                        temperature: Some(0.0),
                     });
                 }
             }
@@ -293,6 +309,7 @@ impl Config {
                     self.providers.glm = Some(GlmConfig {
                         api_key: api_key.to_string(),
                         model: "glm-4v".to_string(),
+                        temperature: Some(0.0),
                     });
                 }
             }

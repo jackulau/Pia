@@ -2234,7 +2234,20 @@
           </div>
           <div class="setting-group">
             <label class="setting-label">Model</label>
-            <input type="text" id="anthropic-model" class="setting-input" placeholder="claude-sonnet-4-20250514">
+            <div class="model-input-row">
+              <input type="text" id="anthropic-model" class="setting-input" placeholder="claude-sonnet-4-20250514" list="anthropic-model-list">
+              <datalist id="anthropic-model-list"></datalist>
+              <button class="refresh-models-btn" id="anthropic-refresh-models" title="Refresh models">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="setting-group">
+            <button class="test-connection-btn" id="anthropic-test-connection">Test Connection</button>
+            <span class="connection-status" id="anthropic-connection-status"></span>
           </div>
         </div>
         <div class="provider-settings hidden" id="openai-settings">
@@ -2244,7 +2257,20 @@
           </div>
           <div class="setting-group">
             <label class="setting-label">Model</label>
-            <input type="text" id="openai-model" class="setting-input" placeholder="gpt-4o">
+            <div class="model-input-row">
+              <input type="text" id="openai-model" class="setting-input" placeholder="gpt-4o" list="openai-model-list">
+              <datalist id="openai-model-list"></datalist>
+              <button class="refresh-models-btn" id="openai-refresh-models" title="Refresh models">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="setting-group">
+            <button class="test-connection-btn" id="openai-test-connection">Test Connection</button>
+            <span class="connection-status" id="openai-connection-status"></span>
           </div>
         </div>
         <div class="provider-settings hidden" id="openrouter-settings">
@@ -2254,7 +2280,20 @@
           </div>
           <div class="setting-group">
             <label class="setting-label">Model</label>
-            <input type="text" id="openrouter-model" class="setting-input" placeholder="anthropic/claude-sonnet-4-20250514">
+            <div class="model-input-row">
+              <input type="text" id="openrouter-model" class="setting-input" placeholder="anthropic/claude-sonnet-4-20250514" list="openrouter-model-list">
+              <datalist id="openrouter-model-list"></datalist>
+              <button class="refresh-models-btn" id="openrouter-refresh-models" title="Refresh models">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="setting-group">
+            <button class="test-connection-btn" id="openrouter-test-connection">Test Connection</button>
+            <span class="connection-status" id="openrouter-connection-status"></span>
           </div>
         </div>
         <div class="provider-settings hidden" id="glm-settings">
@@ -2264,7 +2303,20 @@
           </div>
           <div class="setting-group">
             <label class="setting-label">Model</label>
-            <input type="text" id="glm-model" class="setting-input" placeholder="glm-4v">
+            <div class="model-input-row">
+              <input type="text" id="glm-model" class="setting-input" placeholder="glm-4v" list="glm-model-list">
+              <datalist id="glm-model-list"></datalist>
+              <button class="refresh-models-btn" id="glm-refresh-models" title="Refresh models">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="setting-group">
+            <button class="test-connection-btn" id="glm-test-connection">Test Connection</button>
+            <span class="connection-status" id="glm-connection-status"></span>
           </div>
         </div>
         <div class="provider-settings hidden" id="openai-compatible-settings">
@@ -2321,6 +2373,14 @@
             <span class="speed-slider-value" id="speed-slider-value">1.0x</span>
           </div>
           <p class="setting-hint">Adjust agent action speed (0.25x slow - 3x fast)</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Temperature</label>
+          <div class="speed-slider-container">
+            <input type="range" id="temperature-slider" class="speed-slider" min="0" max="2" step="0.1" value="0.7">
+            <span class="speed-slider-value" id="temperature-slider-value">0.7</span>
+          </div>
+          <p class="setting-hint">Controls randomness of LLM responses (0 = deterministic, 2 = creative)</p>
         </div>
         <div class="setting-group">
           <label class="setting-checkbox">

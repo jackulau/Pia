@@ -115,6 +115,7 @@ impl AgentLoop {
                 Ok(Box::new(OllamaProvider::with_timeouts(
                     config.host.clone(),
                     config.model.clone(),
+                    config.temperature,
                     connect_timeout,
                     response_timeout,
                 )))
@@ -129,6 +130,7 @@ impl AgentLoop {
                 Ok(Box::new(AnthropicProvider::with_timeouts(
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                     connect_timeout,
                     response_timeout,
                 )))
@@ -143,6 +145,7 @@ impl AgentLoop {
                 Ok(Box::new(OpenAIProvider::with_timeouts(
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                     connect_timeout,
                     response_timeout,
                 )))
@@ -157,6 +160,7 @@ impl AgentLoop {
                 Ok(Box::new(OpenRouterProvider::with_timeouts(
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                     connect_timeout,
                     response_timeout,
                 )))
@@ -171,6 +175,7 @@ impl AgentLoop {
                 Ok(Box::new(GlmProvider::new(
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                 )))
             }
             "openai-compatible" => {
@@ -184,6 +189,7 @@ impl AgentLoop {
                     config.base_url.clone(),
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                 )))
             }
             _ => Err(LoopError::NoProvider),

@@ -12,6 +12,7 @@ pub struct GlmProvider {
     client: Client,
     api_key: String,
     model: String,
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -21,6 +22,8 @@ struct GlmRequest {
     messages: Vec<GlmMessage>,
     stream: bool,
     stream_options: StreamOptions,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -79,11 +82,12 @@ struct UsageInfo {
 }
 
 impl GlmProvider {
-    pub fn new(api_key: String, model: String) -> Self {
+    pub fn new(api_key: String, model: String, temperature: Option<f32>) -> Self {
         Self {
             client: Client::new(),
             api_key,
             model,
+            temperature,
         }
     }
 }
@@ -136,6 +140,7 @@ impl LlmProvider for GlmProvider {
             stream_options: StreamOptions {
                 include_usage: true,
             },
+            temperature: self.temperature,
         };
 
         let response = self

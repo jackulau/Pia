@@ -15,6 +15,7 @@ pub struct OpenRouterProvider {
     client: Client,
     api_key: String,
     model: String,
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -23,6 +24,8 @@ struct OpenRouterRequest {
     max_tokens: u32,
     messages: Vec<OpenRouterMessage>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -53,15 +56,16 @@ struct ImageUrl {
 }
 
 impl OpenRouterProvider {
-    pub fn new(api_key: String, model: String) -> Self {
+    pub fn new(api_key: String, model: String, temperature: Option<f32>) -> Self {
         Self {
             client: Client::new(),
             api_key,
             model,
+            temperature,
         }
     }
 
-    pub fn with_timeouts(api_key: String, model: String, connect_timeout: Duration, response_timeout: Duration) -> Self {
+    pub fn with_timeouts(api_key: String, model: String, temperature: Option<f32>, connect_timeout: Duration, response_timeout: Duration) -> Self {
         let client = Client::builder()
             .connect_timeout(connect_timeout)
             .timeout(response_timeout)
@@ -71,6 +75,7 @@ impl OpenRouterProvider {
             client,
             api_key,
             model,
+            temperature,
         }
     }
 }
@@ -120,6 +125,7 @@ impl LlmProvider for OpenRouterProvider {
             max_tokens: 1024,
             messages,
             stream: true,
+            temperature: self.temperature,
         };
 
         let response = self
