@@ -79,7 +79,7 @@ struct UsageInfo {
 }
 
 impl OpenAICompatibleProvider {
-    pub fn new(base_url: String, api_key: Option<String>, model: String) -> Self {
+    pub fn new(base_url: String, api_key: Option<String>, model: String, temperature: Option<f32>) -> Self {
         // Strip trailing slash for consistent URL building
         let base_url = base_url.trim_end_matches('/').to_string();
         Self {
@@ -87,7 +87,7 @@ impl OpenAICompatibleProvider {
             base_url,
             api_key,
             model,
-            temperature: None,
+            temperature,
         }
     }
 
@@ -260,14 +260,14 @@ mod tests {
     #[test]
     fn test_new_strips_trailing_slash() {
         let provider =
-            OpenAICompatibleProvider::new("http://localhost:1234/".to_string(), None, "model".to_string());
+            OpenAICompatibleProvider::new("http://localhost:1234/".to_string(), None, "model".to_string(), None);
         assert_eq!(provider.base_url, "http://localhost:1234");
     }
 
     #[test]
     fn test_new_no_trailing_slash() {
         let provider =
-            OpenAICompatibleProvider::new("http://localhost:1234".to_string(), None, "model".to_string());
+            OpenAICompatibleProvider::new("http://localhost:1234".to_string(), None, "model".to_string(), None);
         assert_eq!(provider.base_url, "http://localhost:1234");
     }
 
@@ -277,6 +277,7 @@ mod tests {
             "http://localhost:1234".to_string(),
             Some("sk-test-key".to_string()),
             "gpt-4".to_string(),
+            None,
         );
         assert_eq!(provider.api_key, Some("sk-test-key".to_string()));
         assert_eq!(provider.model, "gpt-4");
@@ -288,6 +289,7 @@ mod tests {
             "http://localhost:11434".to_string(),
             None,
             "llama3".to_string(),
+            None,
         );
         assert_eq!(provider.api_key, None);
         assert_eq!(provider.model, "llama3");
@@ -296,7 +298,7 @@ mod tests {
     #[test]
     fn test_name() {
         let provider =
-            OpenAICompatibleProvider::new("http://localhost:1234".to_string(), None, "model".to_string());
+            OpenAICompatibleProvider::new("http://localhost:1234".to_string(), None, "model".to_string(), None);
         assert_eq!(provider.name(), "openai-compatible");
     }
 
@@ -368,6 +370,7 @@ mod tests {
             "http://localhost:1234".to_string(),
             None,
             "model".to_string(),
+            None,
         );
         let url = format!("{}/v1/models", provider.base_url);
         assert_eq!(url, "http://localhost:1234/v1/models");
@@ -379,6 +382,7 @@ mod tests {
             "http://localhost:1234/".to_string(),
             None,
             "model".to_string(),
+            None,
         );
         let url = format!("{}/v1/models", provider.base_url);
         assert_eq!(url, "http://localhost:1234/v1/models");

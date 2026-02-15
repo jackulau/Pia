@@ -83,12 +83,12 @@ struct UsageInfo {
 }
 
 impl GlmProvider {
-    pub fn new(api_key: String, model: String) -> Self {
+    pub fn new(api_key: String, model: String, temperature: Option<f32>) -> Self {
         Self {
             client: Client::new(),
             api_key,
             model,
-            temperature: None,
+            temperature,
         }
     }
 

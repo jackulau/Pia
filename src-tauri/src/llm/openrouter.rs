@@ -56,16 +56,16 @@ struct ImageUrl {
 }
 
 impl OpenRouterProvider {
-    pub fn new(api_key: String, model: String) -> Self {
+    pub fn new(api_key: String, model: String, temperature: Option<f32>) -> Self {
         Self {
             client: Client::new(),
             api_key,
             model,
-            temperature: None,
+            temperature,
         }
     }
 
-    pub fn with_timeouts(api_key: String, model: String, connect_timeout: Duration, response_timeout: Duration) -> Self {
+    pub fn with_timeouts(api_key: String, model: String, temperature: Option<f32>, connect_timeout: Duration, response_timeout: Duration) -> Self {
         let client = Client::builder()
             .connect_timeout(connect_timeout)
             .timeout(response_timeout)
@@ -75,7 +75,7 @@ impl OpenRouterProvider {
             client,
             api_key,
             model,
-            temperature: None,
+            temperature,
         }
     }
 

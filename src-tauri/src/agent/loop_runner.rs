@@ -118,9 +118,10 @@ impl AgentLoop {
                 Ok(Box::new(OllamaProvider::with_timeouts(
                     config.host.clone(),
                     config.model.clone(),
+                    config.temperature,
                     connect_timeout,
                     response_timeout,
-                ).with_temperature(config.temperature)))
+                )))
             }
             "anthropic" => {
                 let config = self
@@ -132,9 +133,10 @@ impl AgentLoop {
                 Ok(Box::new(AnthropicProvider::with_timeouts(
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                     connect_timeout,
                     response_timeout,
-                ).with_temperature(config.temperature)))
+                )))
             }
             "openai" => {
                 let config = self
@@ -146,9 +148,10 @@ impl AgentLoop {
                 Ok(Box::new(OpenAIProvider::with_timeouts(
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                     connect_timeout,
                     response_timeout,
-                ).with_temperature(config.temperature)))
+                )))
             }
             "openrouter" => {
                 let config = self
@@ -160,9 +163,10 @@ impl AgentLoop {
                 Ok(Box::new(OpenRouterProvider::with_timeouts(
                     config.api_key.clone(),
                     config.model.clone(),
+                    config.temperature,
                     connect_timeout,
                     response_timeout,
-                ).with_temperature(config.temperature)))
+                )))
             }
             "glm" => {
                 let config = self
@@ -174,7 +178,8 @@ impl AgentLoop {
                 Ok(Box::new(GlmProvider::new(
                     config.api_key.clone(),
                     config.model.clone(),
-                ).with_temperature(config.temperature)))
+                    config.temperature,
+                )))
             }
             "openai-compatible" => {
                 let config = self
@@ -187,7 +192,8 @@ impl AgentLoop {
                     config.base_url.clone(),
                     config.api_key.clone(),
                     config.model.clone(),
-                ).with_temperature(config.temperature)))
+                    config.temperature,
+                )))
             }
             _ => Err(LoopError::NoProvider),
         }

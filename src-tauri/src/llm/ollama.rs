@@ -54,16 +54,16 @@ struct OllamaChatMessageResponse {
 }
 
 impl OllamaProvider {
-    pub fn new(host: String, model: String) -> Self {
+    pub fn new(host: String, model: String, temperature: Option<f32>) -> Self {
         Self {
             client: Client::new(),
             host,
             model,
-            temperature: None,
+            temperature,
         }
     }
 
-    pub fn with_timeouts(host: String, model: String, connect_timeout: Duration, response_timeout: Duration) -> Self {
+    pub fn with_timeouts(host: String, model: String, temperature: Option<f32>, connect_timeout: Duration, response_timeout: Duration) -> Self {
         let client = Client::builder()
             .connect_timeout(connect_timeout)
             .timeout(response_timeout)
@@ -73,7 +73,7 @@ impl OllamaProvider {
             client,
             host,
             model,
-            temperature: None,
+            temperature,
         }
     }
 
@@ -416,20 +416,20 @@ mod tests {
 
     #[test]
     fn test_provider_name() {
-        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string());
+        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string(), None);
         assert_eq!(provider.name(), "ollama");
     }
 
     #[test]
     fn test_chat_request_uses_correct_endpoint() {
-        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string());
+        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string(), None);
         let expected = format!("{}/api/chat", provider.host);
         assert_eq!(expected, "http://localhost:11434/api/chat");
     }
 
     #[test]
     fn test_health_check_url() {
-        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string());
+        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string(), None);
         let url = format!("{}/api/tags", provider.host);
         assert_eq!(url, "http://localhost:11434/api/tags");
     }

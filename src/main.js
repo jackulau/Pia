@@ -331,6 +331,17 @@ function updateSettingsUI() {
     agentSpeedValue.textContent = `${speedMultiplier.toFixed(1)}x`;
   }
 
+  // Set temperature
+  const temperature = currentConfig.general.temperature != null ? currentConfig.general.temperature : 0.7;
+  const tempSlider = document.getElementById('temperature-slider');
+  const tempSliderValue = document.getElementById('temperature-slider-value');
+  if (tempSlider) {
+    tempSlider.value = temperature;
+  }
+  if (tempSliderValue) {
+    tempSliderValue.textContent = temperature.toFixed(1);
+  }
+
   // Set safety settings
   confirmDangerous.checked = currentConfig.general.confirm_dangerous_actions;
 
@@ -667,12 +678,79 @@ function setupEventListeners() {
     } catch (e) { showToast('Save failed: ' + e, 'error'); }
   });
 
+  // Anthropic test connection and refresh models
+  document.getElementById('anthropic-test-connection')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await testConnection('anthropic', document.getElementById('anthropic-connection-status'), this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+  document.getElementById('anthropic-refresh-models')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await refreshModels('anthropic', 'anthropic-model-list', 'anthropic-model', this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+
+  // OpenAI test connection and refresh models
+  document.getElementById('openai-test-connection')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await testConnection('openai', document.getElementById('openai-connection-status'), this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+  document.getElementById('openai-refresh-models')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await refreshModels('openai', 'openai-model-list', 'openai-model', this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+
+  // OpenRouter test connection and refresh models
+  document.getElementById('openrouter-test-connection')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await testConnection('openrouter', document.getElementById('openrouter-connection-status'), this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+  document.getElementById('openrouter-refresh-models')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await refreshModels('openrouter', 'openrouter-model-list', 'openrouter-model', this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+
+  // GLM test connection and refresh models
+  document.getElementById('glm-test-connection')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await testConnection('glm', document.getElementById('glm-connection-status'), this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+  document.getElementById('glm-refresh-models')?.addEventListener('click', async function() {
+    try {
+      await saveConfigQuiet();
+      await refreshModels('glm', 'glm-model-list', 'glm-model', this);
+    } catch (e) { showToast('Save failed: ' + e, 'error'); }
+  });
+
   // Speed slider
   speedSlider.addEventListener('input', (e) => {
     const value = Math.min(3.0, Math.max(0.25, parseFloat(e.target.value)));
     e.target.value = value;
     speedSliderValue.textContent = `${value.toFixed(2)}x`;
   });
+
+  // Temperature slider
+  const temperatureSlider = document.getElementById('temperature-slider');
+  const temperatureSliderValue = document.getElementById('temperature-slider-value');
+  if (temperatureSlider) {
+    temperatureSlider.addEventListener('input', (e) => {
+      const value = Math.min(2.0, Math.max(0, parseFloat(e.target.value)));
+      e.target.value = value;
+      temperatureSliderValue.textContent = value.toFixed(1);
+    });
+  }
 
   // Save settings
   saveSettingsBtn.addEventListener('click', saveSettings);
@@ -1590,32 +1668,39 @@ async function saveConfigQuiet() {
       queue_failure_mode: queueFailureMode ? queueFailureMode.value : 'stop',
       queue_delay_ms: queueDelay ? parseInt(queueDelay.value, 10) || 500 : 500,
       speed_multiplier: speedSlider ? Math.min(3.0, Math.max(0.25, parseFloat(speedSlider.value))) : 1.0,
+      temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
     },
     providers: {
       ollama: {
         host: document.getElementById('ollama-host').value || 'http://localhost:11434',
         model: document.getElementById('ollama-model').value || 'llava',
+        temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
       },
       anthropic: document.getElementById('anthropic-key').value ? {
         api_key: document.getElementById('anthropic-key').value,
         model: document.getElementById('anthropic-model').value || 'claude-sonnet-4-20250514',
+        temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
       } : null,
       openai: document.getElementById('openai-key').value ? {
         api_key: document.getElementById('openai-key').value,
         model: document.getElementById('openai-model').value || 'gpt-4o',
+        temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
       } : null,
       openrouter: document.getElementById('openrouter-key').value ? {
         api_key: document.getElementById('openrouter-key').value,
         model: document.getElementById('openrouter-model').value || 'anthropic/claude-sonnet-4-20250514',
+        temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
       } : null,
       glm: document.getElementById('glm-key').value ? {
         api_key: document.getElementById('glm-key').value,
         model: document.getElementById('glm-model').value || 'glm-4v',
+        temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
       } : null,
       openai_compatible: document.getElementById('openai-compatible-url').value ? {
         base_url: document.getElementById('openai-compatible-url').value,
         api_key: document.getElementById('openai-compatible-key').value || null,
         model: document.getElementById('openai-compatible-model').value || 'default',
+        temperature: document.getElementById('temperature-slider') ? parseFloat(document.getElementById('temperature-slider').value) : null,
       } : null,
     },
   };

@@ -840,6 +840,7 @@ fn create_provider_from_config(
             Ok(Box::new(OllamaProvider::new(
                 cfg.host.clone(),
                 cfg.model.clone(),
+                cfg.temperature,
             )))
         }
         "anthropic" => {
@@ -851,6 +852,7 @@ fn create_provider_from_config(
             Ok(Box::new(AnthropicProvider::new(
                 cfg.api_key.clone(),
                 cfg.model.clone(),
+                cfg.temperature,
             )))
         }
         "openai" => {
@@ -862,6 +864,7 @@ fn create_provider_from_config(
             Ok(Box::new(OpenAIProvider::new(
                 cfg.api_key.clone(),
                 cfg.model.clone(),
+                cfg.temperature,
             )))
         }
         "openrouter" => {
@@ -873,6 +876,7 @@ fn create_provider_from_config(
             Ok(Box::new(OpenRouterProvider::new(
                 cfg.api_key.clone(),
                 cfg.model.clone(),
+                cfg.temperature,
             )))
         }
         "glm" => {
@@ -884,6 +888,7 @@ fn create_provider_from_config(
             Ok(Box::new(GlmProvider::new(
                 cfg.api_key.clone(),
                 cfg.model.clone(),
+                cfg.temperature,
             )))
         }
         "openai-compatible" => {
@@ -896,6 +901,7 @@ fn create_provider_from_config(
                 cfg.base_url.clone(),
                 cfg.api_key.clone(),
                 cfg.model.clone(),
+                cfg.temperature,
             )))
         }
         _ => Err(format!("Unknown provider: {}", provider_name)),

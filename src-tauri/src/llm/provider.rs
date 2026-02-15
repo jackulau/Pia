@@ -210,6 +210,85 @@ pub fn build_tools() -> Vec<Tool> {
             }),
         },
         Tool {
+            name: "drag".to_string(),
+            description: "Click and drag from one position to another. Use for moving files, resizing windows, adjusting sliders, or selecting text.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "start_x": { "type": "integer", "description": "X coordinate of drag start" },
+                    "start_y": { "type": "integer", "description": "Y coordinate of drag start" },
+                    "end_x": { "type": "integer", "description": "X coordinate of drag end" },
+                    "end_y": { "type": "integer", "description": "Y coordinate of drag end" },
+                    "button": { "type": "string", "enum": ["left", "right", "middle"], "default": "left", "description": "Mouse button" },
+                    "duration_ms": { "type": "integer", "default": 500, "description": "Drag duration in ms (max 5000)" }
+                },
+                "required": ["start_x", "start_y", "end_x", "end_y"]
+            }),
+        },
+        Tool {
+            name: "triple_click".to_string(),
+            description: "Triple click at coordinates to select an entire line of text".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": { "type": "integer", "description": "X coordinate" },
+                    "y": { "type": "integer", "description": "Y coordinate" }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "right_click".to_string(),
+            description: "Right click at coordinates to open a context menu".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "x": { "type": "integer", "description": "X coordinate" },
+                    "y": { "type": "integer", "description": "Y coordinate" }
+                },
+                "required": ["x", "y"]
+            }),
+        },
+        Tool {
+            name: "wait".to_string(),
+            description: "Wait/pause execution. Useful when waiting for UI to load or animations to complete.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "duration_ms": { "type": "integer", "default": 1000, "description": "Duration to wait in milliseconds" }
+                },
+                "required": []
+            }),
+        },
+        Tool {
+            name: "wait_for_element".to_string(),
+            description: "Wait for a UI element or screen change before proceeding. Use after clicking buttons that trigger loading or navigating to new pages.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "description": { "type": "string", "description": "What to wait for (e.g., 'page to load')" },
+                    "timeout_ms": { "type": "integer", "default": 5000, "description": "Max wait time in ms (max 10000)" }
+                },
+                "required": ["description"]
+            }),
+        },
+        Tool {
+            name: "batch".to_string(),
+            description: "Execute multiple actions in sequence without intermediate screenshots. Max 10 actions. Stops on first failure.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "actions": {
+                        "type": "array",
+                        "description": "Array of action objects to execute in sequence",
+                        "items": { "type": "object" },
+                        "maxItems": 10
+                    }
+                },
+                "required": ["actions"]
+            }),
+        },
+        Tool {
             name: "complete".to_string(),
             description: "Mark the task as completed successfully".to_string(),
             input_schema: json!({
@@ -550,7 +629,20 @@ If an action consistently fails, try:
 - Using a different approach (e.g., keyboard navigation instead of clicking)
 - Waiting longer for elements to load by trying again
 
-Respond with ONLY the JSON action, no other text."#
+You may think briefly about what you see and what action to take, then respond with a JSON action.
+Format: optional reasoning text, followed by the JSON object. Example:
+
+I can see the search bar at the top of the page. I'll click on it to start typing.
+{{"action": "click", "x": 540, "y": 35}}
+
+If an action doesn't seem to work or the screen hasn't changed:
+- Try slightly different coordinates (UI elements may have shifted)
+- Try keyboard navigation instead of clicking a menu
+- Scroll to find elements that may be off-screen
+- Wait briefly for slow-loading UI: {{"action": "wait", "duration_ms": 2000}}
+- If truly stuck after multiple attempts, report: {{"action": "error", "message": "description"}}
+
+Your response must contain exactly one JSON action object."#
     )
 }
 
