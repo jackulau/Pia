@@ -1,7 +1,0 @@
-id: contrast-fix
-status: complete
-branch: pia/contrast-fix
-worktree_path: null
-completed_at: 2026-02-08T03:57:57Z
-commit_sha: 8ab5deb7d33ea073cafa6e98b497d090180626ea
-tests_passing: true

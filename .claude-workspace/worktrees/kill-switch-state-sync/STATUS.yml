@@ -1,7 +1,0 @@
-id: kill-switch-state-sync
-status: complete
-branch: pia/kill-switch-state-sync
-worktree_path: null
-completed_at: 2026-02-08T03:57:57Z
-commit_sha: 68b554bbd3ccf69bd26758051dce7358c1bb70be
-tests_passing: true

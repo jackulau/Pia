@@ -1,7 +1,0 @@
-id: fix-recording-mode-label
-status: complete
-branch: pia/fix-recording-mode-label
-worktree_path: null
-completed_at: 2026-02-08T03:57:57Z
-commit_sha: ed0f2a84ed0d1e1cd688efba6ce3d042c19933b3
-tests_passing: true

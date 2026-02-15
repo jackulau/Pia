@@ -1,7 +1,0 @@
-id: fix-queue-debounce
-status: complete
-branch: pia/fix-queue-debounce
-worktree_path: null
-completed_at: 2026-02-08T03:57:57Z
-commit_sha: fd7942c0c997293d5e39cf1c3b79f737595de737
-tests_passing: true
