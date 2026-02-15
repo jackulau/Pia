@@ -1,3 +1,4 @@
+use crate::capture::{capture_primary_screen, Screenshot};
 use crate::input::{
     is_dangerous_key_combination, parse_key, parse_modifier, KeyboardController, Modifier,
     MouseButton, MouseController, ScrollDirection,
@@ -23,6 +24,20 @@ pub enum ActionError {
     UnknownAction(String),
     #[error("Retry error: {0}")]
     RetryError(#[from] RetryError),
+}
+
+impl ActionError {
+    /// Returns true if this error is recoverable and the agent loop should continue
+    pub fn is_recoverable(&self) -> bool {
+        match self {
+            ActionError::MouseError(_) => true,
+            ActionError::KeyboardError(_) => true,
+            ActionError::RetryError(_) => true,
+            ActionError::ParseError(_) => false,
+            ActionError::RequiresConfirmation(_) => false,
+            ActionError::UnknownAction(_) => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -201,7 +216,7 @@ pub struct ParsedResponse {
 /// Parse an action from an LLM response (either tool_use or text)
 pub fn parse_llm_response(response: &LlmResponse) -> Result<Action, ActionError> {
     match response {
-        LlmResponse::ToolUse(tool_use) => from_tool_use(tool_use),
+        LlmResponse::ToolUse { tool_use, .. } => from_tool_use(tool_use),
         LlmResponse::Text(text) => {
             let parsed = parse_action(text)?;
             Ok(parsed.action)
@@ -209,15 +224,20 @@ pub fn parse_llm_response(response: &LlmResponse) -> Result<Action, ActionError>
     }
 }
 
-/// Parse an action from an LLM response with reasoning extraction
+/// Parse an action from an LLM response with reasoning extraction (unified for both variants)
 pub fn parse_llm_response_with_reasoning(response: &LlmResponse) -> Result<ParsedResponse, ActionError> {
     match response {
-        LlmResponse::ToolUse(tool_use) => {
+        LlmResponse::ToolUse { tool_use, reasoning } => {
             let action = from_tool_use(tool_use)?;
-            Ok(ParsedResponse { action, reasoning: None })
+            Ok(ParsedResponse { action, reasoning: reasoning.clone() })
         }
         LlmResponse::Text(text) => parse_action(text),
     }
+}
+
+/// Unified response parsing that works for both ToolUse and Text variants
+pub fn parse_llm_response_unified(response: &LlmResponse) -> Result<ParsedResponse, ActionError> {
+    parse_llm_response_with_reasoning(response)
 }
 
 /// Parse an action from a native tool_use response
@@ -327,8 +347,27 @@ pub fn parse_action(response: &str) -> Result<ParsedResponse, ActionError> {
     // Try to find JSON in the response
     let json_str = extract_json(response)?;
 
-    let action = serde_json::from_str(&json_str)
-        .map_err(|e| ActionError::ParseError(format!("Invalid JSON: {} in '{}'", e, json_str)))?;
+    // Parse into Value first for case-insensitive action name normalization
+    let mut value: serde_json::Value = serde_json::from_str(&json_str)
+        .map_err(|e| ActionError::ParseError(format!("Invalid JSON: {}", e)))?;
+
+    // Normalize action name to snake_case lowercase
+    if let Some(action_val) = value.get_mut("action") {
+        if let Some(action_str) = action_val.as_str() {
+            let normalized = action_str.to_lowercase();
+            let normalized = match normalized.as_str() {
+                "doubleclick" => "double_click",
+                "tripleclick" => "triple_click",
+                "rightclick" => "right_click",
+                "waitforelement" => "wait_for_element",
+                other => other,
+            };
+            *action_val = serde_json::Value::String(normalized.to_string());
+        }
+    }
+
+    let action: Action = serde_json::from_value(value)
+        .map_err(|e| ActionError::ParseError(format!("Invalid action: {}", e)))?;
 
     Ok(ParsedResponse { action, reasoning })
 }
@@ -359,21 +398,34 @@ fn extract_reasoning(text: &str) -> Option<String> {
 }
 
 fn extract_json(text: &str) -> Result<String, ActionError> {
-    // Find the first { and matching }
     let start = text
         .find('{')
         .ok_or_else(|| ActionError::ParseError("No JSON object found".to_string()))?;
 
     let mut depth = 0;
+    let mut in_string = false;
+    let mut escape_next = false;
     let mut end = start;
 
     for (i, c) in text[start..].char_indices() {
+        if escape_next {
+            escape_next = false;
+            continue;
+        }
         match c {
-            '{' => depth += 1,
-            '}' => {
+            '\\' if in_string => {
+                escape_next = true;
+            }
+            '"' => {
+                in_string = !in_string;
+            }
+            '{' if !in_string => {
+                depth += 1;
+            }
+            '}' if !in_string => {
                 depth -= 1;
                 if depth == 0 {
-                    end = start + i + 1;
+                    end = start + i + c.len_utf8();
                     break;
                 }
             }
@@ -382,7 +434,7 @@ fn extract_json(text: &str) -> Result<String, ActionError> {
     }
 
     if depth != 0 {
-        return Err(ActionError::ParseError("Unbalanced braces".to_string()));
+        return Err(ActionError::ParseError("Unbalanced braces in JSON".to_string()));
     }
 
     Ok(text[start..end].to_string())
@@ -821,12 +873,48 @@ pub async fn execute_action_with_delay(
             let timeout = timeout_ms.unwrap_or(5000).min(10000);
             log::info!("Waiting for: {} (timeout: {}ms)", description, timeout);
 
-            tokio::time::sleep(Duration::from_millis(timeout as u64)).await;
+            // Capture baseline screenshot for change detection
+            let baseline = tokio::task::spawn_blocking(capture_primary_screen)
+                .await
+                .map_err(|e| ActionError::MouseError(crate::input::MouseError::ActionError(e.to_string())))?;
+
+            let poll_interval = Duration::from_millis(750);
+            let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout as u64);
+            let mut changed = false;
+
+            match baseline {
+                Ok(baseline_shot) => {
+                    while tokio::time::Instant::now() < deadline {
+                        tokio::time::sleep(poll_interval).await;
+
+                        let current = tokio::task::spawn_blocking(capture_primary_screen)
+                            .await
+                            .map_err(|e| ActionError::MouseError(crate::input::MouseError::ActionError(e.to_string())))?;
+
+                        if let Ok(current_shot) = current {
+                            if screenshots_differ(&baseline_shot, &current_shot) {
+                                changed = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(_) => {
+                    // If we can't capture baseline, just wait the full timeout
+                    tokio::time::sleep(Duration::from_millis(timeout as u64)).await;
+                }
+            }
+
+            let msg = if changed {
+                format!("Screen changed while waiting for: {}", description)
+            } else {
+                format!("Timed out waiting for: {} ({}ms)", description, timeout)
+            };
 
             Ok(ActionResult {
                 success: true,
                 completed: false,
-                message: Some(format!("Waited for: {}", description)),
+                message: Some(msg),
                 retry_count: 0,
                 action_type: "wait_for_element".to_string(),
                 details: None,
@@ -834,6 +922,27 @@ pub async fn execute_action_with_delay(
             })
         }
     }
+}
+
+/// Compare two screenshots to detect if the screen changed.
+pub(crate) fn screenshots_differ(a: &Screenshot, b: &Screenshot) -> bool {
+    if a.width != b.width || a.height != b.height {
+        return true;
+    }
+    a.base64 != b.base64
+}
+
+/// Clamp coordinates to non-negative values and log warnings for suspicious values
+fn clamp_coordinates(x: i32, y: i32) -> (i32, i32) {
+    let clamped_x = x.max(0);
+    let clamped_y = y.max(0);
+    if x < 0 || y < 0 {
+        log::warn!("Negative coordinates detected: ({}, {}), clamped to ({}, {})", x, y, clamped_x, clamped_y);
+    }
+    if x > 10000 || y > 10000 {
+        log::warn!("Suspiciously large coordinates: ({}, {})", x, y);
+    }
+    (clamped_x, clamped_y)
 }
 
 fn truncate_string(s: &str, max_len: usize) -> String {
@@ -1479,11 +1588,14 @@ mod tests {
 
     #[test]
     fn test_parse_llm_response_tool_use_path() {
-        let response = LlmResponse::ToolUse(ToolUse {
-            id: "tool_1".to_string(),
-            name: "click".to_string(),
-            input: json!({"x": 100, "y": 200}),
-        });
+        let response = LlmResponse::ToolUse {
+            tool_use: ToolUse {
+                id: "tool_1".to_string(),
+                name: "click".to_string(),
+                input: json!({"x": 100, "y": 200}),
+            },
+            reasoning: None,
+        };
         let action = parse_llm_response(&response).unwrap();
         match action {
             Action::Click { x, y, button } => {
@@ -1507,11 +1619,14 @@ mod tests {
 
     #[test]
     fn test_parse_llm_response_tool_use_no_reasoning() {
-        let response = LlmResponse::ToolUse(ToolUse {
-            id: "tool_2".to_string(),
-            name: "complete".to_string(),
-            input: json!({"message": "done"}),
-        });
+        let response = LlmResponse::ToolUse {
+            tool_use: ToolUse {
+                id: "tool_2".to_string(),
+                name: "complete".to_string(),
+                input: json!({"message": "done"}),
+            },
+            reasoning: None,
+        };
         let parsed = parse_llm_response_with_reasoning(&response).unwrap();
         assert!(parsed.reasoning.is_none());
         assert!(matches!(parsed.action, Action::Complete { .. }));
@@ -1844,11 +1959,14 @@ mod tests {
 
     #[test]
     fn test_llm_response_to_string_repr_tool_use() {
-        let resp = LlmResponse::ToolUse(ToolUse {
-            id: "id1".to_string(),
-            name: "click".to_string(),
-            input: json!({"x": 1, "y": 2}),
-        });
+        let resp = LlmResponse::ToolUse {
+            tool_use: ToolUse {
+                id: "id1".to_string(),
+                name: "click".to_string(),
+                input: json!({"x": 1, "y": 2}),
+            },
+            reasoning: None,
+        };
         let repr = resp.to_string_repr();
         let parsed: Value = serde_json::from_str(&repr).unwrap();
         assert_eq!(parsed["name"], "click");
@@ -1868,10 +1986,10 @@ mod tests {
     #[test]
     fn test_parse_action_wrong_case_action_type() {
         // Local LLMs sometimes produce "Click" instead of "click"
-        // serde rename_all = "snake_case" won't match "Click" - this should fail
+        // Case-insensitive normalization now handles this gracefully
         let input = r#"{"action": "Click", "x": 100, "y": 200}"#;
-        let result = parse_action(input);
-        assert!(result.is_err());
+        let parsed = parse_action(input).unwrap();
+        assert!(matches!(parsed.action, Action::Click { x: 100, y: 200, .. }));
     }
 
     #[test]

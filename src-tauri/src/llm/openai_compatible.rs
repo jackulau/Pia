@@ -1,6 +1,6 @@
 use super::provider::{
-    build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse,
-    TokenMetrics,
+    build_system_prompt, build_system_prompt_with_context, history_to_messages, ChunkCallback,
+    LlmError, LlmProvider, LlmResponse, TokenMetrics,
 };
 use serde_json::Value;
 use crate::agent::conversation::ConversationHistory;
@@ -98,7 +98,14 @@ impl LlmProvider for OpenAICompatibleProvider {
         on_chunk: ChunkCallback,
     ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt(screen_width, screen_height);
+        let instruction = history.original_instruction().map(|s| s.to_string());
+        let system_prompt = build_system_prompt_with_context(
+            screen_width,
+            screen_height,
+            instruction.as_deref(),
+            history.iteration,
+            history.max_iterations,
+        );
 
         let mut messages = vec![ChatMessage {
             role: "system".to_string(),
