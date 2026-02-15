@@ -1,0 +1,11 @@
+id: fix-tool-parity
+status: complete
+branch: Pia/fix-tool-parity
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/fix-tool-parity/worktree
+assigned_to: 14308
+started_at: 2026-02-12T03:36:30Z
+completed_at: 2026-02-12T04:15:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: 9e7d91cd52b9980e6c01c6689dad9afc9963bbdc
+tests_passing: true

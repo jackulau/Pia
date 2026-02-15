@@ -1,0 +1,7 @@
+id: missing-hover-states
+status: complete
+branch: pia/missing-hover-states
+worktree_path: null
+completed_at: 2026-02-08T03:57:57Z
+commit_sha: 587b054941b4e39c35d71a63a146179e031c61c6
+tests_passing: true

@@ -1,0 +1,11 @@
+id: windows-credential-paths
+status: in_progress
+branch: Pia/windows-credential-paths
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/windows-credential-paths/worktree
+assigned_to: 19777
+started_at: 2026-02-12T03:37:57Z
+completed_at: null
+dependencies_met: true
+conflicts: []
+commit_sha: null
+tests_passing: null

@@ -1,0 +1,11 @@
+id: add-tool-calling-tests
+status: complete
+branch: Pia/add-tool-calling-tests
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/add-tool-calling-tests/worktree
+assigned_to: 94127
+started_at: 2026-02-13T18:35:39Z
+completed_at: 2026-02-13T18:40:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: 93e9fd0a8ce447ad3659519f591909312031d395
+tests_passing: true

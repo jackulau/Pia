@@ -79,6 +79,20 @@ pub struct GeneralConfig {
     pub connect_timeout_secs: u64,
     #[serde(default = "default_response_timeout_secs")]
     pub response_timeout_secs: u64,
+    #[serde(default)]
+    pub temperature: Option<f32>,
+    #[serde(default = "default_screenshot_quality")]
+    pub screenshot_quality: u8,
+    #[serde(default = "default_screenshot_max_width")]
+    pub screenshot_max_width: u32,
+}
+
+fn default_screenshot_quality() -> u8 {
+    80
+}
+
+fn default_screenshot_max_width() -> u32 {
+    1920
 }
 
 fn default_global_hotkey() -> Option<String> {
@@ -149,30 +163,40 @@ pub struct ProvidersConfig {
 pub struct OllamaConfig {
     pub host: String,
     pub model: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnthropicConfig {
     pub api_key: String,
     pub model: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenAIConfig {
     pub api_key: String,
     pub model: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenRouterConfig {
     pub api_key: String,
     pub model: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlmConfig {
     pub api_key: String,
     pub model: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,6 +205,8 @@ pub struct OpenAICompatibleConfig {
     #[serde(default)]
     pub api_key: Option<String>,
     pub model: String,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 impl Default for Config {
@@ -205,11 +231,15 @@ impl Default for Config {
                 voice_language: "en-US".to_string(),
                 connect_timeout_secs: default_connect_timeout_secs(),
                 response_timeout_secs: default_response_timeout_secs(),
+                temperature: None,
+                screenshot_quality: default_screenshot_quality(),
+                screenshot_max_width: default_screenshot_max_width(),
             },
             providers: ProvidersConfig {
                 ollama: Some(OllamaConfig {
                     host: "http://localhost:11434".to_string(),
                     model: "llava".to_string(),
+                    temperature: None,
                 }),
                 anthropic: None,
                 openai: None,
@@ -263,6 +293,7 @@ impl Config {
                     self.providers.anthropic = Some(AnthropicConfig {
                         api_key: api_key.to_string(),
                         model: "claude-sonnet-4-20250514".to_string(),
+                        temperature: None,
                     });
                 }
             }
@@ -273,6 +304,7 @@ impl Config {
                     self.providers.openai = Some(OpenAIConfig {
                         api_key: api_key.to_string(),
                         model: "gpt-4o".to_string(),
+                        temperature: None,
                     });
                 }
             }
@@ -283,6 +315,7 @@ impl Config {
                     self.providers.openrouter = Some(OpenRouterConfig {
                         api_key: api_key.to_string(),
                         model: "anthropic/claude-sonnet-4-20250514".to_string(),
+                        temperature: None,
                     });
                 }
             }
@@ -293,6 +326,7 @@ impl Config {
                     self.providers.glm = Some(GlmConfig {
                         api_key: api_key.to_string(),
                         model: "glm-4v".to_string(),
+                        temperature: None,
                     });
                 }
             }

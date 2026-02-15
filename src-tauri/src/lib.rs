@@ -810,6 +810,7 @@ async fn apply_detected_credential(
         config.providers.ollama = Some(config::OllamaConfig {
             host,
             model,
+            temperature: Some(0.0),
         });
         config.general.default_provider = "ollama".to_string();
     } else {

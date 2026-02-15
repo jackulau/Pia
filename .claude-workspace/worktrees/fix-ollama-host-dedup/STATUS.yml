@@ -1,0 +1,11 @@
+id: fix-ollama-host-dedup
+status: in_progress
+branch: Pia/fix-ollama-host-dedup
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/fix-ollama-host-dedup/worktree
+assigned_to: 14270
+started_at: 2026-02-12T03:36:25Z
+completed_at: null
+dependencies_met: true
+conflicts: []
+commit_sha: null
+tests_passing: null

@@ -1,0 +1,11 @@
+id: windows-bundle-config
+status: complete
+branch: Pia/windows-bundle-config
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/windows-bundle-config/worktree
+assigned_to: 18455
+started_at: 2026-02-12T03:37:37Z
+completed_at: 2026-02-12T03:38:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: 864130e99b792b787140ecac76577f671cfb7804
+tests_passing: true

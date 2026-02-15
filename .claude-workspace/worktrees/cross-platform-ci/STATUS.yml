@@ -1,0 +1,12 @@
+id: cross-platform-ci
+status: blocked
+branch: Pia/cross-platform-ci
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/cross-platform-ci/worktree
+assigned_to: 65874
+started_at: 2026-02-12T04:35:54Z
+completed_at: null
+dependencies_met: true
+conflicts: []
+commit_sha: e9889faaaa6d8af6fddce8f61539a89ccca6172a
+tests_passing: null
+notes: "Commit ready locally. Push blocked: GitHub PAT needs 'workflow' scope to push .github/workflows/ files."

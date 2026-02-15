@@ -1,4 +1,5 @@
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+use std::cell::RefCell;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -11,8 +12,12 @@ pub enum KeyboardError {
     UnknownKey(String),
 }
 
+thread_local! {
+    static THREAD_KEYBOARD_ENIGO: RefCell<Option<Enigo>> = RefCell::new(None);
+}
+
 pub struct KeyboardController {
-    enigo: Enigo,
+    enigo: Option<Enigo>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,31 +30,42 @@ pub enum Modifier {
 
 impl KeyboardController {
     pub fn new() -> Result<Self, KeyboardError> {
-        let enigo = Enigo::new(&Settings::default())
-            .map_err(|e| KeyboardError::InitError(e.to_string()))?;
-        Ok(Self { enigo })
+        let enigo = THREAD_KEYBOARD_ENIGO.with(|cell| {
+            let mut opt = cell.borrow_mut();
+            if let Some(existing) = opt.take() {
+                Ok(existing)
+            } else {
+                Enigo::new(&Settings::default())
+                    .map_err(|e| KeyboardError::InitError(e.to_string()))
+            }
+        })?;
+        Ok(Self { enigo: Some(enigo) })
+    }
+
+    fn enigo(&mut self) -> &mut Enigo {
+        self.enigo.as_mut().unwrap()
     }
 
     pub fn type_text(&mut self, text: &str) -> Result<(), KeyboardError> {
-        self.enigo
+        self.enigo()
             .text(text)
             .map_err(|e| KeyboardError::ActionError(e.to_string()))
     }
 
     pub fn key_press(&mut self, key: Key) -> Result<(), KeyboardError> {
-        self.enigo
+        self.enigo()
             .key(key, Direction::Click)
             .map_err(|e| KeyboardError::ActionError(e.to_string()))
     }
 
     pub fn key_down(&mut self, key: Key) -> Result<(), KeyboardError> {
-        self.enigo
+        self.enigo()
             .key(key, Direction::Press)
             .map_err(|e| KeyboardError::ActionError(e.to_string()))
     }
 
     pub fn key_up(&mut self, key: Key) -> Result<(), KeyboardError> {
-        self.enigo
+        self.enigo()
             .key(key, Direction::Release)
             .map_err(|e| KeyboardError::ActionError(e.to_string()))
     }
@@ -76,6 +92,16 @@ impl KeyboardController {
         }
 
         Ok(())
+    }
+}
+
+impl Drop for KeyboardController {
+    fn drop(&mut self) {
+        if let Some(enigo) = self.enigo.take() {
+            THREAD_KEYBOARD_ENIGO.with(|cell| {
+                *cell.borrow_mut() = Some(enigo);
+            });
+        }
     }
 }
 
@@ -186,9 +212,7 @@ pub fn is_dangerous_key_combination(key: &str, modifiers: &[Modifier]) -> bool {
     let key_lower = key.to_lowercase();
 
     // Delete with modifiers
-    if (key_lower == "delete" || key_lower == "backspace")
-        && modifiers.contains(&Modifier::Meta)
-    {
+    if (key_lower == "delete" || key_lower == "backspace") && modifiers.contains(&Modifier::Meta) {
         return true;
     }
 
