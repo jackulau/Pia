@@ -1,4 +1,4 @@
-use super::action::{execute_action, execute_action_with_delay, execute_action_with_retry, parse_llm_response, Action, ActionError, ActionResult, ScreenBounds};
+use super::action::{execute_action, execute_action_with_delay, execute_action_with_retry, parse_llm_response_with_reasoning, Action, ActionError, ActionResult, ScreenBounds};
 use super::conversation::ConversationHistory;
 use super::delay::DelayController;
 use super::history::{ActionEntry, ActionHistory, ActionRecord};
@@ -313,9 +313,19 @@ impl AgentLoop {
                 }
             };
 
+            // Set iteration/max_iterations for progress context in system prompt
+            conversation.iteration = Some(iteration);
+            conversation.max_iterations = Some(max_iterations);
+
             // Add user message with current screenshot to conversation
+            // First message includes full instruction; subsequent messages use a short continuation prompt
+            let user_text = if conversation.is_empty() {
+                instruction.to_string()
+            } else {
+                "Here is the current screenshot. Continue working on the task.".to_string()
+            };
             conversation.add_user_message(
-                &instruction,
+                &user_text,
                 Some(screenshot.base64.clone()),
                 Some(screenshot.width),
                 Some(screenshot.height),
@@ -357,15 +367,27 @@ impl AgentLoop {
                     self.state.set_error(e.to_string()).await;
                     self.emit_state_update_immediate().await;
 
-                    // Check if we should continue or bail
+                    // Classify error and apply retry policy
                     let classification = classify_llm_error(&e);
-                    if matches!(classification, ErrorClassification::Fatal) {
-                        return Err(e.into());
+                    match classification {
+                        ErrorClassification::Fatal => {
+                            return Err(e.into());
+                        }
+                        ErrorClassification::RateLimited { wait_seconds } => {
+                            log::warn!("Rate limited, waiting {} seconds before retry", wait_seconds);
+                            sleep(Duration::from_secs(wait_seconds)).await;
+                            continue;
+                        }
+                        ErrorClassification::Retryable => {
+                            // Use exponential backoff from RetryPolicy
+                            let policy = RetryPolicy::for_llm_calls();
+                            let consecutive = self.state.get_consecutive_errors();
+                            let delay = policy.delay_for_attempt(consecutive);
+                            log::warn!("LLM error (attempt {}), retrying after {:?}: {}", consecutive, delay, e);
+                            sleep(delay).await;
+                            continue;
+                        }
                     }
-
-                    // Non-fatal error, continue to next iteration
-                    sleep(Duration::from_secs(1)).await;
-                    continue;
                 }
             };
 
@@ -383,9 +405,13 @@ impl AgentLoop {
             );
             self.state.history().update_metrics(metrics.input_tokens, metrics.output_tokens).await;
 
-            // Parse action - on parse error, send feedback to LLM
-            let action = match parse_llm_response(&response) {
-                Ok(a) => a,
+            // Parse action with reasoning extraction
+            let action = match parse_llm_response_with_reasoning(&response) {
+                Ok(parsed) => {
+                    // Store reasoning for UI display
+                    self.state.set_last_reasoning(parsed.reasoning).await;
+                    parsed.action
+                }
                 Err(parse_err) => {
                     self.state.increment_consecutive_errors();
 
@@ -393,6 +419,16 @@ impl AgentLoop {
                     let _ = self.app_handle.emit(
                         "parse-error",
                         format!("Failed to parse LLM response: {}", parse_err),
+                    );
+
+                    // Add parse error feedback to conversation so LLM knows its response was unparseable
+                    conversation.add_tool_result(
+                        false,
+                        None,
+                        Some(format!(
+                            "Your response could not be parsed as a valid action. Error: {}. Please respond with a valid JSON action object.",
+                            parse_err
+                        )),
                     );
 
                     // Continue to next iteration - the LLM will see the error
@@ -583,7 +619,7 @@ impl AgentLoop {
                     }
                 }
                 Err(e) => {
-                    // Add error to conversation before returning
+                    // Add error to conversation
                     conversation.add_tool_result(false, None, Some(e.to_string()));
 
                     // Record failed action to history
@@ -612,7 +648,17 @@ impl AgentLoop {
                     history.push(record);
                     drop(history);
 
+                    // Check if error is recoverable
+                    if e.is_recoverable() {
+                        log::warn!("Recoverable action error (consecutive: {}): {}", 
+                            self.state.get_consecutive_errors(), e);
+                        self.state.set_error(e.to_string()).await;
+                        self.emit_state_update().await;
+                        sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
 
+                    // Non-recoverable error - terminate
                     self.state.set_error(e.to_string()).await;
                     self.emit_state_update_immediate().await;
 
@@ -625,7 +671,6 @@ impl AgentLoop {
                         },
                     );
 
-                    // Action errors are generally not retryable
                     return Err(e.into());
                 }
             }

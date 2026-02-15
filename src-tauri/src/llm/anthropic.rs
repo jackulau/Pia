@@ -1,6 +1,7 @@
 use super::provider::{
-    build_system_prompt, build_system_prompt_for_tools, build_tools, ChunkCallback, LlmError,
-    LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse, history_to_messages,
+    build_system_prompt, build_system_prompt_for_tools, build_system_prompt_for_tools_with_context,
+    build_tools, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse,
+    history_to_messages,
 };
 use super::sse::append_bytes_to_buffer;
 use crate::agent::conversation::ConversationHistory;
@@ -139,7 +140,14 @@ impl LlmProvider for AnthropicProvider {
         on_chunk: ChunkCallback,
     ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt_for_tools(screen_width, screen_height);
+        let instruction = history.original_instruction().map(|s| s.to_string());
+        let system_prompt = build_system_prompt_for_tools_with_context(
+            screen_width,
+            screen_height,
+            instruction.as_deref(),
+            history.iteration,
+            history.max_iterations,
+        );
         let tools = build_tools();
 
         // Convert conversation history to Anthropic message format
@@ -281,12 +289,19 @@ impl LlmProvider for AnthropicProvider {
         };
 
         // Return tool_use if we received one, otherwise return text
+        // Preserve any text blocks as reasoning alongside the tool_use
         if let (Some(id), Some(name)) = (current_tool_id, current_tool_name) {
             let input: serde_json::Value = serde_json::from_str(&current_tool_input)
                 .unwrap_or_else(|_| serde_json::json!({}));
 
+            let reasoning = if text_response.trim().is_empty() {
+                None
+            } else {
+                Some(text_response)
+            };
+
             Ok((
-                LlmResponse::ToolUse(ToolUse { id, name, input }),
+                LlmResponse::ToolUse { tool_use: ToolUse { id, name, input }, reasoning },
                 metrics,
             ))
         } else {
