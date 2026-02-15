@@ -289,6 +289,25 @@ impl AgentLoop {
                 self.emit_state_update_immediate().await;
             }
 
+            // Check token budget
+            if let Some(max_tokens) = self.config.general.max_tokens_per_task {
+                if max_tokens > 0 {
+                    let (_tps, input_tokens, output_tokens) = self.state.get_token_metrics();
+                    let total_tokens = input_tokens + output_tokens;
+                    if total_tokens > max_tokens {
+                        let _ = self.app_handle.emit("token-budget-exceeded", json!({
+                            "total_tokens": total_tokens,
+                            "max_tokens": max_tokens,
+                        }));
+                        self.state
+                            .set_error(format!("Token budget exceeded ({} > {})", total_tokens, max_tokens))
+                            .await;
+                        self.emit_state_update_immediate().await;
+                        return Err(LoopError::MaxIterations);
+                    }
+                }
+            }
+
             // Check iteration limit (now uses atomic, no await needed)
             let iteration = self.state.increment_iteration();
             if iteration > max_iterations {
