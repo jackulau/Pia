@@ -8,7 +8,7 @@ use super::recovery::{
     RetryPolicy,
 };
 use super::state::{AgentStateManager, AgentStatus, ConfirmationResponse, ExecutionMode};
-use crate::capture::{capture_primary_screen, CaptureError, Screenshot};
+use crate::capture::{capture_primary_screen_with_config, CaptureError, Screenshot, ScreenshotConfig};
 use crate::config::Config;
 use crate::llm::{
     AnthropicProvider, GlmProvider, LlmProvider, OllamaProvider, OpenAICompatibleProvider,
@@ -71,6 +71,7 @@ pub struct AgentLoop {
     queue: Option<QueueManager>,
     preview_mode: bool,
     action_history: Arc<RwLock<ActionHistory>>,
+    delay_controller: DelayController,
     /// Tracks last state emission time for debouncing
     last_emission: std::sync::Mutex<Instant>,
 }
@@ -83,6 +84,7 @@ impl AgentLoop {
         action_history: Arc<RwLock<ActionHistory>>,
     ) -> Self {
         let preview_mode = config.general.preview_mode;
+        let delay_controller = DelayController::new(config.general.speed_multiplier);
         Self {
             state,
             config,
@@ -90,6 +92,7 @@ impl AgentLoop {
             queue: None,
             preview_mode,
             action_history,
+            delay_controller,
             last_emission: std::sync::Mutex::new(Instant::now()),
         }
     }
@@ -117,7 +120,7 @@ impl AgentLoop {
                     config.model.clone(),
                     connect_timeout,
                     response_timeout,
-                )))
+                ).with_temperature(config.temperature)))
             }
             "anthropic" => {
                 let config = self
@@ -131,7 +134,7 @@ impl AgentLoop {
                     config.model.clone(),
                     connect_timeout,
                     response_timeout,
-                )))
+                ).with_temperature(config.temperature)))
             }
             "openai" => {
                 let config = self
@@ -145,7 +148,7 @@ impl AgentLoop {
                     config.model.clone(),
                     connect_timeout,
                     response_timeout,
-                )))
+                ).with_temperature(config.temperature)))
             }
             "openrouter" => {
                 let config = self
@@ -159,7 +162,7 @@ impl AgentLoop {
                     config.model.clone(),
                     connect_timeout,
                     response_timeout,
-                )))
+                ).with_temperature(config.temperature)))
             }
             "glm" => {
                 let config = self
@@ -171,7 +174,7 @@ impl AgentLoop {
                 Ok(Box::new(GlmProvider::new(
                     config.api_key.clone(),
                     config.model.clone(),
-                )))
+                ).with_temperature(config.temperature)))
             }
             "openai-compatible" => {
                 let config = self
@@ -184,7 +187,7 @@ impl AgentLoop {
                     config.base_url.clone(),
                     config.api_key.clone(),
                     config.model.clone(),
-                )))
+                ).with_temperature(config.temperature)))
             }
             _ => Err(LoopError::NoProvider),
         }
@@ -394,7 +397,7 @@ impl AgentLoop {
 
                     // Continue to next iteration - the LLM will see the error
                     // in subsequent iterations via conversation context
-                    sleep(Duration::from_millis(500)).await;
+                    sleep(delay_controller.parse_error_delay()).await;
                     continue;
                 }
             };
@@ -421,7 +424,7 @@ impl AgentLoop {
                     return Ok(());
                 }
                 // Continue to next iteration without executing
-                sleep(Duration::from_millis(500)).await;
+                sleep(delay_controller.preview_delay()).await;
                 continue;
             }
 
@@ -437,7 +440,7 @@ impl AgentLoop {
             self.show_cursor_indicator(&action).await;
 
             // Brief pause to let user see the indicator
-            sleep(Duration::from_millis(300)).await;
+            sleep(delay_controller.indicator_pause()).await;
 
             // Prepare action details for history logging (reuse serialized value)
             let action_type = Self::get_action_type(&action);
@@ -624,12 +627,27 @@ impl AgentLoop {
         }
     }
 
-    /// Capture screenshot with retry logic
+    /// Build screenshot config from user settings
+    fn screenshot_config(&self) -> ScreenshotConfig {
+        ScreenshotConfig {
+            jpeg_quality: self.config.general.screenshot_quality,
+            max_width: Some(self.config.general.screenshot_max_width),
+            ..ScreenshotConfig::default()
+        }
+    }
+
+    /// Capture screenshot with retry logic, offloaded to a blocking thread
     async fn capture_with_retry(&self) -> Result<Screenshot, CaptureError> {
         let policy = RetryPolicy::for_screenshots();
+        let config = self.screenshot_config();
 
-        let result = retry_with_policy(&policy, classify_capture_error, || async {
-            capture_primary_screen()
+        let result = retry_with_policy(&policy, classify_capture_error, || {
+            let cfg = config.clone();
+            async move {
+                tokio::task::spawn_blocking(move || capture_primary_screen_with_config(&cfg))
+                    .await
+                    .map_err(|e| CaptureError::CaptureError(e.to_string()))?
+            }
         })
         .await;
 
@@ -977,7 +995,7 @@ impl AgentLoop {
         if let Some(overlay) = self.app_handle.get_webview_window("cursor-overlay") {
             let _ = overlay.emit("hide-cursor-indicator", ());
             // Wait for animation
-            sleep(Duration::from_millis(150)).await;
+            sleep(self.delay_controller.cursor_hide_delay()).await;
             let _ = overlay.hide();
         }
     }
