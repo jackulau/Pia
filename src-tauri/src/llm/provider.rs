@@ -583,10 +583,16 @@ pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String
                 )
             }
             Message::Assistant { content } => ("assistant".to_string(), content.clone(), None),
+            Message::AssistantToolUse { text, .. } => (
+                "assistant".to_string(),
+                text.clone().unwrap_or_default(),
+                None,
+            ),
             Message::ToolResult {
                 success,
                 message: _,
                 error,
+                ..
             } => {
                 let text = if *success {
                     "OK".to_string()
