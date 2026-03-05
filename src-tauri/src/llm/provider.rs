@@ -83,6 +83,27 @@ impl LlmResponse {
     }
 }
 
+/// Returns the name of the current platform as a human-readable string for LLM prompts.
+fn current_platform() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "macOS"
+    } else if cfg!(target_os = "windows") {
+        "Windows"
+    } else {
+        "Linux"
+    }
+}
+
+/// Returns the primary modifier key name for the current platform.
+/// "cmd" on macOS, "ctrl" on Windows/Linux.
+fn current_modifier() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "cmd"
+    } else {
+        "ctrl"
+    }
+}
+
 /// Build tool definitions for all computer use actions
 pub fn build_tools() -> Vec<Tool> {
     vec![
@@ -162,7 +183,11 @@ pub fn build_tools() -> Vec<Tool> {
         },
         Tool {
             name: "key".to_string(),
-            description: "Press a key with optional modifiers".to_string(),
+            description: format!(
+                "Press a key with optional modifiers. Current platform: {}. Use \"{}\" for common shortcuts (copy, paste, undo, etc.).",
+                current_platform(),
+                if cfg!(target_os = "macos") { "meta" } else { "ctrl" }
+            ),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -177,7 +202,11 @@ pub fn build_tools() -> Vec<Tool> {
                             "enum": ["ctrl", "alt", "shift", "meta"]
                         },
                         "default": [],
-                        "description": "Modifier keys to hold (meta is cmd on macOS)"
+                        "description": format!(
+                            "Modifier keys to hold. On {platform}: use \"{modifier}\" for shortcuts like copy/paste/undo. Available: \"ctrl\", \"alt\", \"shift\", \"meta\" (meta is cmd on macOS).",
+                            platform = current_platform(),
+                            modifier = if cfg!(target_os = "macos") { "meta" } else { "ctrl" }
+                        )
                     }
                 },
                 "required": ["key"]
@@ -495,8 +524,12 @@ pub fn build_system_prompt_for_tools_with_context(
     iteration: Option<u32>,
     max_iterations: Option<u32>,
 ) -> String {
+    let platform = current_platform();
+    let modifier = current_modifier();
     let mut prompt = format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
+
+You are controlling a {platform} computer. Use "{modifier}" for common shortcuts (copy, paste, undo, etc.).
 
 Screen dimensions: {screen_width}x{screen_height} pixels
 
@@ -551,8 +584,12 @@ pub fn build_system_prompt_with_context(
 
 /// Build system prompt for JSON-based providers (includes action definitions in prompt)
 pub fn build_system_prompt(screen_width: u32, screen_height: u32) -> String {
+    let platform = current_platform();
+    let modifier = current_modifier();
     format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
+
+You are controlling a {platform} computer. Use "{modifier}" for common shortcuts (copy, paste, undo, etc.).
 
 Screen dimensions: {screen_width}x{screen_height} pixels
 
@@ -570,9 +607,10 @@ You must respond with a single JSON action. Available actions:
 
 4. Press a key with optional modifiers:
    {{"action": "key", "key": "enter"}}
-   {{"action": "key", "key": "c", "modifiers": ["ctrl"]}}
-   {{"action": "key", "key": "v", "modifiers": ["ctrl"]}}
-   Available modifiers: "ctrl", "alt", "shift", "meta" (cmd on macOS)
+   {{"action": "key", "key": "c", "modifiers": ["{modifier}"]}}
+   {{"action": "key", "key": "v", "modifiers": ["{modifier}"]}}
+   Available modifiers: "ctrl", "alt", "shift", "meta" (meta is cmd on macOS).
+   Current platform: {platform} — use "{modifier}" for standard shortcuts.
 
 5. Scroll at position:
    {{"action": "scroll", "x": 500, "y": 300, "direction": "down", "amount": 3}}
@@ -864,5 +902,149 @@ mod tests {
         let required_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
         assert!(required_strs.contains(&"x"));
         assert!(required_strs.contains(&"y"));
+    }
+
+    // --- Platform-awareness tests ---
+
+    #[test]
+    fn test_current_platform_returns_valid_value() {
+        let platform = current_platform();
+        assert!(
+            ["macOS", "Windows", "Linux"].contains(&platform),
+            "current_platform() returned unexpected value: {}",
+            platform
+        );
+    }
+
+    #[test]
+    fn test_current_modifier_matches_platform() {
+        let modifier = current_modifier();
+        if cfg!(target_os = "macos") {
+            assert_eq!(modifier, "cmd");
+        } else {
+            assert_eq!(modifier, "ctrl");
+        }
+    }
+
+    #[test]
+    fn test_build_system_prompt_contains_platform_name() {
+        let prompt = build_system_prompt(1920, 1080);
+        let platform = current_platform();
+        assert!(
+            prompt.contains(platform),
+            "System prompt should contain the platform name '{}', but it didn't.\nPrompt excerpt: {}",
+            platform,
+            &prompt[..300]
+        );
+    }
+
+    #[test]
+    fn test_build_system_prompt_contains_modifier_guidance() {
+        let prompt = build_system_prompt(1920, 1080);
+        let modifier = current_modifier();
+        let expected = format!("Use \"{}\" for common shortcuts", modifier);
+        assert!(
+            prompt.contains(&expected),
+            "System prompt should contain modifier guidance '{}', but it didn't.",
+            expected
+        );
+    }
+
+    #[test]
+    fn test_build_system_prompt_for_tools_contains_platform_name() {
+        let prompt = build_system_prompt_for_tools(1920, 1080);
+        let platform = current_platform();
+        assert!(
+            prompt.contains(platform),
+            "Tool-based system prompt should contain the platform name '{}'.",
+            platform
+        );
+    }
+
+    #[test]
+    fn test_build_system_prompt_for_tools_contains_modifier_guidance() {
+        let prompt = build_system_prompt_for_tools(1920, 1080);
+        let modifier = current_modifier();
+        let expected = format!("Use \"{}\" for common shortcuts", modifier);
+        assert!(
+            prompt.contains(&expected),
+            "Tool-based system prompt should contain modifier guidance '{}'.",
+            expected
+        );
+    }
+
+    #[test]
+    fn test_key_tool_description_contains_platform() {
+        let tools = build_tools();
+        let key_tool = tools.iter().find(|t| t.name == "key").unwrap();
+        let platform = current_platform();
+        assert!(
+            key_tool.description.contains(platform),
+            "Key tool description should mention the platform '{}'. Got: {}",
+            platform,
+            key_tool.description
+        );
+    }
+
+    #[test]
+    fn test_key_tool_modifier_description_contains_platform() {
+        let tools = build_tools();
+        let key_tool = tools.iter().find(|t| t.name == "key").unwrap();
+        let platform = current_platform();
+        let modifier_desc = key_tool.input_schema["properties"]["modifiers"]["description"]
+            .as_str()
+            .expect("modifiers description should be a string");
+        assert!(
+            modifier_desc.contains(platform),
+            "Key tool modifier description should mention '{}'. Got: {}",
+            platform,
+            modifier_desc
+        );
+    }
+
+    #[test]
+    fn test_json_prompt_key_examples_use_correct_modifier() {
+        let prompt = build_system_prompt(1920, 1080);
+        let modifier = current_modifier();
+        // The key action examples should use the current platform's modifier
+        let copy_example = format!("\"modifiers\": [\"{}\"]", modifier);
+        assert!(
+            prompt.contains(&copy_example),
+            "JSON prompt key examples should use modifier '{}'. Expected substring '{}' not found.",
+            modifier,
+            copy_example
+        );
+    }
+
+    #[test]
+    fn test_build_system_prompt_with_context_contains_platform() {
+        let prompt = build_system_prompt_with_context(
+            1920, 1080,
+            Some("Open browser"),
+            Some(1),
+            Some(10),
+        );
+        let platform = current_platform();
+        assert!(
+            prompt.contains(platform),
+            "Contextual system prompt should contain platform '{}'.",
+            platform
+        );
+    }
+
+    #[test]
+    fn test_build_system_prompt_for_tools_with_context_contains_platform() {
+        let prompt = build_system_prompt_for_tools_with_context(
+            1920, 1080,
+            Some("Open browser"),
+            Some(1),
+            Some(10),
+        );
+        let platform = current_platform();
+        assert!(
+            prompt.contains(platform),
+            "Contextual tool-based prompt should contain platform '{}'.",
+            platform
+        );
     }
 }
