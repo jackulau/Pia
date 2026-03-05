@@ -29,6 +29,7 @@ const closeBtn = document.getElementById('close-btn');
 const saveSettingsBtn = document.getElementById('save-settings-btn');
 const dragHandle = document.querySelector('.drag-handle');
 const expandBtn = document.getElementById('expand-btn');
+const minimizeBtn = document.getElementById('minimize-btn');
 
 // Expanded mode elements
 const elapsedValue = document.getElementById('elapsed-value');
@@ -144,6 +145,7 @@ let lastIteration = 0;
 let lastTokens = 0;
 let lastAction = null;
 let isExpanded = localStorage.getItem('pia-expanded-mode') === 'true';
+let isMinimized = localStorage.getItem('pia-minimized') === 'true';
 let actionHistory = [];
 let totalActionsCount = 0;
 let sessionStartTime = null;
@@ -171,6 +173,8 @@ let errorLog = [];
 // Window sizes
 const COMPACT_SIZE = { width: 420, height: 380 };
 const EXPANDED_SIZE = { width: 500, height: 550 };
+const MINIMIZED_SIZE = { width: 420, height: 130 };
+const FULL_SIZE = { width: 420, height: 450 };
 
 // Position constants
 const POSITION_PADDING = 20;
@@ -207,6 +211,7 @@ async function init() {
   setupKillSwitchDisplay();
   setupTouchListeners();
   await restoreExpandedState();
+  await restoreMinimizedState();
   await refreshQueue();
   await loadSavedSizePreset();
   await restoreSavedPosition();
@@ -926,11 +931,22 @@ function setupEventListeners() {
     window.addEventListener('mouseup', () => {
       mainModal.classList.remove('dragging');
     });
+
+    // Double-click on drag handle toggles minimize
+    dragHandle.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      toggleMinimizeMode();
+    });
   }
 
   // Expand/collapse toggle
   if (expandBtn) {
     expandBtn.addEventListener('click', toggleExpandedMode);
+  }
+
+  // Minimize/restore toggle
+  if (minimizeBtn) {
+    minimizeBtn.addEventListener('click', toggleMinimizeMode);
   }
 
   // Clear hotkey button
@@ -2271,6 +2287,45 @@ async function restoreExpandedState() {
   }
 }
 
+// Toggle minimize mode
+async function toggleMinimizeMode() {
+  isMinimized = !isMinimized;
+  await applyMinimizedState();
+  localStorage.setItem('pia-minimized', isMinimized.toString());
+}
+
+// Apply minimized state to UI and window
+async function applyMinimizedState() {
+  const appWindow = getCurrentWindow();
+
+  if (isMinimized) {
+    mainModal.classList.add('minimized');
+    await appWindow.setSize(new LogicalSize(MINIMIZED_SIZE.width, MINIMIZED_SIZE.height));
+  } else {
+    mainModal.classList.remove('minimized');
+    // Restore to the appropriate full size based on expanded state
+    if (isExpanded) {
+      await appWindow.setSize(new LogicalSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height));
+    } else {
+      await appWindow.setSize(new LogicalSize(FULL_SIZE.width, FULL_SIZE.height));
+    }
+  }
+
+  // Update button icon and label
+  if (minimizeBtn) {
+    minimizeBtn.textContent = isMinimized ? '\u2B1C' : '\u2581';
+    minimizeBtn.title = isMinimized ? 'Restore full view' : 'Minimize to prompt only';
+    minimizeBtn.setAttribute('aria-label', isMinimized ? 'Restore full view' : 'Minimize to prompt only');
+  }
+}
+
+// Restore minimized state on app launch
+async function restoreMinimizedState() {
+  if (isMinimized) {
+    await applyMinimizedState();
+  }
+}
+
 // Add action to history
 function addToActionHistory(action) {
   const formattedAction = formatAction(action);
@@ -2374,6 +2429,13 @@ function setupKeyboardNavigation() {
       return;
     }
 
+    // Cmd/Ctrl + M - Toggle minimize mode
+    if (isMod && e.key === 'm') {
+      e.preventDefault();
+      toggleMinimizeMode();
+      return;
+    }
+
     // Cmd/Ctrl + Enter - Force submit
     if (isMod && e.key === 'Enter') {
       e.preventDefault();
@@ -2402,7 +2464,13 @@ function setupKeyboardNavigation() {
 }
 
 // Open settings panel
-function openSettings() {
+async function openSettings() {
+  // Restore from minimized state before opening settings
+  if (isMinimized) {
+    isMinimized = false;
+    localStorage.setItem('pia-minimized', 'false');
+    await applyMinimizedState();
+  }
   previousFocusElement = document.activeElement;
   mainModal.classList.add('hidden');
   settingsPanel.classList.remove('hidden');
