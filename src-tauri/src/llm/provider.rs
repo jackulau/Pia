@@ -783,7 +783,7 @@ mod tests {
     #[test]
     fn test_tool_names_match_build_tools() {
         let tools = build_tools();
-        let expected_names = ["click", "double_click", "move", "type", "key", "scroll", "complete", "error"];
+        let expected_names = ["click", "double_click", "triple_click", "right_click", "move", "drag", "type", "key", "scroll", "wait", "wait_for_element", "batch", "complete", "error"];
         let actual_names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
 
         for expected in &expected_names {
@@ -843,11 +843,11 @@ mod tests {
 
     #[test]
     fn test_llm_response_tool_use_to_string_repr_is_valid_json() {
-        let resp = LlmResponse::ToolUse(ToolUse {
+        let resp = LlmResponse::ToolUse { tool_use: ToolUse {
             id: "toolu_123".to_string(),
             name: "click".to_string(),
             input: json!({"x": 100, "y": 200}),
-        });
+        }, reasoning: None };
         let repr = resp.to_string_repr();
         let parsed: Value = serde_json::from_str(&repr).unwrap();
         assert_eq!(parsed["id"], "toolu_123");

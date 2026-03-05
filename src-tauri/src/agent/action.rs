@@ -2510,11 +2510,11 @@ mod tests {
         ];
 
         for (name, input) in cases {
-            let response = LlmResponse::ToolUse(ToolUse {
+            let response = LlmResponse::ToolUse { tool_use: ToolUse {
                 id: format!("toolu_{}", name),
                 name: name.to_string(),
                 input,
-            });
+            }, reasoning: None };
             let action = parse_llm_response(&response);
             assert!(action.is_ok(), "parse_llm_response failed for tool '{}': {:?}", name, action.err());
         }
@@ -2526,11 +2526,11 @@ mod tests {
         let text_response = LlmResponse::Text(
             r#"{"action": "click", "x": 100, "y": 200}"#.to_string(),
         );
-        let tool_response = LlmResponse::ToolUse(ToolUse {
+        let tool_response = LlmResponse::ToolUse { tool_use: ToolUse {
             id: "toolu_abc".to_string(),
             name: "click".to_string(),
             input: json!({"x": 100, "y": 200}),
-        });
+        }, reasoning: None };
 
         let from_text = parse_llm_response(&text_response).unwrap();
         let from_tool = parse_llm_response(&tool_response).unwrap();

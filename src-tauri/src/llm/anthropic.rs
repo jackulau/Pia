@@ -2,7 +2,8 @@
 
 use super::provider::{
     build_system_prompt_for_tools, build_system_prompt_for_tools_with_context, build_tools,
-    ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse,
+    history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics,
+    Tool, ToolUse,
 };
 use super::sse::append_bytes_to_buffer;
 use crate::agent::conversation::{ConversationHistory, Message};
@@ -519,6 +520,7 @@ mod tests {
             }],
             tools,
             stream: true,
+            temperature: None,
         };
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["model"], "claude-sonnet-4-5-20250514");
@@ -689,7 +691,7 @@ mod tests {
 
     #[test]
     fn test_anthropic_provider_new() {
-        let provider = AnthropicProvider::new("test-key".to_string(), "claude-sonnet-4-5-20250514".to_string());
+        let provider = AnthropicProvider::new("test-key".to_string(), "claude-sonnet-4-5-20250514".to_string(), None);
         assert_eq!(provider.name(), "anthropic");
         assert_eq!(provider.api_key, "test-key");
         assert_eq!(provider.model, "claude-sonnet-4-5-20250514");
@@ -700,6 +702,7 @@ mod tests {
         let provider = AnthropicProvider::with_timeouts(
             "test-key".to_string(),
             "claude-sonnet-4-5-20250514".to_string(),
+            None,
             Duration::from_secs(5),
             Duration::from_secs(30),
         );
