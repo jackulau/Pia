@@ -1,0 +1,2580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <title>Pia</title>
+  <style>
+    :root {
+      --error: #ff453a;
+      --warning: #ffa500;
+      --success: #32d74b;
+      --info: #0a84ff;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #fff;
+      overflow: hidden;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    #app {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      padding: 6px;
+      background: transparent;
+      overflow: hidden;
+    }
+    .hidden { display: none !important; }
+
+    /* Visually hidden but accessible to screen readers */
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .modal {
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      display: flex;
+      flex-direction: column;
+      background: rgba(30, 30, 32, 0.95);
+      -webkit-backdrop-filter: blur(50px) saturate(180%);
+      backdrop-filter: blur(50px) saturate(180%);
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow:
+        0 0 0 0.5px rgba(0, 0, 0, 0.3),
+        0 8px 32px rgba(0, 0, 0, 0.4),
+        0 2px 8px rgba(0, 0, 0, 0.2);
+      overflow-x: hidden;
+      overflow-y: auto;
+      transition: box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    .drag-handle {
+      height: 44px;
+      cursor: grab;
+      background: transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+      position: relative;
+      z-index: 100;
+      -webkit-app-region: drag;
+      app-region: drag;
+    }
+    .drag-handle::after {
+      content: '';
+      width: 40px;
+      height: 5px;
+      background: rgba(255, 255, 255, 0.25);
+      border-radius: 2.5px;
+      transition: all 0.15s ease;
+    }
+    .drag-handle:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .drag-handle:hover::after {
+      background: rgba(255, 255, 255, 0.45);
+      width: 44px;
+    }
+    .drag-handle:active { cursor: grabbing; }
+    .drag-handle:active::after, .drag-handle.touch-active::after { background: rgba(255, 255, 255, 0.5); width: 48px; }
+
+    /* Dragging state visual feedback */
+    .modal.dragging {
+      box-shadow:
+        0 0 0 0.5px rgba(0, 0, 0, 0.3),
+        0 12px 40px rgba(0, 0, 0, 0.5),
+        0 4px 12px rgba(0, 0, 0, 0.3),
+        0 0 0 1px rgba(10, 132, 255, 0.2);
+      transform: scale(1.01);
+      opacity: 0.95;
+    }
+    .modal.dragging .drag-handle {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .modal.dragging .drag-handle::after {
+      background: rgba(10, 132, 255, 0.6);
+      width: 48px;
+      height: 5px;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 12px 8px;
+      -webkit-app-region: no-drag;
+      app-region: no-drag;
+    }
+    .status-indicator { display: flex; align-items: center; gap: 6px; }
+    .pia-logo {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    /* Progress Ring Container */
+    .progress-ring-container {
+      position: relative;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .progress-ring {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+    .progress-ring-bg {
+      fill: none;
+      stroke: rgba(255, 255, 255, 0.1);
+      stroke-width: 2;
+    }
+    .progress-ring-fill {
+      fill: none;
+      stroke: #0a84ff;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-dasharray: 0, 100;
+      transition: stroke-dasharray 0.3s ease, stroke 0.2s ease;
+    }
+    .progress-ring-fill.running { stroke: #32d74b; }
+    .progress-ring-fill.error { stroke: #ff453a; }
+    .progress-ring-fill.completed { stroke: #0a84ff; }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.4);
+      transition: background-color 0.3s ease, box-shadow 0.3s ease;
+      z-index: 1;
+    }
+    .status-dot.running {
+      background: #32d74b;
+      animation: pulse-soft 2s ease-in-out infinite;
+      box-shadow: 0 0 8px rgba(50, 215, 75, 0.4);
+    }
+    .status-dot.error {
+      background: #ff453a;
+      animation: flash-error 0.5s ease-out;
+      box-shadow: 0 0 8px rgba(255, 69, 58, 0.4);
+    }
+    .status-dot.completed {
+      background: #0a84ff;
+      animation: flash-success 0.5s ease-out;
+      box-shadow: 0 0 8px rgba(10, 132, 255, 0.4);
+    }
+    .status-dot.retrying {
+      background: #ff9f0a;
+      animation: pulse-soft 1s ease-in-out infinite;
+      box-shadow: 0 0 8px rgba(255, 159, 10, 0.4);
+    }
+    .status-dot.paused {
+      background: #ffd60a;
+      box-shadow: 0 0 8px rgba(255, 214, 10, 0.4);
+    }
+    .status-dot.awaiting {
+      background: #bf5af2;
+      box-shadow: 0 0 8px rgba(191, 90, 242, 0.4);
+      animation: pulse-awaiting 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse-awaiting {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.7; transform: scale(1.05); }
+    }
+    @keyframes pulse-soft {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.7; transform: scale(0.95); }
+    }
+    @keyframes flash-success {
+      0% { transform: scale(1.3); box-shadow: 0 0 12px rgba(10, 132, 255, 0.6); }
+      100% { transform: scale(1); box-shadow: 0 0 8px rgba(10, 132, 255, 0.4); }
+    }
+    @keyframes flash-error {
+      0% { transform: scale(1.3); box-shadow: 0 0 12px rgba(255, 69, 58, 0.6); }
+      100% { transform: scale(1); box-shadow: 0 0 8px rgba(255, 69, 58, 0.4); }
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .status-dot.recording { background: #ff9500; animation: pulse 1s infinite; }
+    .status-text { font-size: 12px; color: rgba(255, 255, 255, 0.6); font-weight: 500; }
+
+    .header-actions { display: flex; gap: 2px; align-items: center; }
+    .size-selector { display: flex; gap: 1px; margin-right: 4px; }
+    .size-btn {
+      min-width: 44px;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: rgba(255, 255, 255, 0.4);
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+    .size-btn:hover { background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.7); }
+    .size-btn.active { background: rgba(10, 132, 255, 0.3); color: #0a84ff; }
+    .icon-btn {
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: rgba(255, 255, 255, 0.5);
+      cursor: pointer;
+      transition: all 0.15s ease, transform 0.1s ease;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .icon-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; transform: scale(1.05); }
+    .icon-btn:active, .icon-btn.touch-active { background: rgba(255, 255, 255, 0.15); color: #fff; transform: scale(0.92); }
+    .icon-btn:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.5);
+    }
+    .size-btn:focus-visible,
+    .submit-btn:focus-visible,
+    .record-btn:focus-visible,
+    .stop-btn:focus-visible,
+    .control-btn:focus-visible,
+    .btn:focus-visible,
+    .history-btn:focus-visible,
+    .queue-btn:focus-visible,
+    .queue-action-btn:focus-visible,
+    .save-template-btn:focus-visible,
+    .preview-toggle:focus-visible,
+    .position-option:focus-visible,
+    .kill-switch:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.5);
+    }
+
+    .input-area { display: flex; gap: 8px; padding: 0 12px 12px; }
+    #instruction-input {
+      width: 100%;
+      min-height: 34px;
+      max-height: 120px;
+      padding: 8px 34px 8px 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      color: #fff;
+      font-size: 14px;
+      font-family: inherit;
+      line-height: 1.4;
+      resize: none;
+      overflow: hidden;
+      outline: none;
+      transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease;
+    }
+    #instruction-input::placeholder {
+      color: rgba(255, 255, 255, 0.5);
+      transition: opacity 0.2s ease;
+    }
+    #instruction-input:focus {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(10, 132, 255, 0.5);
+      box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.15);
+      animation: focus-ring-pulse 0.3s ease-out;
+    }
+    @keyframes focus-ring-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(10, 132, 255, 0.3); }
+      100% { box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.15); }
+    }
+    #instruction-input:focus::placeholder { opacity: 0.6; }
+    #instruction-input.shake { animation: shake 0.4s ease-out; }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-6px); }
+      40% { transform: translateX(5px); }
+      60% { transform: translateX(-4px); }
+      80% { transform: translateX(2px); }
+    }
+    .submit-btn, .record-btn {
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+      transition: background-color 0.15s ease, transform 0.1s ease, opacity 0.2s ease;
+    }
+    .submit-btn { background: #0a84ff; }
+    .submit-btn:hover { background: #409cff; transform: scale(1.02); }
+    .submit-btn:active { transform: scale(0.97); }
+    .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .submit-btn.loading { pointer-events: none; }
+    .submit-btn.loading svg { animation: spin 0.8s linear infinite; }
+
+    /* History dropdown */
+    .input-wrapper {
+      flex: 1;
+      position: relative;
+    }
+    .history-btn {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      min-width: 44px;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: rgba(255, 255, 255, 0.55);
+      cursor: pointer;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .history-btn:hover { background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.8); }
+    .history-btn.active { color: #0a84ff; }
+    .history-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      max-height: 240px;
+      background: rgba(40, 40, 42, 0.98);
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      overflow: hidden;
+      z-index: 110;
+    }
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .history-title { font-size: 10px; color: rgba(255, 255, 255, 0.5); text-transform: uppercase; letter-spacing: 0.5px; }
+    .history-clear-btn {
+      font-size: 10px;
+      color: rgba(255, 69, 58, 0.8);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+    .history-clear-btn:hover { background: rgba(255, 69, 58, 0.15); color: #ff453a; }
+    .history-list {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .history-item:hover { background: rgba(255, 255, 255, 0.06); }
+    .history-item:active { background: rgba(255, 255, 255, 0.1); }
+    .history-status {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .history-status.success { background: #32d74b; }
+    .history-status.failure { background: #ff453a; }
+    .history-content { flex: 1; min-width: 0; }
+    .history-text {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.85);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .history-time {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.55);
+      margin-top: 2px;
+    }
+    .history-empty {
+      padding: 16px;
+      text-align: center;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.4);
+    }
+    .record-btn { background: #ff9500; }
+    .record-btn:hover { background: #ffaa33; transform: scale(1.02); }
+    .record-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .submit-btn:active, .submit-btn.touch-active { background: #006edb; transform: scale(0.95); }
+
+    .metrics-bar {
+      display: flex;
+      justify-content: space-around;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.2);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .metric { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+    .metric-label { font-size: 9px; color: rgba(255, 255, 255, 0.55); text-transform: uppercase; letter-spacing: 0.5px; }
+    .metric-value {
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.8);
+      font-variant-numeric: tabular-nums;
+      transition: color 0.2s ease;
+    }
+    .metric-value.updated { animation: metric-pulse 0.3s ease-out; }
+    @keyframes metric-pulse {
+      0% { color: #0a84ff; transform: scale(1.05); }
+      100% { color: rgba(255, 255, 255, 0.8); transform: scale(1); }
+    }
+    #retry-indicator { color: #ff9f0a; font-size: 10px; }
+
+    .action-timeline {
+      padding: 10px 12px;
+      max-height: 120px;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    .timeline-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .action-label { font-size: 9px; color: rgba(255, 255, 255, 0.55); text-transform: uppercase; letter-spacing: 0.5px; }
+    .action-count {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.55);
+    }
+    .timeline-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .timeline-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 11px;
+      padding: 4px 0 4px 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      border-left: 2px solid transparent;
+      animation: action-slide-in 0.25s ease-out;
+      transition: border-color 0.2s ease, background 0.2s ease;
+      border-radius: 0 4px 4px 0;
+    }
+    .timeline-item:first-child {
+      border-left-color: #0a84ff;
+      background: rgba(10, 132, 255, 0.08);
+    }
+    .timeline-item:last-child {
+      border-bottom: none;
+    }
+    .timeline-item.error {
+      border-left-color: #ff453a;
+      background: rgba(255, 69, 58, 0.08);
+    }
+    @keyframes action-slide-in {
+      from { opacity: 0; transform: translateX(-8px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .timeline-time {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.55);
+      white-space: nowrap;
+      min-width: 45px;
+    }
+    .timeline-action {
+      color: rgba(255, 255, 255, 0.6);
+      line-height: 1.3;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.2s ease;
+    }
+    .timeline-item.error .timeline-action {
+      color: #ff453a;
+    }
+    .timeline-empty {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+      text-align: center;
+      padding: 8px 0;
+    }
+
+    /* Screenshot Preview */
+    .screenshot-preview {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .preview-label {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.4);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .preview-container {
+      position: relative;
+      width: 100px;
+      height: 60px;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .preview-container:hover {
+      transform: scale(2.5);
+      transform-origin: left top;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      z-index: 100;
+    }
+    .preview-image {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+    .preview-image.visible {
+      display: block;
+    }
+    .preview-placeholder {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      color: rgba(255, 255, 255, 0.3);
+    }
+    .preview-placeholder span {
+      font-size: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .preview-placeholder.hidden {
+      display: none;
+    }
+
+    /* Template selector */
+    .template-row {
+      display: flex;
+      gap: 8px;
+      padding: 0 12px 8px;
+    }
+    .template-select {
+      flex: 1;
+      height: 32px;
+      padding: 0 10px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 12px;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+    }
+    .template-select:focus { border-color: rgba(10, 132, 255, 0.5); background: rgba(255, 255, 255, 0.1); }
+    .template-select option { background: #2a2a2a; color: #fff; }
+    .save-template-btn {
+      height: 32px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: rgba(255, 255, 255, 0.7);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .save-template-btn:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+    .save-template-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Template management in settings */
+    .templates-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+    .templates-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .templates-header h3 { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.8); }
+    .template-list { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+    .template-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 6px;
+    }
+    .template-item-info { flex: 1; min-width: 0; }
+    .template-item-name { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.9); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .template-item-preview { font-size: 10px; color: rgba(255, 255, 255, 0.4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .template-item-actions { display: flex; gap: 4px; margin-left: 8px; }
+    .template-delete-btn {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: rgba(255, 69, 58, 0.7);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .template-delete-btn:hover { background: rgba(255, 69, 58, 0.2); color: #ff453a; }
+    .no-templates { font-size: 11px; color: rgba(255, 255, 255, 0.4); text-align: center; padding: 20px 0; }
+
+    /* Save template modal */
+    .save-template-dialog {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .save-template-content {
+      background: rgba(40, 40, 40, 0.95);
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 20px;
+      width: 280px;
+    }
+    .save-template-content h3 { font-size: 15px; margin-bottom: 12px; }
+    .save-template-content input {
+      width: 100%;
+      height: 36px;
+      padding: 0 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+      margin-bottom: 4px;
+    }
+    .save-template-content input:focus { border-color: rgba(10, 132, 255, 0.5); background: rgba(255, 255, 255, 0.12); }
+    .save-template-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-bottom: 16px; }
+    .save-template-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+    .thinking-display { padding: 10px 12px 6px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+    .thinking-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+    .thinking-content { font-size: 11px; color: rgba(255, 255, 255, 0.5); line-height: 1.4; max-height: 48px; overflow-y: auto; font-style: italic; }
+
+    .action-display { padding: 6px 12px 10px; }
+    .action-label { font-size: 9px; color: rgba(255, 255, 255, 0.55); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+    .action-content { font-size: 11px; color: rgba(255, 255, 255, 0.6); line-height: 1.4; max-height: 40px; overflow-y: auto; }
+
+    .action-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      color: rgba(255, 255, 255, 0.5);
+      flex-shrink: 0;
+    }
+    .action-icon svg { width: 12px; height: 12px; }
+    .action-icon.click { color: #0a84ff; }
+    .action-icon.double_click { color: #5e5ce6; }
+    .action-icon.move { color: #64d2ff; }
+    .action-icon.type { color: #30d158; }
+    .action-icon.key { color: #ffd60a; }
+    .action-icon.scroll { color: #bf5af2; }
+    .action-icon.drag { color: #ff9f0a; }
+    .action-icon.batch { color: #ac8e68; }
+    .action-icon.complete { color: #30d158; }
+    .action-icon.error { color: #ff453a; }
+    .action-icon.default { color: rgba(255, 255, 255, 0.5); }
+    .action-text { flex: 1; }
+
+    .control-buttons {
+      display: flex;
+      gap: 8px;
+      margin: 0 12px 12px;
+    }
+    .control-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      flex: 1;
+      padding: 8px;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.15s ease, transform 0.1s ease;
+    }
+    .pause-btn { background: rgba(255, 159, 10, 0.9); }
+    .pause-btn:hover { background: #ff9f0a; }
+    .resume-btn { background: rgba(50, 215, 75, 0.9); }
+    .resume-btn:hover { background: #32d74b; }
+    .stop-btn { background: rgba(255, 69, 58, 0.9); }
+    .stop-btn:hover { background: #ff453a; }
+    .stop-btn:active { transform: scale(0.97); }
+
+    /* Recording Panel */
+    .recording-panel {
+      padding: 10px 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .recording-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .recording-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .recording-badge {
+      background: #ff9500;
+      color: #000;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 600;
+    }
+    .recording-actions-list {
+      max-height: 120px;
+      overflow-y: auto;
+      margin-bottom: 8px;
+    }
+    .recorded-action-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .recorded-action-item:last-child { border-bottom: none; }
+    .recorded-action-num {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.3);
+      min-width: 16px;
+    }
+    .recorded-action-content {
+      flex: 1;
+    }
+    .recorded-action-desc {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.8);
+    }
+    .recorded-action-reasoning {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.4);
+      margin-top: 2px;
+      font-style: italic;
+    }
+    .recording-controls {
+      display: flex;
+      gap: 8px;
+    }
+    .recording-controls .btn {
+      flex: 1;
+      padding: 8px 12px;
+      font-size: 11px;
+    }
+    .btn-execute { background: #32d74b; }
+    .btn-execute:hover { background: #4ae65f; }
+    .btn-clear { background: rgba(255, 255, 255, 0.1); }
+    .btn-clear:hover { background: rgba(255, 255, 255, 0.15); }
+
+    .stop-btn:hover { background: #ff453a; }
+    .stop-btn:active, .stop-btn.touch-active { background: #cc362e; transform: scale(0.98); }
+
+    .undo-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: calc(100% - 24px);
+      margin: 0 12px 12px;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .undo-btn:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.25);
+    }
+    .undo-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .export-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: calc(100% - 24px);
+      margin: 0 12px 12px;
+      padding: 8px;
+      background: rgba(50, 215, 75, 0.9);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .export-btn:hover { background: #32d74b; }
+
+    .export-dialog {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .export-content {
+      background: rgba(40, 40, 40, 0.95);
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 20px;
+      max-width: 280px;
+      text-align: center;
+    }
+    .export-content h3 { font-size: 15px; margin-bottom: 8px; }
+    .export-content p { font-size: 12px; color: rgba(255, 255, 255, 0.6); margin-bottom: 16px; }
+    .export-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .export-option {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .export-option:hover {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(10, 132, 255, 0.5);
+    }
+    .export-option-info { text-align: left; }
+    .export-option-name { font-size: 13px; font-weight: 600; color: #fff; }
+    .export-option-desc { font-size: 10px; color: rgba(255, 255, 255, 0.5); }
+    .export-option svg { color: rgba(255, 255, 255, 0.4); }
+    .export-checkbox { display: flex; align-items: center; gap: 8px; font-size: 11px; color: rgba(255, 255, 255, 0.6); margin-bottom: 12px; }
+    .export-checkbox input { accent-color: #0a84ff; }
+
+    /* Settings Panel */
+    .settings-panel {
+      position: absolute;
+      top: 10px;
+      left: 0;
+      right: 0;
+      margin: 0 auto;
+      max-width: 380px;
+      max-height: calc(100vh - 20px);
+      background: rgba(30, 30, 30, 0.9);
+      -webkit-backdrop-filter: blur(40px) saturate(180%);
+      backdrop-filter: blur(40px) saturate(180%);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: slide-in-top 0.25s ease-out;
+      transform-origin: top center;
+    }
+    .settings-panel.hidden { display: none; }
+    @keyframes slide-in-top {
+      from { opacity: 0; transform: translateY(-12px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* Button press feedback animation */
+    @keyframes button-press {
+      0% { transform: scale(1); }
+      50% { transform: scale(0.96); }
+      100% { transform: scale(1); }
+    }
+    .settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .settings-header h2 { font-size: 14px; font-weight: 600; }
+    .settings-content { flex: 1; overflow-y: auto; padding: 12px; }
+    .setting-group {
+      margin-bottom: 14px;
+      animation: stagger-in 0.3s ease-out backwards;
+    }
+    .setting-group:nth-child(1) { animation-delay: 0.05s; }
+    .setting-group:nth-child(2) { animation-delay: 0.1s; }
+    .setting-group:nth-child(3) { animation-delay: 0.15s; }
+    .setting-group:nth-child(4) { animation-delay: 0.2s; }
+    @keyframes stagger-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .setting-label { display: block; font-size: 10px; color: rgba(255, 255, 255, 0.5); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .setting-input, .setting-select {
+      width: 100%;
+      height: 34px;
+      padding: 0 10px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+      transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease;
+    }
+    .setting-input::placeholder {
+      color: rgba(255, 255, 255, 0.5);
+      transition: opacity 0.2s ease;
+    }
+    .setting-input:focus, .setting-select:focus {
+      border-color: rgba(10, 132, 255, 0.5);
+      background: rgba(255, 255, 255, 0.12);
+      box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.15);
+      animation: focus-ring-pulse 0.3s ease-out;
+    }
+    .setting-input:focus::placeholder { opacity: 0.6; }
+    .setting-select { cursor: pointer; appearance: none; }
+    .setting-input:disabled,
+    .setting-select:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .setting-checkbox { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: rgba(255, 255, 255, 0.8); }
+    .setting-checkbox input { width: 16px; height: 16px; accent-color: #0a84ff; }
+    .setting-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-top: 4px; }
+    .provider-settings { padding: 10px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; margin-bottom: 14px; }
+    .provider-settings .setting-group:last-child { margin-bottom: 0; }
+    .model-input-row { display: flex; gap: 6px; align-items: center; }
+    .model-input-row .setting-input { flex: 1; }
+    .refresh-models-btn {
+      width: 34px; height: 34px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px; color: rgba(255, 255, 255, 0.6); cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+    .refresh-models-btn:hover { background: rgba(255, 255, 255, 0.12); color: #fff; border-color: rgba(255, 255, 255, 0.2); }
+    .refresh-models-btn:active { transform: scale(0.95); }
+    .refresh-models-btn.spinning svg { animation: spin 0.8s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .test-connection-btn {
+      padding: 6px 14px; font-size: 12px; font-weight: 500;
+      background: rgba(10, 132, 255, 0.15); border: 1px solid rgba(10, 132, 255, 0.3);
+      border-radius: 6px; color: #0a84ff; cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .test-connection-btn:hover { background: rgba(10, 132, 255, 0.25); border-color: rgba(10, 132, 255, 0.5); }
+    .test-connection-btn:active { transform: scale(0.97); }
+    .test-connection-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .connection-status { font-size: 11px; margin-left: 8px; transition: opacity 0.2s ease; }
+    .connection-status.success { color: #32d74b; }
+    .connection-status.error { color: #ff453a; }
+    .speed-slider-container { display: flex; align-items: center; gap: 10px; }
+    .speed-slider { flex: 1; height: 6px; -webkit-appearance: none; appearance: none; background: rgba(255, 255, 255, 0.15); border-radius: 3px; outline: none; }
+    .speed-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; background: #0a84ff; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
+    .speed-slider::-webkit-slider-thumb:hover { transform: scale(1.1); }
+    .speed-slider::-moz-range-thumb { width: 16px; height: 16px; background: #0a84ff; border: none; border-radius: 50%; cursor: pointer; }
+    .speed-slider::-moz-range-track { height: 6px; background: rgba(255, 255, 255, 0.15); border-radius: 3px; border: none; }
+    .speed-slider-value { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.8); min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+    .save-btn {
+      width: 100%;
+      padding: 12px;
+      min-height: 44px;
+      background: #0a84ff;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: background-color 0.15s ease, transform 0.1s ease;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .save-btn:hover { background: #409cff; }
+    .save-btn:active, .save-btn.touch-active { background: #006edb; transform: scale(0.97); }
+
+    .detect-subscriptions-section { margin-top: 14px; }
+    .detect-btn {
+      width: 100%;
+      padding: 10px;
+      min-height: 40px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+    .detect-btn:hover { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.2); }
+    .detect-btn:active { background: rgba(255, 255, 255, 0.06); transform: scale(0.97); }
+    .detect-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .detect-results { margin-top: 10px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; padding: 10px; }
+    .detect-provider-group { margin-bottom: 10px; }
+    .detect-provider-group:last-child { margin-bottom: 0; }
+    .detect-provider-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 0;
+      margin-bottom: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.7);
+      text-transform: capitalize;
+    }
+    .detect-result-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      margin-bottom: 4px;
+    }
+    .detect-result-item:last-child { margin-bottom: 0; }
+    .detect-result-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+    .detect-result-top-row { display: flex; align-items: center; gap: 6px; }
+    .detect-result-provider { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.9); }
+    .detect-result-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); }
+    .detect-source-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 500;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.5);
+    }
+    .detect-source-badge.source-env { background: rgba(52, 199, 89, 0.15); color: #34c759; }
+    .detect-source-badge.source-dotenv { background: rgba(0, 122, 255, 0.15); color: #0a84ff; }
+    .detect-source-badge.source-shell { background: rgba(175, 82, 222, 0.15); color: #af52de; }
+    .detect-source-badge.source-config { background: rgba(255, 159, 10, 0.15); color: #ff9f0a; }
+    .detect-source-badge.source-service { background: rgba(48, 209, 88, 0.15); color: #30d158; }
+    .detect-validation-icon {
+      display: inline-flex;
+      align-items: center;
+      font-size: 10px;
+      margin-left: 2px;
+    }
+    .detect-validation-icon.valid { color: #34c759; }
+    .detect-validation-icon.invalid { color: #ff9f0a; }
+    .detect-source-path {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.3);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .detect-ollama-info {
+      font-size: 9px;
+      color: rgba(48, 209, 88, 0.8);
+      margin-top: 2px;
+    }
+    .detect-ollama-models {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+      margin-top: 3px;
+    }
+    .detect-ollama-model-tag {
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 8px;
+      background: rgba(48, 209, 88, 0.12);
+      color: rgba(48, 209, 88, 0.8);
+    }
+    .detect-ollama-model-tag.vision { background: rgba(0, 122, 255, 0.15); color: #0a84ff; }
+    .detect-result-apply {
+      padding: 4px 10px;
+      background: #0a84ff;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background-color 0.15s ease;
+    }
+    .detect-result-apply:hover { background: #409cff; }
+    .detect-no-results { font-size: 11px; color: rgba(255, 255, 255, 0.4); text-align: center; padding: 12px 8px; }
+    .detect-no-results p { margin: 4px 0; }
+    .detect-hint-list {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.3);
+      text-align: left;
+      margin: 8px 0 0 0;
+      padding-left: 16px;
+    }
+    .detect-hint-list li { margin-bottom: 3px; }
+
+    .confirmation-dialog {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      animation: fade-in 0.2s ease-out;
+    }
+    .confirmation-dialog.hidden { display: none; }
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .confirmation-content {
+      background: rgba(40, 40, 40, 0.95);
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 20px;
+      max-width: 280px;
+      text-align: center;
+      animation: scale-fade-in 0.25s ease-out;
+    }
+    @keyframes scale-fade-in {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .confirmation-content h3 { font-size: 15px; margin-bottom: 8px; }
+    .confirmation-content p { font-size: 12px; color: rgba(255, 255, 255, 0.6); margin-bottom: 16px; }
+    .confirmation-actions { display: flex; gap: 8px; justify-content: center; }
+    .btn { padding: 8px 16px; min-height: 44px; border-radius: 6px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: background-color 0.15s ease, transform 0.1s ease; }
+    .btn:active { transform: scale(0.97); }
+    .btn-cancel { background: rgba(255, 255, 255, 0.1); color: #fff; }
+    .btn-cancel:hover { background: rgba(255, 255, 255, 0.15); }
+    .btn-cancel:active, .btn-cancel.touch-active { background: rgba(255, 255, 255, 0.2); transform: scale(0.98); }
+    .btn-confirm { background: #0a84ff; color: #fff; }
+    .btn-confirm:hover { background: #409cff; }
+    .btn-confirm:active, .btn-confirm.touch-active { background: #006edb; transform: scale(0.98); }
+    .btn-confirm.danger { background: #ff453a; }
+    .btn-confirm.danger:hover { background: #ff6961; }
+
+    /* Confirmation dialog urgency styling */
+    .confirmation-content.warning {
+      border-color: rgba(255, 159, 10, 0.4);
+    }
+    .confirmation-content.danger {
+      border-color: rgba(255, 69, 58, 0.4);
+    }
+
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+    }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 2px; }
+
+    html, body, #app {
+      scrollbar-width: none;
+    }
+    html::-webkit-scrollbar, body::-webkit-scrollbar, #app::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* Touch gesture support */
+    .status-indicator {
+      padding: 8px;
+      margin: -8px;
+      border-radius: 8px;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      cursor: pointer;
+    }
+    .status-indicator.long-press-active {
+      background: rgba(255, 255, 255, 0.1);
+      transform: scale(1.05);
+    }
+    .status-indicator.long-press-triggered {
+      background: rgba(10, 132, 255, 0.2);
+    }
+
+    .action-content {
+      padding: 8px;
+      margin: -8px;
+      border-radius: 6px;
+      transition: all 0.15s;
+      -webkit-tap-highlight-color: transparent;
+      cursor: pointer;
+    }
+    .action-content.long-press-active {
+      background: rgba(255, 255, 255, 0.08);
+      transform: scale(1.02);
+    }
+    .action-content.long-press-triggered {
+      background: rgba(50, 215, 75, 0.2);
+    }
+
+    /* Settings panel touch support */
+    .settings-panel.touch-active {
+      touch-action: pan-y;
+    }
+    .settings-panel.swipe-closing {
+      transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+    }
+
+    /* Toast notifications */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 16px;
+      background: rgba(50, 50, 50, 0.95);
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 12px;
+      color: #fff;
+      z-index: 200;
+      animation: toast-in 0.3s ease-out;
+    }
+    .toast.success { border-color: rgba(50, 215, 75, 0.3); }
+    .toast.error { border-color: rgba(255, 69, 58, 0.3); color: #ff6961; }
+    .toast.info { border-color: rgba(255, 159, 10, 0.3); color: #ffb84d; }
+    .toast.hiding { animation: toast-out 0.25s ease-in forwards; }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translate(-50%, 12px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+    @keyframes toast-out {
+      from { opacity: 1; transform: translate(-50%, 0); }
+      to { opacity: 0; transform: translate(-50%, -8px); }
+    }
+
+    /* Stop button fade in/out */
+    .stop-btn {
+      animation: fade-slide-in 0.2s ease-out;
+    }
+    @keyframes fade-slide-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Reduced motion preference */
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+      /* Keep essential state visibility without motion */
+      .status-dot.running { box-shadow: 0 0 6px rgba(50, 215, 75, 0.5); }
+      .status-dot.error { box-shadow: 0 0 6px rgba(255, 69, 58, 0.5); }
+      .status-dot.completed { box-shadow: 0 0 6px rgba(10, 132, 255, 0.5); }
+      .status-dot.retrying { box-shadow: 0 0 6px rgba(255, 159, 10, 0.5); }
+      .status-dot.paused { box-shadow: 0 0 6px rgba(255, 214, 10, 0.5); }
+      .status-dot.awaiting { box-shadow: 0 0 6px rgba(191, 90, 242, 0.5); }
+      .submit-btn.loading svg { animation: none !important; opacity: 0.6; }
+    }
+
+    /* Expandable Mode */
+    .expanded-only { display: none !important; }
+
+    .modal.expanded .expanded-only { display: flex !important; }
+
+    .modal {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .modal.expanded {
+      max-width: 480px;
+    }
+
+    .modal.expanded .input-area {
+      padding-bottom: 16px;
+    }
+
+    .modal.expanded #instruction-input {
+      height: 44px;
+    }
+
+    .modal.expanded .submit-btn {
+      width: 44px;
+      height: 44px;
+    }
+
+    .modal.expanded .metrics-bar {
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px 16px;
+    }
+
+    .modal.expanded .metric {
+      min-width: 60px;
+    }
+
+    .modal.expanded .action-display {
+      padding: 14px 16px;
+    }
+
+    .modal.expanded .action-content {
+      max-height: 60px;
+      font-size: 12px;
+    }
+
+    /* Action History (expanded only) */
+    .action-history {
+      padding: 0 16px 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      flex-direction: column;
+    }
+
+    .action-history .action-label {
+      padding-top: 10px;
+      padding-bottom: 6px;
+    }
+
+    .action-history-list {
+      max-height: 120px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .action-history-item {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      padding: 4px 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 4px;
+      line-height: 1.3;
+    }
+
+    .action-history-item:first-child {
+      color: rgba(255, 255, 255, 0.7);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    /* Expand button active state */
+    #expand-btn.active {
+      background: rgba(10, 132, 255, 0.2);
+      color: #0a84ff;
+    }
+
+    /* Transition animations for content */
+    .action-history,
+    .modal.expanded .action-display,
+    .metrics-bar .metric {
+      transition: opacity 0.2s ease-in-out;
+    }
+
+    .modal:not(.expanded) .expanded-only {
+      opacity: 0;
+    }
+
+    .modal.expanded .expanded-only {
+      opacity: 1;
+    }
+
+    /* Queue UI Styles */
+    .queue-btn {
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      color: rgba(255, 255, 255, 0.7);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .queue-btn:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
+    .queue-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .queue-btn.has-items { border-color: #0a84ff; color: #0a84ff; }
+
+    .queue-panel {
+      margin: 0 12px 12px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .queue-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .queue-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.6);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .queue-progress {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
+      font-variant-numeric: tabular-nums;
+    }
+    .queue-list {
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    .queue-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      transition: background 0.15s;
+    }
+    .queue-item:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .queue-item:last-child { border-bottom: none; }
+    .queue-item-status {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.3);
+      flex-shrink: 0;
+    }
+    .queue-item-status.pending { background: rgba(255, 255, 255, 0.4); }
+    .queue-item-status.running { background: #32d74b; animation: pulse 1.5s infinite; }
+    .queue-item-status.completed { background: #0a84ff; }
+    .queue-item-status.failed { background: #ff453a; }
+    .queue-item-text {
+      flex: 1;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.7);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .queue-item.completed .queue-item-text { color: rgba(255, 255, 255, 0.4); text-decoration: line-through; }
+    .queue-item.failed .queue-item-text { color: rgba(255, 69, 58, 0.8); }
+    .queue-item-remove {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: rgba(255, 255, 255, 0.3);
+      cursor: pointer;
+      opacity: 0;
+      transition: all 0.15s;
+    }
+    .queue-item:hover .queue-item-remove { opacity: 1; }
+    .queue-item-remove:hover { background: rgba(255, 69, 58, 0.3); color: #ff453a; }
+    .queue-actions {
+      display: flex;
+      gap: 6px;
+      padding: 8px 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .queue-action-btn {
+      flex: 1;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .queue-start-btn {
+      background: #0a84ff;
+      color: #fff;
+    }
+    .queue-start-btn:hover { background: #409cff; }
+    .queue-start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .queue-clear-btn {
+      background: rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.7);
+    }
+    .queue-clear-btn:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
+    .queue-empty {
+      padding: 12px;
+      text-align: center;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    /* Preview Mode Styles */
+    .modal.preview-mode {
+      border: 2px dashed #ff9500;
+      box-shadow:
+        0 0 0 0.5px rgba(0, 0, 0, 0.3),
+        0 8px 32px rgba(255, 149, 0, 0.2),
+        0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .preview-badge {
+      display: none;
+      padding: 2px 6px;
+      background: rgba(255, 149, 0, 0.9);
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #000;
+      margin-left: 8px;
+    }
+    .modal.preview-mode .preview-badge { display: inline-block; }
+
+    .preview-action { color: #ff9500 !important; }
+
+    /* Preview Toggle */
+    .preview-toggle-container {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 12px 8px;
+    }
+    .preview-toggle-label {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+    .preview-toggle {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .preview-toggle.active {
+      background: rgba(255, 149, 0, 0.8);
+    }
+    .preview-toggle::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      transition: all 0.2s;
+    }
+    .preview-toggle.active::after {
+      left: 18px;
+    }
+    .preview-toggle:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .preview-toggle.active:hover {
+      background: rgba(255, 149, 0, 0.9);
+    }
+
+    .status-dot.preview { background: #ff9500; animation: pulse 1.5s infinite; }
+
+    /* Resize Handle */
+    .resize-handle {
+      position: absolute;
+      bottom: 4px;
+      right: 4px;
+      width: 16px;
+      height: 16px;
+      cursor: se-resize;
+      opacity: 0.4;
+      transition: opacity 0.15s;
+    }
+    .resize-handle:hover { opacity: 0.7; }
+    .resize-handle::before,
+    .resize-handle::after {
+      content: '';
+      position: absolute;
+      background: rgba(255, 255, 255, 0.5);
+      border-radius: 1px;
+    }
+    .resize-handle::before {
+      width: 10px;
+      height: 2px;
+      bottom: 2px;
+      right: 2px;
+      transform: rotate(-45deg);
+      transform-origin: bottom right;
+    }
+    .resize-handle::after {
+      width: 6px;
+      height: 2px;
+      bottom: 5px;
+      right: 2px;
+      transform: rotate(-45deg);
+      transform-origin: bottom right;
+    }
+
+    /* Responsive Breakpoints */
+    /* Small: 300-350px - Compact mode */
+    @media (max-width: 350px) {
+      .modal-header { padding: 2px 8px 6px; }
+      .status-text { font-size: 10px; }
+      .icon-btn { width: 22px; height: 22px; }
+      .input-area { padding: 0 8px 8px; gap: 6px; }
+      #instruction-input { height: 32px; font-size: 12px; padding: 0 8px; }
+      .submit-btn { width: 32px; height: 32px; }
+      .metrics-bar { padding: 6px 8px; }
+      .metric-label { font-size: 8px; }
+      .metric-value { font-size: 10px; }
+      .action-display { padding: 8px; }
+      .action-label { font-size: 8px; }
+      .action-content { font-size: 10px; }
+      .stop-btn { font-size: 11px; padding: 6px; margin: 0 8px 8px; width: calc(100% - 16px); }
+    }
+
+    /* Large: 450px+ - Expanded view */
+    @media (min-width: 450px) {
+      .modal-header { padding: 6px 16px 10px; }
+      .status-text { font-size: 13px; }
+      .icon-btn { width: 30px; height: 30px; }
+      .input-area { padding: 0 16px 14px; gap: 10px; }
+      #instruction-input { height: 42px; font-size: 15px; padding: 0 14px; }
+      .submit-btn { width: 42px; height: 42px; }
+      .metrics-bar { padding: 10px 16px; }
+      .metric { gap: 2px; }
+      .metric-label { font-size: 10px; }
+      .metric-value { font-size: 14px; }
+      .action-display { padding: 12px 16px; }
+      .action-label { font-size: 10px; margin-bottom: 4px; }
+      .action-content { font-size: 12px; line-height: 1.5; }
+      .stop-btn { font-size: 13px; padding: 10px; margin: 0 16px 14px; width: calc(100% - 32px); }
+    }
+
+    /* Position Menu */
+    .position-menu-container { position: relative; }
+    .position-dropdown {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 4px;
+      min-width: 140px;
+      background: rgba(40, 40, 42, 0.98);
+      -webkit-backdrop-filter: blur(30px);
+      backdrop-filter: blur(30px);
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      padding: 4px;
+      z-index: 110;
+      opacity: 0;
+      transform: translateY(-4px) scale(0.96);
+      pointer-events: none;
+      transition: opacity 0.15s, transform 0.15s;
+    }
+    .position-dropdown.visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+    .position-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 10px;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.12s;
+      text-align: left;
+    }
+    .position-option:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+    .position-option.active { background: rgba(10, 132, 255, 0.3); color: #fff; }
+    .position-option svg { opacity: 0.6; flex-shrink: 0; }
+    .position-option:hover svg, .position-option.active svg { opacity: 1; }
+
+    /* Kill Switch Indicator */
+    .kill-switch {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+      cursor: default;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .kill-switch-icon {
+      width: 12px;
+      height: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .kill-switch-shortcut {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    /* Idle state - subtle gray */
+    .kill-switch--idle {
+      background: rgba(255, 255, 255, 0.05);
+      color: rgba(255, 255, 255, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .kill-switch--idle:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.6);
+    }
+
+    /* Armed state - pulsing amber when agent running */
+    .kill-switch--armed {
+      background: rgba(255, 159, 10, 0.15);
+      color: rgba(255, 159, 10, 0.9);
+      border: 1px solid rgba(255, 159, 10, 0.3);
+      animation: kill-switch-pulse 2s ease-in-out infinite;
+    }
+    @keyframes kill-switch-pulse {
+      0%, 100% {
+        background: rgba(255, 159, 10, 0.1);
+        box-shadow: 0 0 0 0 rgba(255, 159, 10, 0);
+      }
+      50% {
+        background: rgba(255, 159, 10, 0.2);
+        box-shadow: 0 0 8px 2px rgba(255, 159, 10, 0.2);
+      }
+    }
+
+    /* Triggered state - red flash */
+    .kill-switch--triggered {
+      background: rgba(255, 69, 58, 0.3);
+      color: #ff453a;
+      border: 1px solid rgba(255, 69, 58, 0.5);
+      animation: kill-switch-flash 0.3s ease-out;
+    }
+    @keyframes kill-switch-flash {
+      0% {
+        background: rgba(255, 69, 58, 0.8);
+        transform: scale(1.05);
+      }
+      100% {
+        background: rgba(255, 69, 58, 0.3);
+        transform: scale(1);
+      }
+    }
+
+    /* Kill switch tooltip */
+    .kill-switch-tooltip {
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(20, 20, 20, 0.95);
+      color: rgba(255, 255, 255, 0.9);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      white-space: nowrap;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.15s ease;
+      pointer-events: none;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      z-index: 150;
+    }
+    .kill-switch-tooltip::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: rgba(20, 20, 20, 0.95);
+    }
+    .kill-switch:hover .kill-switch-tooltip {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    /* Prevent text selection during touch interactions */
+    .touch-no-select {
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* Long-press context hint */
+    .context-hint {
+      position: fixed;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.85);
+      border-radius: 6px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.9);
+      pointer-events: none;
+      z-index: 9999;
+      animation: hint-in 0.15s ease;
+    }
+    @keyframes hint-in {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="modal" id="main-modal" role="main" style="position: relative;">
+      <div class="drag-handle" data-tauri-drag-region aria-hidden="true"></div>
+      <div class="modal-header">
+        <div class="status-indicator" role="status" aria-live="polite" aria-atomic="true">
+          <div class="progress-ring-container">
+            <svg class="progress-ring" viewBox="0 0 24 24" aria-hidden="true">
+              <circle class="progress-ring-bg" cx="12" cy="12" r="10" />
+              <circle class="progress-ring-fill" cx="12" cy="12" r="10" />
+            </svg>
+            <span class="status-dot" aria-hidden="true"></span>
+          </div>
+          <span class="status-text">Ready</span>
+          <span class="preview-badge">Preview</span>
+        </div>
+        <div class="header-actions">
+          <div class="size-selector">
+            <button class="size-btn" id="size-mini" title="Small - Compact view" aria-label="Small view">S</button>
+            <button class="size-btn active" id="size-standard" title="Medium - Standard view" aria-label="Medium view">M</button>
+            <button class="size-btn" id="size-detailed" title="Large - Detailed view with full info" aria-label="Large view">L</button>
+          </div>
+          <div class="position-menu-container">
+            <button class="icon-btn" id="position-btn" title="Snap Position" aria-label="Snap to corner">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+            </button>
+            <div class="position-dropdown hidden" id="position-dropdown" role="menu">
+              <button class="position-option" data-position="top-left" role="menuitem">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="2" y="2" width="8" height="8" rx="1"></rect></svg>
+                <span>Top Left</span>
+              </button>
+              <button class="position-option" data-position="top-right" role="menuitem">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="14" y="2" width="8" height="8" rx="1"></rect></svg>
+                <span>Top Right</span>
+              </button>
+              <button class="position-option" data-position="bottom-left" role="menuitem">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="2" y="14" width="8" height="8" rx="1"></rect></svg>
+                <span>Bottom Left</span>
+              </button>
+              <button class="position-option" data-position="bottom-right" role="menuitem">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="14" y="14" width="8" height="8" rx="1"></rect></svg>
+                <span>Bottom Right</span>
+              </button>
+              <button class="position-option" data-position="center" role="menuitem">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="8" y="8" width="8" height="8" rx="1"></rect></svg>
+                <span>Center</span>
+              </button>
+            </div>
+          </div>
+          <button class="icon-btn" id="expand-btn" title="Expand" aria-label="Expand/collapse window">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <polyline points="9 21 3 21 3 15"></polyline>
+              <line x1="21" y1="3" x2="14" y2="10"></line>
+              <line x1="3" y1="21" x2="10" y2="14"></line>
+            </svg>
+          </button>
+          <div class="kill-switch kill-switch--idle" id="kill-switch">
+            <span class="kill-switch-icon">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                <rect x="8" y="8" width="8" height="8" rx="1" fill="currentColor"></rect>
+              </svg>
+            </span>
+            <span class="kill-switch-shortcut" id="kill-switch-shortcut">⌘⇧⎋</span>
+            <div class="kill-switch-tooltip" id="kill-switch-tooltip">
+              Emergency Stop: Press ⌘+Shift+Escape to stop the agent
+            </div>
+          </div>
+          <button class="icon-btn" id="settings-btn" title="Settings" aria-label="Open settings" aria-expanded="false" tabindex="3">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
+          <button class="icon-btn" id="close-btn" title="Hide" aria-label="Hide window" tabindex="4">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="preview-toggle-container">
+        <span class="preview-toggle-label">Preview Mode</span>
+        <div class="preview-toggle" id="preview-toggle" title="When enabled, actions are shown but not executed"></div>
+      </div>
+      <div class="template-row">
+        <select id="template-select" class="template-select" aria-label="Select template">
+          <option value="">Select a template...</option>
+        </select>
+        <button class="save-template-btn" id="save-template-btn" aria-label="Save template">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+            <polyline points="7 3 7 8 15 8"></polyline>
+          </svg>
+          Save
+        </button>
+      </div>
+      <div class="input-area">
+        <label for="instruction-input" class="visually-hidden">Enter instruction for the agent</label>
+        <div class="input-wrapper">
+          <textarea id="instruction-input" placeholder="What would you like me to do?" autocomplete="off" aria-describedby="metrics-bar" rows="1" tabindex="1"></textarea>
+          <button class="history-btn" id="history-btn" title="History" aria-label="View instruction history">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </button>
+          <div class="history-dropdown hidden" id="history-dropdown">
+            <div class="history-header">
+              <span class="history-title">Recent</span>
+              <button class="history-clear-btn" id="history-clear-btn">Clear</button>
+            </div>
+            <div class="history-list" id="history-list">
+              <div class="history-empty">No history yet</div>
+            </div>
+          </div>
+        </div>
+        <button class="record-btn" id="record-btn" title="Record (preview actions)" aria-label="Record actions">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="12" cy="12" r="8"></circle>
+          </svg>
+        </button>
+        <button class="queue-btn" id="add-queue-btn" title="Add to Queue" aria-label="Add to queue">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+        <button class="submit-btn" id="submit-btn" aria-label="Send instruction" tabindex="2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+      <div class="metrics-bar" id="metrics-bar" role="group" aria-label="Agent metrics">
+        <div class="metric">
+          <span class="metric-label" id="iteration-label">Iteration</span>
+          <span class="metric-value" id="iteration-value" aria-labelledby="iteration-label">0/50</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Agent</span>
+          <span class="metric-value" id="agent-speed-value">1.0x</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label" id="speed-label">LLM</span>
+          <span class="metric-value" id="speed-value" aria-labelledby="speed-label">--</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label" id="tokens-label">Tokens</span>
+          <span class="metric-value" id="tokens-value" aria-labelledby="tokens-label">0</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Cost</span>
+          <span class="metric-value" id="cost-value">--</span>
+        </div>
+        <div class="metric">
+          <span class="metric-value hidden" id="retry-indicator">0 retries</span>
+        </div>
+        <div class="metric expanded-only">
+          <span class="metric-label">Elapsed</span>
+          <span class="metric-value" id="elapsed-value">0:00</span>
+        </div>
+        <div class="metric expanded-only">
+          <span class="metric-label">Actions</span>
+          <span class="metric-value" id="actions-count">0</span>
+        </div>
+      </div>
+      <div class="screenshot-preview">
+        <div class="preview-label">Agent View</div>
+        <div class="preview-container">
+          <img id="screenshot-thumbnail" class="preview-image" alt="Screenshot" />
+          <div class="preview-placeholder" id="preview-placeholder">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+            </svg>
+            <span>No screenshot</span>
+          </div>
+        </div>
+      </div>
+      <div class="thinking-display">
+        <div class="thinking-label">Agent Thinking</div>
+        <div class="thinking-content" id="thinking-content">Waiting for task...</div>
+      </div>
+      <div class="action-display">
+        <div class="action-label">Last Action</div>
+        <div class="action-content" id="action-content">Waiting for instruction...</div>
+      </div>
+      <div class="action-timeline" aria-live="polite" aria-atomic="true">
+        <div class="timeline-header">
+          <span class="action-label">Action History</span>
+          <span class="action-count" id="action-count">0 actions</span>
+        </div>
+        <div class="timeline-list" id="timeline-list">
+          <div class="timeline-empty">Waiting for instruction...</div>
+        </div>
+      </div>
+      <div class="action-history expanded-only">
+        <div class="action-label">Action History</div>
+        <div class="action-history-list" id="action-history-list"></div>
+      </div>
+      <div class="queue-panel hidden" id="queue-panel">
+        <div class="queue-header">
+          <span class="queue-title">Queue</span>
+          <span class="queue-progress" id="queue-progress">0/0</span>
+        </div>
+        <div class="queue-list" id="queue-list">
+          <div class="queue-empty">No items in queue</div>
+        </div>
+        <div class="queue-actions">
+          <button class="queue-action-btn queue-start-btn" id="queue-start-btn" disabled>Start Queue</button>
+          <button class="queue-action-btn queue-clear-btn" id="queue-clear-btn">Clear</button>
+        </div>
+      </div>
+      <div class="recording-panel hidden" id="recording-panel">
+        <div class="recording-header">
+          <div class="recording-title">
+            <span class="recording-badge">REC</span>
+            <span>Recorded Actions</span>
+          </div>
+          <span id="recording-count">0 actions</span>
+        </div>
+        <div class="recording-actions-list" id="recorded-actions-list">
+          <!-- Recorded actions will be inserted here -->
+        </div>
+        <div class="recording-controls">
+          <button class="btn btn-clear" id="clear-recording-btn">Clear</button>
+          <button class="btn btn-execute" id="execute-recording-btn">Re-run Instruction</button>
+        </div>
+      </div>
+      <div class="control-buttons hidden" id="control-buttons">
+        <button class="control-btn pause-btn" id="pause-btn" aria-label="Pause agent">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>
+          Pause
+        </button>
+        <button class="control-btn resume-btn hidden" id="resume-btn" aria-label="Resume agent">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          Resume
+        </button>
+        <button class="control-btn stop-btn" id="stop-btn" aria-label="Stop agent" tabindex="5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>
+          Stop
+        </button>
+      </div>
+      <button class="action-btn hidden" id="retry-btn" title="Retry last instruction" style="display:flex;align-items:center;justify-content:center;gap:6px;width:calc(100% - 24px);margin:0 12px 8px;padding:8px;background:rgba(10,132,255,0.15);border:1px solid rgba(10,132,255,0.3);border-radius:8px;color:#0a84ff;font-size:12px;font-weight:600;cursor:pointer;transition:all 0.15s;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+        </svg>
+        Retry
+      </button>
+      <button class="export-btn hidden" id="export-btn">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Export Log
+      </button>
+      <button class="undo-btn hidden" id="undo-btn" disabled title="Nothing to undo">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7v6h6"></path>
+          <path d="M21 17a9 9 0 00-9-9 9 9 0 00-6.36 2.64L3 13"></path>
+        </svg>
+        Undo
+      </button>
+      <div class="resize-handle" title="Resize"></div>
+    </div>
+
+    <div class="settings-panel hidden" id="settings-panel" role="region" aria-label="Settings" aria-labelledby="settings-title">
+      <div class="settings-header">
+        <h2 id="settings-title">Settings</h2>
+        <button class="icon-btn" id="settings-close-btn" aria-label="Close settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="settings-content">
+        <div class="setting-group">
+          <label class="setting-label">Provider</label>
+          <select id="provider-select" class="setting-select">
+            <option value="ollama">Ollama (Local)</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="glm">GLM (Zhipu AI)</option>
+            <option value="openai-compatible">OpenAI Compatible</option>
+          </select>
+        </div>
+        <div class="provider-settings" id="ollama-settings">
+          <div class="setting-group">
+            <label class="setting-label">Host</label>
+            <input type="text" id="ollama-host" class="setting-input" placeholder="http://localhost:11434">
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Model</label>
+            <div class="model-input-row">
+              <input type="text" id="ollama-model" class="setting-input" placeholder="llava" list="ollama-model-list">
+              <datalist id="ollama-model-list"></datalist>
+              <button class="refresh-models-btn" id="ollama-refresh-models" title="Refresh models">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="setting-group">
+            <button class="test-connection-btn" id="ollama-test-connection">Test Connection</button>
+            <span class="connection-status" id="ollama-connection-status"></span>
+          </div>
+        </div>
+        <div class="provider-settings hidden" id="anthropic-settings">
+          <div class="setting-group">
+            <label class="setting-label">API Key</label>
+            <input type="password" id="anthropic-key" class="setting-input" placeholder="sk-ant-...">
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Model</label>
+            <div class="model-input-row">
+              <input type="text" id="anthropic-model" class="setting-input" placeholder="claude-sonnet-4-20250514" list="anthropic-model-list">
+              <datalist id="anthropic-model-list"></datalist>
+              <button class="refresh-models-btn" id="anthropic-refresh-models" title="Refresh models">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="setting-group">
+            <button class="test-connection-btn" id="anthropic-test-connection">Test Connection</button>
+            <span class="connection-status" id="anthropic-connection-status"></span>
+          </div>
+        </div>
+        <div class="provider-settings hidden" id="openai-settings">
+          <div class="setting-group">
+            <label class="setting-label">API Key</label>
+            <input type="password" id="openai-key" class="setting-input" placeholder="sk-...">
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Model</label>
+            <div class="model-input-row">
+              <input type="text" id="openai-model" class="setting-input" placeholder="gpt-4o" list="openai-model-list">
+              <datalist id="openai-model-list"></datalist>
+              <button class="refresh-models-btn" id="openai-refresh-models" title="Refresh models">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="setting-group">
+            <button class="test-connection-btn" id="openai-test-connection">Test Connection</button>
+            <span class="connection-status" id="openai-connection-status"></span>
+          </div>
+        </div>
+        <div class="provider-settings hidden" id="openrouter-settings">
+          <div class="setting-group">
+            <label class="setting-label">API Key</label>
+            <input type="password" id="openrouter-key" class="setting-input" placeholder="sk-or-...">
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Model</label>
+            <div class="model-input-row">
+              <input type="text" id="openrouter-model" class="setting-input" placeholder="anthropic/claude-sonnet-4-20250514" list="openrouter-model-list">
+              <datalist id="openrouter-model-list"></datalist>
+              <button class="refresh-models-btn" id="openrouter-refresh-models" title="Refresh models">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="setting-group">
+            <button class="test-connection-btn" id="openrouter-test-connection">Test Connection</button>
+            <span class="connection-status" id="openrouter-connection-status"></span>
+          </div>
+        </div>
+        <div class="provider-settings hidden" id="glm-settings">
+          <div class="setting-group">
+            <label class="setting-label">API Key</label>
+            <input type="password" id="glm-key" class="setting-input" placeholder="zhipu-api-key...">
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Model</label>
+            <div class="model-input-row">
+              <input type="text" id="glm-model" class="setting-input" placeholder="glm-4v" list="glm-model-list">
+              <datalist id="glm-model-list"></datalist>
+              <button class="refresh-models-btn" id="glm-refresh-models" title="Refresh models">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="setting-group">
+            <button class="test-connection-btn" id="glm-test-connection">Test Connection</button>
+            <span class="connection-status" id="glm-connection-status"></span>
+          </div>
+        </div>
+        <div class="provider-settings hidden" id="openai-compatible-settings">
+          <div class="setting-group">
+            <label class="setting-label">Base URL</label>
+            <input type="text" id="openai-compatible-url" class="setting-input" placeholder="http://localhost:1234">
+            <p class="setting-hint">Server must expose /v1/chat/completions endpoint</p>
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">API Key (optional)</label>
+            <input type="password" id="openai-compatible-key" class="setting-input" placeholder="Leave blank if not required">
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Model</label>
+            <div class="model-input-row">
+              <input type="text" id="openai-compatible-model" class="setting-input" placeholder="model-name" list="openai-compatible-model-list">
+              <datalist id="openai-compatible-model-list"></datalist>
+              <button class="refresh-models-btn" id="openai-compatible-refresh-models" title="Refresh models">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="setting-group">
+            <button class="test-connection-btn" id="openai-compatible-test-connection">Test Connection</button>
+            <span class="connection-status" id="openai-compatible-connection-status"></span>
+          </div>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Max Iterations</label>
+          <input type="number" id="max-iterations" class="setting-input" placeholder="150" min="1" max="1000" value="150">
+          <p class="setting-hint">Maximum number of agent iterations per task (1-1000)</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Global Hotkey</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="global-hotkey-input" class="setting-input" placeholder="CmdOrCtrl+Shift+P" style="flex: 1;">
+            <button class="icon-btn" id="clear-hotkey-btn" title="Disable hotkey" style="width: 34px; height: 34px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.1);">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <p class="setting-hint">Summon Pia from anywhere (e.g., CmdOrCtrl+Shift+P)</p>
+          <p class="setting-hint" id="hotkey-error" style="color: #ff453a; display: none;"></p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Speed</label>
+          <div class="speed-slider-container">
+            <input type="range" id="speed-slider" class="speed-slider" min="0.25" max="3" step="0.25" value="1">
+            <span class="speed-slider-value" id="speed-slider-value">1.0x</span>
+          </div>
+          <p class="setting-hint">Adjust agent action speed (0.25x slow - 3x fast)</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Temperature</label>
+          <div class="speed-slider-container">
+            <input type="range" id="temperature-slider" class="speed-slider" min="0" max="2" step="0.1" value="0.7">
+            <span class="speed-slider-value" id="temperature-slider-value">0.7</span>
+          </div>
+          <p class="setting-hint">Controls randomness of LLM responses (0 = deterministic, 2 = creative)</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-checkbox">
+            <input type="checkbox" id="confirm-dangerous" checked>
+            <span>Confirm dangerous actions</span>
+          </label>
+          <p class="setting-hint">Ask before delete/close operations</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-checkbox">
+            <input type="checkbox" id="show-overlay">
+            <span>Show coordinate overlay</span>
+          </label>
+          <p class="setting-hint">Display crosshair at target coordinates (debug)</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-checkbox">
+            <input type="checkbox" id="visual-feedback" checked>
+            <span>Show visual feedback overlay</span>
+          </label>
+          <p class="setting-hint">Display click/type indicators on screen</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Queue Failure Mode</label>
+          <select id="queue-failure-mode" class="setting-select">
+            <option value="stop">Stop on failure</option>
+            <option value="continue">Continue on failure</option>
+          </select>
+          <p class="setting-hint">What to do when a queue item fails</p>
+        </div>
+        <div class="setting-group">
+          <label class="setting-label">Queue Delay (ms)</label>
+          <input type="number" id="queue-delay" class="setting-input" placeholder="500" min="0" max="10000">
+          <p class="setting-hint">Delay between queue items</p>
+        </div>
+        <div class="setting-group">
+          <button class="advanced-toggle" id="advanced-toggle" type="button" style="background:transparent;border:none;color:rgba(255,255,255,0.6);font-size:12px;cursor:pointer;padding:4px 0;transition:color 0.15s;">
+            Advanced Settings &#9656;
+          </button>
+        </div>
+        <div class="advanced-settings hidden" id="advanced-settings">
+          <div class="setting-group">
+            <label class="setting-label">Max Retries</label>
+            <input type="number" id="max-retries" class="setting-input" min="0" max="10" value="3">
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Retry Delay (ms)</label>
+            <input type="number" id="retry-delay-ms" class="setting-input" min="0" max="10000" value="1000">
+          </div>
+          <div class="setting-group">
+            <label class="setting-checkbox">
+              <input type="checkbox" id="enable-self-correction" checked>
+              <span>Enable self-correction</span>
+            </label>
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Connect Timeout (seconds)</label>
+            <input type="number" id="connect-timeout" class="setting-input" min="5" max="120" value="30">
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Response Timeout (seconds)</label>
+            <input type="number" id="response-timeout" class="setting-input" min="30" max="600" value="300">
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Max Tokens Per Task (optional)</label>
+            <input type="number" id="max-tokens-per-task" class="setting-input" min="0" placeholder="No limit">
+            <p class="setting-hint">Set a token budget per task (0 or empty = no limit)</p>
+          </div>
+        </div>
+        <button class="save-btn" id="save-settings-btn">Save</button>
+
+        <div class="detect-subscriptions-section">
+          <button class="detect-btn" id="detect-subscriptions-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            Detect API Subscriptions
+          </button>
+          <div class="detect-results hidden" id="detect-results">
+            <div class="detect-results-list" id="detect-results-list"></div>
+          </div>
+        </div>
+
+        <div class="templates-section">
+          <div class="templates-header">
+            <h3>Task Templates</h3>
+          </div>
+          <div class="template-list" id="template-list">
+            <div class="no-templates">No templates saved yet</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="save-template-dialog hidden" id="save-template-dialog">
+      <div class="save-template-content">
+        <h3>Save as Template</h3>
+        <input type="text" id="template-name-input" placeholder="Template name" maxlength="50" autocomplete="off">
+        <div class="save-template-hint">Max 50 characters</div>
+        <div class="save-template-actions">
+          <button class="btn btn-cancel" id="cancel-template-btn">Cancel</button>
+          <button class="btn btn-confirm" id="confirm-template-btn">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="confirmation-dialog hidden" id="confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmation-title" aria-describedby="confirmation-message">
+      <div class="confirmation-content">
+        <h3 id="confirmation-title">Confirm Action</h3>
+        <p id="confirmation-message">This action requires confirmation.</p>
+        <div class="confirmation-actions">
+          <button class="btn btn-cancel" id="cancel-action-btn">Cancel</button>
+          <button class="btn btn-confirm" id="confirm-action-btn">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="export-dialog hidden" id="export-dialog">
+      <div class="export-content">
+        <h3>Export Session Log</h3>
+        <p>Choose export format</p>
+        <div class="export-options">
+          <div class="export-option" id="export-json-btn">
+            <div class="export-option-info">
+              <div class="export-option-name">JSON</div>
+              <div class="export-option-desc">Full structured data</div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </div>
+          <div class="export-option" id="export-text-btn">
+            <div class="export-option-info">
+              <div class="export-option-name">Text</div>
+              <div class="export-option-desc">Human-readable format</div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </div>
+        </div>
+        <label class="export-checkbox">
+          <input type="checkbox" id="include-screenshots">
+          Include screenshots (larger file)
+        </label>
+        <button class="btn btn-cancel" id="export-cancel-btn">Cancel</button>
+      </div>
+    </div>
+    <div class="error-log-panel hidden" id="error-log-panel" style="position:fixed;bottom:60px;left:50%;transform:translateX(-50%);width:340px;max-height:200px;background:rgba(30,30,32,0.95);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border-radius:10px;border:1px solid rgba(255,69,58,0.3);box-shadow:0 8px 24px rgba(0,0,0,0.4);z-index:190;overflow:hidden;">
+      <div class="error-log-header" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.08);">
+        <span style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);">Errors</span>
+        <span class="error-badge" id="error-badge" style="background:rgba(255,69,58,0.2);color:#ff453a;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;">0</span>
+        <button id="error-log-clear" style="background:transparent;border:none;color:rgba(255,255,255,0.5);font-size:10px;cursor:pointer;">Clear</button>
+      </div>
+      <div class="error-log-content" id="error-log-content" style="max-height:150px;overflow-y:auto;padding:6px 12px;"></div>
+    </div>
+
+    <div class="onboarding-overlay hidden" id="onboarding-overlay" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:300;">
+      <div class="onboarding-content" style="background:rgba(40,40,42,0.98);-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px);border-radius:16px;border:1px solid rgba(255,255,255,0.15);padding:28px;max-width:360px;width:90%;text-align:center;">
+        <h2 style="font-size:20px;margin-bottom:8px;">Welcome to Pia</h2>
+        <p style="font-size:13px;color:rgba(255,255,255,0.6);margin-bottom:16px;line-height:1.5;">Pia is an AI-powered computer use agent. It can see your screen, click, type, and navigate to complete tasks for you.</p>
+        <div id="onboarding-credentials" style="margin-bottom:16px;text-align:left;"></div>
+        <div id="onboarding-permissions" style="margin-bottom:16px;text-align:left;"></div>
+        <div style="background:rgba(255,159,10,0.1);border:1px solid rgba(255,159,10,0.3);border-radius:8px;padding:10px;margin-bottom:20px;">
+          <p style="font-size:11px;color:rgba(255,159,10,0.9);font-weight:600;margin-bottom:4px;">Emergency Stop</p>
+          <p style="font-size:11px;color:rgba(255,255,255,0.6);" id="onboarding-kill-switch">Press <strong>Cmd+Shift+Escape</strong> to stop the agent at any time.</p>
+        </div>
+        <button id="onboarding-start-btn" style="width:100%;padding:12px;background:#0a84ff;border:none;border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s;">Get Started</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

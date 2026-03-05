@@ -1,0 +1,5 @@
+worktrees/
+**/.lock
+**/*.tmp.*
+PARALLEL_PLAN.md
+integration/MERGE_LOG.md
