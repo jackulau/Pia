@@ -10,6 +10,8 @@ pub enum KeyboardError {
     ActionError(String),
     #[error("Unknown key: {0}")]
     UnknownKey(String),
+    #[error("Wayland input error: {0}")]
+    WaylandError(String),
 }
 
 thread_local! {
@@ -35,11 +37,28 @@ impl KeyboardController {
             if let Some(existing) = opt.take() {
                 Ok(existing)
             } else {
-                Enigo::new(&Settings::default())
-                    .map_err(|e| KeyboardError::InitError(e.to_string()))
+                Enigo::new(&Settings::default()).map_err(|e| {
+                    // Provide Wayland-specific error hints
+                    let error_msg = crate::platform::wayland_input_error_hint(&e.to_string());
+                    KeyboardError::InitError(error_msg)
+                })
             }
         })?;
         Ok(Self { enigo: Some(enigo) })
+    }
+
+    /// Check whether the current display server supports keyboard input simulation.
+    /// Returns Ok(()) if supported, or Err with a descriptive message if not.
+    pub fn check_wayland_compatibility() -> Result<(), KeyboardError> {
+        let compat = crate::platform::check_display_compatibility();
+        if !compat.input_supported {
+            return Err(KeyboardError::WaylandError(format!(
+                "Keyboard input not supported on {}. {}",
+                compat.display_server,
+                compat.warnings.join(" ")
+            )));
+        }
+        Ok(())
     }
 
     fn enigo(&mut self) -> &mut Enigo {

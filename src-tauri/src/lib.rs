@@ -5,6 +5,7 @@ mod history;
 mod input;
 mod llm;
 mod permissions;
+mod platform;
 
 use agent::{validate_speed_multiplier, ActionHistory, AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse, InstructionQueue, QueueFailureMode, QueueManager, RecordedAction};
 use agent::action::execute_action;
@@ -364,6 +365,14 @@ async fn save_template(
 #[tauri::command]
 async fn delete_template(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let mut config = state.config.write().await;
+
+    // Prevent deletion of built-in templates
+    if let Some(template) = config.templates.iter().find(|t| t.id == id) {
+        if template.is_builtin {
+            return Err("Built-in templates cannot be deleted. You can hide them or restore defaults.".to_string());
+        }
+    }
+
     let original_len = config.templates.len();
     config.templates.retain(|t| t.id != id);
 
@@ -403,6 +412,14 @@ async fn update_template(
 
     config.save().map_err(|e| e.to_string())?;
     Ok(updated)
+}
+
+#[tauri::command]
+async fn restore_default_templates(state: State<'_, AppState>) -> Result<usize, String> {
+    let mut config = state.config.write().await;
+    let restored = config.restore_builtin_templates();
+    config.save().map_err(|e| e.to_string())?;
+    Ok(restored)
 }
 
 #[tauri::command]
@@ -840,6 +857,16 @@ fn check_permissions() -> permissions::PermissionStatus {
     permissions::check_permissions()
 }
 
+#[tauri::command]
+fn get_display_server() -> platform::DisplayServer {
+    platform::get_display_server()
+}
+
+#[tauri::command]
+fn check_display_compatibility() -> platform::DisplayCompatibility {
+    platform::check_display_compatibility()
+}
+
 /// Create a provider instance from config for a given provider name
 fn create_provider_from_config(
     provider_name: &str,
@@ -954,6 +981,19 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(move |app| {
             println!("Pia starting up...");
+
+            // Detect and log display server
+            let display_compat = platform::check_display_compatibility();
+            println!("Display server: {}", display_compat.display_server);
+            for warning in &display_compat.warnings {
+                println!("WARNING: {}", warning);
+            }
+            if !display_compat.input_supported {
+                log::warn!(
+                    "Input simulation may not work on {}. XWayland is recommended.",
+                    display_compat.display_server
+                );
+            }
 
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -1144,12 +1184,15 @@ pub fn run() {
             save_template,
             delete_template,
             update_template,
+            restore_default_templates,
             undo_last_action,
             detect_credentials,
             apply_detected_credential,
             check_provider_health,
             list_provider_models,
             check_permissions,
+            get_display_server,
+            check_display_compatibility,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

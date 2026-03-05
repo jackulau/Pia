@@ -17,6 +17,8 @@ pub enum CaptureError {
     CaptureError(String),
     #[error("Failed to encode image: {0}")]
     EncodeError(#[from] image::ImageError),
+    #[error("Wayland capture error: {0}")]
+    WaylandError(String),
 }
 
 pub struct Screenshot {
@@ -207,7 +209,10 @@ pub fn capture_primary_screen() -> Result<Screenshot, CaptureError> {
     capture_primary_screen_with_config(&ScreenshotConfig::default())
 }
 
-/// Capture the primary screen with custom configuration
+/// Capture the primary screen with custom configuration.
+///
+/// On Wayland, xcap may use xdg-desktop-portal ScreenCast for capture.
+/// If capture fails on Wayland, the error message includes troubleshooting hints.
 pub fn capture_primary_screen_with_config(
     config: &ScreenshotConfig,
 ) -> Result<Screenshot, CaptureError> {
@@ -216,19 +221,31 @@ pub fn capture_primary_screen_with_config(
         Err(e) => {
             // Invalidate cache and retry once
             invalidate_monitor_cache();
-            get_primary_monitor().map_err(|_| e)?
+            match get_primary_monitor() {
+                Ok(m) => m,
+                Err(_) => {
+                    // Provide Wayland-specific error hint if applicable
+                    let error_msg = crate::platform::wayland_capture_error_hint(&e.to_string());
+                    return Err(CaptureError::CaptureError(error_msg));
+                }
+            }
         }
     };
 
     let image = match primary.capture_image() {
         Ok(img) => img,
-        Err(_) => {
+        Err(_capture_err) => {
             // Invalidate cache on capture error and retry
             invalidate_monitor_cache();
             let primary = get_primary_monitor()?;
-            primary
-                .capture_image()
-                .map_err(|e| CaptureError::CaptureError(e.to_string()))?
+            match primary.capture_image() {
+                Ok(img) => img,
+                Err(e) => {
+                    // Provide Wayland-specific error hint if applicable
+                    let error_msg = crate::platform::wayland_capture_error_hint(&e.to_string());
+                    return Err(CaptureError::CaptureError(error_msg));
+                }
+            }
         }
     };
 
