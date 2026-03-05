@@ -157,6 +157,16 @@ fn default_wait_duration() -> u64 {
     1000
 }
 
+/// Returns the platform-appropriate command/control modifier key.
+/// On macOS this is "cmd"; on Windows and Linux it is "ctrl".
+fn platform_cmd_modifier() -> String {
+    if cfg!(target_os = "macos") {
+        "cmd".to_string()
+    } else {
+        "ctrl".to_string()
+    }
+}
+
 /// Details specific to each action type, used for rich feedback
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -1076,20 +1086,20 @@ impl Action {
                 if text.is_empty() {
                     return None;
                 }
-                // Use Cmd+Z (undo) to reverse typed text — more reliable than backspaces
+                // Use platform undo shortcut to reverse typed text — more reliable than backspaces
                 Some(Action::Key {
                     key: "z".to_string(),
-                    modifiers: vec!["cmd".to_string()],
+                    modifiers: vec![platform_cmd_modifier()],
                 })
             }
             Action::Key { key, modifiers } => {
-                // Cmd+V (paste) and Cmd+X (cut) can be reversed with Cmd+Z
+                // Cmd+V (paste) and Cmd+X (cut) can be reversed with platform undo
                 if modifiers.iter().any(|m| m.to_lowercase() == "cmd" || m.to_lowercase() == "ctrl") {
                     let k = key.to_lowercase();
                     if k == "v" || k == "x" {
                         return Some(Action::Key {
                             key: "z".to_string(),
-                            modifiers: vec!["cmd".to_string()],
+                            modifiers: vec![platform_cmd_modifier()],
                         });
                     }
                     return None;
@@ -2268,9 +2278,9 @@ mod tests {
         match reverse {
             Action::Key { key, modifiers } => {
                 assert_eq!(key, "z");
-                assert_eq!(modifiers, vec!["cmd"]);
+                assert_eq!(modifiers, vec![platform_cmd_modifier()]);
             }
-            _ => panic!("Expected Key reverse for type (Cmd+Z undo)"),
+            _ => panic!("Expected Key reverse for type (undo)"),
         }
     }
 
@@ -2299,26 +2309,26 @@ mod tests {
         let action = Action::Key { key: "c".into(), modifiers: vec!["cmd".into()] };
         assert!(action.create_reverse().is_none());
 
-        // Cmd+V (paste) reverses to Cmd+Z
+        // Cmd+V (paste) reverses to platform undo
         let action = Action::Key { key: "v".into(), modifiers: vec!["cmd".into()] };
         let reverse = action.create_reverse().unwrap();
         match reverse {
             Action::Key { key, modifiers } => {
                 assert_eq!(key, "z");
-                assert_eq!(modifiers, vec!["cmd"]);
+                assert_eq!(modifiers, vec![platform_cmd_modifier()]);
             }
-            _ => panic!("Expected Key reverse (Cmd+Z)"),
+            _ => panic!("Expected Key reverse (platform undo)"),
         }
 
-        // Cmd+X (cut) reverses to Cmd+Z
+        // Cmd+X (cut) reverses to platform undo
         let action = Action::Key { key: "x".into(), modifiers: vec!["cmd".into()] };
         let reverse = action.create_reverse().unwrap();
         match reverse {
             Action::Key { key, modifiers } => {
                 assert_eq!(key, "z");
-                assert_eq!(modifiers, vec!["cmd"]);
+                assert_eq!(modifiers, vec![platform_cmd_modifier()]);
             }
-            _ => panic!("Expected Key reverse (Cmd+Z)"),
+            _ => panic!("Expected Key reverse (platform undo)"),
         }
     }
 
@@ -2382,5 +2392,109 @@ mod tests {
         let parsed: Value = serde_json::from_str(&content).unwrap();
         assert_eq!(parsed["status"], "error");
         assert_eq!(parsed["action"], "click");
+    }
+
+    // ── platform_cmd_modifier tests ──────────────────────────────────────
+
+    #[test]
+    fn test_platform_cmd_modifier_returns_valid_modifier() {
+        let modifier = platform_cmd_modifier();
+        // Must be one of the two valid platform modifiers
+        assert!(
+            modifier == "cmd" || modifier == "ctrl",
+            "platform_cmd_modifier() returned unexpected value: {}",
+            modifier
+        );
+    }
+
+    #[test]
+    fn test_platform_cmd_modifier_matches_current_os() {
+        let modifier = platform_cmd_modifier();
+        if cfg!(target_os = "macos") {
+            assert_eq!(modifier, "cmd", "On macOS, modifier should be 'cmd'");
+        } else {
+            assert_eq!(modifier, "ctrl", "On non-macOS, modifier should be 'ctrl'");
+        }
+    }
+
+    #[test]
+    fn test_create_reverse_type_uses_platform_modifier() {
+        let action = Action::Type { text: "test text".into() };
+        let reverse = action.create_reverse().unwrap();
+        match reverse {
+            Action::Key { key, modifiers } => {
+                assert_eq!(key, "z");
+                assert_eq!(modifiers.len(), 1);
+                assert_eq!(modifiers[0], platform_cmd_modifier());
+            }
+            _ => panic!("Expected Key action for Type reverse"),
+        }
+    }
+
+    #[test]
+    fn test_create_reverse_paste_uses_platform_modifier() {
+        // Test with "cmd" modifier (macOS-style paste)
+        let action = Action::Key { key: "v".into(), modifiers: vec!["cmd".into()] };
+        let reverse = action.create_reverse().unwrap();
+        match reverse {
+            Action::Key { key, modifiers } => {
+                assert_eq!(key, "z");
+                assert_eq!(modifiers[0], platform_cmd_modifier());
+            }
+            _ => panic!("Expected Key action for paste reverse"),
+        }
+
+        // Test with "ctrl" modifier (Windows/Linux-style paste)
+        let action = Action::Key { key: "v".into(), modifiers: vec!["ctrl".into()] };
+        let reverse = action.create_reverse().unwrap();
+        match reverse {
+            Action::Key { key, modifiers } => {
+                assert_eq!(key, "z");
+                assert_eq!(modifiers[0], platform_cmd_modifier());
+            }
+            _ => panic!("Expected Key action for paste reverse"),
+        }
+    }
+
+    #[test]
+    fn test_create_reverse_cut_uses_platform_modifier() {
+        // Test with "cmd" modifier (macOS-style cut)
+        let action = Action::Key { key: "x".into(), modifiers: vec!["cmd".into()] };
+        let reverse = action.create_reverse().unwrap();
+        match reverse {
+            Action::Key { key, modifiers } => {
+                assert_eq!(key, "z");
+                assert_eq!(modifiers[0], platform_cmd_modifier());
+            }
+            _ => panic!("Expected Key action for cut reverse"),
+        }
+
+        // Test with "ctrl" modifier (Windows/Linux-style cut)
+        let action = Action::Key { key: "x".into(), modifiers: vec!["ctrl".into()] };
+        let reverse = action.create_reverse().unwrap();
+        match reverse {
+            Action::Key { key, modifiers } => {
+                assert_eq!(key, "z");
+                assert_eq!(modifiers[0], platform_cmd_modifier());
+            }
+            _ => panic!("Expected Key action for cut reverse"),
+        }
+    }
+
+    #[test]
+    fn test_create_reverse_generates_valid_undo_action() {
+        // The reverse of Type should be a valid undo action (Key z with platform modifier)
+        let action = Action::Type { text: "hello world".into() };
+        let reverse = action.create_reverse().unwrap();
+        match &reverse {
+            Action::Key { key, modifiers } => {
+                assert_eq!(key, "z");
+                assert_eq!(modifiers.len(), 1);
+                // The modifier should be recognized by is_reversible's modifier check
+                let m = &modifiers[0].to_lowercase();
+                assert!(m == "cmd" || m == "ctrl");
+            }
+            _ => panic!("Expected Key action"),
+        }
     }
 }
