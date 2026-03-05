@@ -175,9 +175,9 @@ const EXPANDED_SIZE = { width: 500, height: 550 };
 // Position constants
 const POSITION_PADDING = 20;
 
-// Platform detection (set asynchronously via Tauri command at init)
-let detectedPlatform = 'macos'; // default fallback until async init completes
-let isMac = true; // default fallback
+// Platform detection
+const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0 ||
+              navigator.userAgent.toUpperCase().indexOf('MAC') >= 0;
 
 // Touch state
 let touchState = {
@@ -193,14 +193,6 @@ let touchState = {
 
 // Initialize
 async function init() {
-  // Detect platform first — other setup depends on isMac / detectedPlatform
-  try {
-    detectedPlatform = await invoke('get_platform');
-    isMac = detectedPlatform === 'macos';
-  } catch (e) {
-    console.error('Failed to detect platform, defaulting to macOS:', e);
-  }
-
   await loadConfig();
   await loadHistory();
   await loadPreviewMode();
@@ -268,46 +260,27 @@ async function showOnboardingWizard() {
     }
   }
 
-  // Check permissions (platform-appropriate)
+  // Check permissions (macOS)
   const permissionsEl = document.getElementById('onboarding-permissions');
-  if (permissionsEl) {
-    if (isMac) {
-      try {
-        const perms = await invoke('check_permissions');
-        const screenOk = perms.screen_capture;
-        const accessOk = perms.accessibility;
-        permissionsEl.innerHTML = `
-          <p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;">macOS Permissions</p>
-          <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
-            <span style="color:${screenOk ? '#32d74b' : '#ff453a'};font-size:12px;">${screenOk ? '&#10003;' : '&#10007;'}</span>
-            <span style="font-size:12px;color:rgba(255,255,255,0.8);">Screen Recording</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
-            <span style="color:${accessOk ? '#32d74b' : '#ff453a'};font-size:12px;">${accessOk ? '&#10003;' : '&#10007;'}</span>
-            <span style="font-size:12px;color:rgba(255,255,255,0.8);">Accessibility</span>
-          </div>
-          ${(!screenOk || !accessOk) ? '<p style="font-size:10px;color:rgba(255,159,10,0.9);margin-top:4px;">Grant permissions in System Settings &gt; Privacy &amp; Security</p>' : ''}
-        `;
-      } catch (e) {
-        permissionsEl.innerHTML = '';
-      }
-    } else if (detectedPlatform === 'windows') {
+  if (permissionsEl && isMac) {
+    try {
+      const perms = await invoke('check_permissions');
+      const screenOk = perms.screen_capture;
+      const accessOk = perms.accessibility;
       permissionsEl.innerHTML = `
-        <p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;">Windows Permissions</p>
+        <p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;">macOS Permissions</p>
         <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
-          <span style="color:#32d74b;font-size:12px;">&#10003;</span>
-          <span style="font-size:12px;color:rgba(255,255,255,0.8);">No special permissions needed</span>
+          <span style="color:${screenOk ? '#32d74b' : '#ff453a'};font-size:12px;">${screenOk ? '&#10003;' : '&#10007;'}</span>
+          <span style="font-size:12px;color:rgba(255,255,255,0.8);">Screen Recording</span>
         </div>
-      `;
-    } else {
-      permissionsEl.innerHTML = `
-        <p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;">Linux Permissions</p>
         <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
-          <span style="color:#32d74b;font-size:12px;">&#10003;</span>
-          <span style="font-size:12px;color:rgba(255,255,255,0.8);">Ensure X11 display access</span>
+          <span style="color:${accessOk ? '#32d74b' : '#ff453a'};font-size:12px;">${accessOk ? '&#10003;' : '&#10007;'}</span>
+          <span style="font-size:12px;color:rgba(255,255,255,0.8);">Accessibility</span>
         </div>
-        <p style="font-size:10px;color:rgba(255,159,10,0.9);margin-top:4px;">Wayland may have limitations for screen capture</p>
+        ${(!screenOk || !accessOk) ? '<p style="font-size:10px;color:rgba(255,159,10,0.9);margin-top:4px;">Grant permissions in System Settings &gt; Privacy &amp; Security</p>' : ''}
       `;
+    } catch (e) {
+      permissionsEl.innerHTML = '';
     }
   }
 

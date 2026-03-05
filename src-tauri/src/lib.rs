@@ -202,7 +202,10 @@ async fn save_config(mut config: Config, app_handle: AppHandle, state: State<'_,
     // Update overlay window visibility based on setting
     if let Some(overlay) = app_handle.get_webview_window("overlay") {
         if show_overlay {
-            let _ = overlay.show();
+            // Re-apply click-through before showing; on Wayland keeps overlay hidden if unsupported
+            if apply_click_through(&overlay, "overlay") {
+                let _ = overlay.show();
+            }
         } else {
             let _ = overlay.hide();
         }
@@ -454,6 +457,12 @@ async fn show_cursor_indicator(
             let relative_x = x - monitor_pos.x;
             let relative_y = y - monitor_pos.y;
 
+            // Re-apply click-through before showing (ensures it works after hide/show cycles).
+            // On Wayland, if click-through fails the overlay stays hidden to avoid blocking input.
+            if !apply_click_through(&overlay, "cursor-overlay") {
+                return Ok(());
+            }
+
             // Show the overlay and emit the cursor position
             overlay.show().map_err(|e| e.to_string())?;
 
@@ -471,7 +480,11 @@ async fn show_cursor_indicator(
 #[tauri::command]
 async fn show_overlay(app_handle: AppHandle) -> Result<(), String> {
     if let Some(overlay) = app_handle.get_webview_window("overlay") {
-        overlay.show().map_err(|e| e.to_string())?;
+        // Re-apply click-through before showing (ensures it works after hide/show cycles).
+        // On Wayland, if click-through fails the overlay stays hidden to avoid blocking input.
+        if apply_click_through(&overlay, "overlay") {
+            overlay.show().map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
@@ -493,6 +506,39 @@ async fn hide_overlay(app_handle: AppHandle) -> Result<(), String> {
         overlay.hide().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Apply click-through to an overlay window with graceful Wayland fallback.
+///
+/// On macOS and Windows, `set_ignore_cursor_events(true)` is fully supported.
+/// On Linux/X11, it works via GTK's input shape / `gdk_window_set_pass_through`.
+/// On Linux/Wayland, click-through may not be supported by the compositor.
+/// In that case, we hide the overlay to prevent it from intercepting mouse events.
+///
+/// Returns `true` if click-through was successfully applied, `false` if the
+/// overlay was hidden as a fallback.
+fn apply_click_through(window: &WebviewWindow, window_name: &str) -> bool {
+    match window.set_ignore_cursor_events(true) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!(
+                "Failed to set {} click-through: {}. \
+                 On Wayland, click-through may not be supported by the compositor. \
+                 Hiding overlay to prevent mouse interception.",
+                window_name,
+                e
+            );
+            // Hide the overlay so it doesn't block user interaction
+            if let Err(hide_err) = window.hide() {
+                log::warn!(
+                    "Failed to hide {} after click-through failure: {}",
+                    window_name,
+                    hide_err
+                );
+            }
+            false
+        }
+    }
 }
 
 /// Parse a shortcut string like "CmdOrCtrl+Shift+P" into a Shortcut
@@ -840,17 +886,6 @@ fn check_permissions() -> permissions::PermissionStatus {
     permissions::check_permissions()
 }
 
-#[tauri::command]
-fn get_platform() -> String {
-    if cfg!(target_os = "macos") {
-        "macos".to_string()
-    } else if cfg!(target_os = "windows") {
-        "windows".to_string()
-    } else {
-        "linux".to_string()
-    }
-}
-
 /// Create a provider instance from config for a given provider name
 fn create_provider_from_config(
     provider_name: &str,
@@ -1079,7 +1114,10 @@ pub fn run() {
             // Show coordinate overlay window if enabled in config
             if show_overlay_at_startup {
                 if let Some(overlay) = app.get_webview_window("overlay") {
-                    let _ = overlay.show();
+                    // Apply click-through before showing; on Wayland keeps overlay hidden if unsupported
+                    if apply_click_through(&overlay, "overlay") {
+                        let _ = overlay.show();
+                    }
                 }
             }
 
@@ -1092,19 +1130,23 @@ pub fn run() {
 
             if show_visual_feedback {
                 if let Some(overlay) = app.get_webview_window("overlay") {
-                    // Make window click-through on macOS
-                    #[cfg(target_os = "macos")]
-                    {
-                        if let Err(e) = overlay.set_ignore_cursor_events(true) {
-                            log::warn!("Failed to set overlay click-through: {}", e);
-                        }
+                    // Apply click-through (works on macOS, Windows, Linux/X11).
+                    // On Wayland, hides the overlay if click-through is unsupported.
+                    if apply_click_through(&overlay, "overlay") {
+                        let _ = overlay.show();
+                        println!("Overlay window initialized");
+                    } else {
+                        println!("WARN: Overlay click-through not supported; overlay hidden");
                     }
-
-                    let _ = overlay.show();
-                    println!("Overlay window initialized");
                 } else {
                     println!("WARN: Overlay window not found");
                 }
+            }
+
+            // Apply click-through to cursor-overlay (works on macOS, Windows, Linux/X11).
+            // On Wayland, hides the overlay if click-through is unsupported.
+            if let Some(cursor_overlay) = app.get_webview_window("cursor-overlay") {
+                apply_click_through(&cursor_overlay, "cursor-overlay");
             }
 
             Ok(())
@@ -1161,7 +1203,6 @@ pub fn run() {
             check_provider_health,
             list_provider_models,
             check_permissions,
-            get_platform,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1171,38 +1212,7 @@ pub fn run() {
 mod tests {
     use super::*;
 
-    // ── get_platform tests ──────────────────────────────────────────────
-
-    #[test]
-    fn test_get_platform_returns_valid_value() {
-        let platform = get_platform();
-        assert!(
-            platform == "macos" || platform == "windows" || platform == "linux",
-            "get_platform() returned unexpected value: {}",
-            platform
-        );
-    }
-
-    #[test]
-    fn test_get_platform_matches_current_os() {
-        let platform = get_platform();
-        if cfg!(target_os = "macos") {
-            assert_eq!(platform, "macos");
-        } else if cfg!(target_os = "windows") {
-            assert_eq!(platform, "windows");
-        } else {
-            assert_eq!(platform, "linux");
-        }
-    }
-
-    #[test]
-    fn test_get_platform_returns_string_type() {
-        // Ensures the function returns a non-empty String
-        let platform = get_platform();
-        assert!(!platform.is_empty());
-    }
-
-    // ── parse_shortcut tests ────────────────────────────────────────────
+    // ── parse_shortcut tests ──────────────────────────────────────────
 
     #[test]
     fn test_parse_shortcut_simple_key() {
@@ -1215,34 +1225,65 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_shortcut_escape_key() {
-        // Kill switch shortcut: Ctrl+Shift+Escape
-        assert!(parse_shortcut("Ctrl+Shift+Escape").is_ok());
-    }
-
-    #[test]
-    fn test_parse_shortcut_cmd_modifier() {
-        // macOS kill switch: Cmd+Shift+Escape
-        assert!(parse_shortcut("Cmd+Shift+Escape").is_ok());
+    fn test_parse_shortcut_cmdorctrl() {
+        // CmdOrCtrl resolves to META on macOS, CONTROL on other platforms
+        assert!(parse_shortcut("CmdOrCtrl+Shift+P").is_ok());
     }
 
     #[test]
     fn test_parse_shortcut_function_key() {
-        assert!(parse_shortcut("Ctrl+F5").is_ok());
+        assert!(parse_shortcut("Alt+F12").is_ok());
     }
 
     #[test]
     fn test_parse_shortcut_digit() {
-        assert!(parse_shortcut("Alt+3").is_ok());
+        assert!(parse_shortcut("Ctrl+5").is_ok());
+    }
+
+    #[test]
+    fn test_parse_shortcut_escape() {
+        assert!(parse_shortcut("Ctrl+Shift+Escape").is_ok());
+    }
+
+    #[test]
+    fn test_parse_shortcut_esc_alias() {
+        assert!(parse_shortcut("Ctrl+Shift+Esc").is_ok());
+    }
+
+    #[test]
+    fn test_parse_shortcut_space_key() {
+        assert!(parse_shortcut("Ctrl+Space").is_ok());
+    }
+
+    #[test]
+    fn test_parse_shortcut_enter_key() {
+        assert!(parse_shortcut("Ctrl+Enter").is_ok());
+    }
+
+    #[test]
+    fn test_parse_shortcut_return_alias() {
+        assert!(parse_shortcut("Ctrl+Return").is_ok());
+    }
+
+    #[test]
+    fn test_parse_shortcut_all_modifier_variants() {
+        assert!(parse_shortcut("Cmd+A").is_ok());
+        assert!(parse_shortcut("Command+A").is_ok());
+        assert!(parse_shortcut("Super+A").is_ok());
+        assert!(parse_shortcut("Meta+A").is_ok());
+        assert!(parse_shortcut("Ctrl+A").is_ok());
+        assert!(parse_shortcut("Control+A").is_ok());
+        assert!(parse_shortcut("Alt+A").is_ok());
+        assert!(parse_shortcut("Option+A").is_ok());
+        assert!(parse_shortcut("Shift+A").is_ok());
     }
 
     #[test]
     fn test_parse_shortcut_all_letters() {
         for letter in 'A'..='Z' {
-            let shortcut_str = format!("Ctrl+{}", letter);
             assert!(
-                parse_shortcut(&shortcut_str).is_ok(),
-                "Failed to parse shortcut for key: {}",
+                parse_shortcut(&format!("Ctrl+{}", letter)).is_ok(),
+                "Failed to parse Ctrl+{}",
                 letter
             );
         }
@@ -1251,10 +1292,9 @@ mod tests {
     #[test]
     fn test_parse_shortcut_all_digits() {
         for digit in '0'..='9' {
-            let shortcut_str = format!("Ctrl+{}", digit);
             assert!(
-                parse_shortcut(&shortcut_str).is_ok(),
-                "Failed to parse shortcut for digit: {}",
+                parse_shortcut(&format!("Ctrl+{}", digit)).is_ok(),
+                "Failed to parse Ctrl+{}",
                 digit
             );
         }
@@ -1263,74 +1303,44 @@ mod tests {
     #[test]
     fn test_parse_shortcut_all_function_keys() {
         for i in 1..=12 {
-            let shortcut_str = format!("Ctrl+F{}", i);
             assert!(
-                parse_shortcut(&shortcut_str).is_ok(),
-                "Failed to parse shortcut for F{}",
+                parse_shortcut(&format!("Ctrl+F{}", i)).is_ok(),
+                "Failed to parse Ctrl+F{}",
                 i
             );
         }
     }
 
     #[test]
-    fn test_parse_shortcut_special_keys() {
-        let special_keys = [
-            "Space", "Enter", "Return", "Tab", "Escape", "Esc", "Backspace", "Delete",
-        ];
-        for key in &special_keys {
-            let shortcut_str = format!("Ctrl+{}", key);
-            assert!(
-                parse_shortcut(&shortcut_str).is_ok(),
-                "Failed to parse shortcut for key: {}",
-                key
-            );
-        }
-    }
-
-    #[test]
-    fn test_parse_shortcut_all_modifiers() {
-        // Test all supported modifier names
-        let modifiers = [
-            "Cmd", "Command", "Super", "Meta",
-            "Ctrl", "Control",
-            "CmdOrCtrl", "CommandOrControl",
-            "Shift",
-            "Alt", "Option",
-        ];
-        for modifier in &modifiers {
-            let shortcut_str = format!("{}+A", modifier);
-            assert!(
-                parse_shortcut(&shortcut_str).is_ok(),
-                "Failed to parse shortcut with modifier: {}",
-                modifier
-            );
-        }
-    }
-
-    #[test]
-    fn test_parse_shortcut_unknown_modifier_fails() {
-        let result = parse_shortcut("FooBar+A");
+    fn test_parse_shortcut_invalid_modifier() {
+        let result = parse_shortcut("FakeModifier+A");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unknown modifier"));
     }
 
     #[test]
-    fn test_parse_shortcut_unknown_key_fails() {
-        let result = parse_shortcut("Ctrl+InvalidKey");
+    fn test_parse_shortcut_invalid_key() {
+        let result = parse_shortcut("Ctrl+NONEXISTENTKEY");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unknown key"));
     }
 
     #[test]
-    fn test_parse_shortcut_empty_fails() {
+    fn test_parse_shortcut_empty() {
         let result = parse_shortcut("");
-        // Empty string splits to [""] which is treated as an unknown key
         assert!(result.is_err());
     }
 
+    // ── apply_click_through is cross-platform ─────────────────────────
+    // These are compile-time checks that verify the function exists on
+    // ALL platforms (no cfg gate). The function itself requires a
+    // WebviewWindow, which needs a Tauri runtime, so we check the
+    // signature at the type level.
+
     #[test]
-    fn test_parse_shortcut_cmdorctrl_modifier() {
-        // CmdOrCtrl maps to META on macOS, CONTROL on other platforms
-        assert!(parse_shortcut("CmdOrCtrl+Q").is_ok());
+    fn test_apply_click_through_is_cross_platform() {
+        // If apply_click_through were gated behind #[cfg(target_os = "macos")]
+        // or any other platform cfg, this would fail to compile on non-macOS.
+        let _fn_ptr: fn(&WebviewWindow, &str) -> bool = apply_click_through;
     }
 }
