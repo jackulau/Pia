@@ -1,0 +1,46 @@
+/* Design Tokens - Centralized Design System */
+:root {
+  /* Colors - iOS-like palette */
+  --color-accent: #0a84ff;
+  --color-accent-hover: #409cff;
+  --color-success: #30d158;
+  --color-warning: #ff9f0a;
+  --color-error: #ff453a;
+  --color-purple: #bf5af2;
+  --color-yellow: #ffd60a;
+  --color-info: #64d2ff;
+
+  /* Status-specific colors */
+  --status-ready: rgba(255, 255, 255, 0.4);
+  --status-running: #32d74b;
+  --status-completed: #0a84ff;
+  --status-error: #ff453a;
+  --status-retrying: #ff9f0a;
+  --status-paused: #ffd60a;
+  --status-awaiting: #bf5af2;
+
+  /* Backgrounds */
+  --bg-primary: rgba(30, 30, 32, 0.95);
+  --bg-secondary: rgba(44, 44, 46, 0.9);
+  --bg-overlay: rgba(0, 0, 0, 0.6);
+
+  /* Text */
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.4);
+
+  /* Borders */
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-focus: rgba(10, 132, 255, 0.5);
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+
+  /* Animation */
+  --duration-fast: 0.15s;
+  --duration-normal: 0.25s;
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+}

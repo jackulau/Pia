@@ -1,0 +1,11 @@
+id: test-openrouter-provider
+status: complete
+branch: pia/test-openrouter-provider
+worktree_path: .claude-workspace/worktrees/test-openrouter-provider/worktree
+assigned_to: null
+started_at: 2026-01-28T19:31:00Z
+completed_at: 2026-01-28T19:33:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: bbbc9f2b777d2d914338298658357a507c7ac21e
+tests_passing: true
