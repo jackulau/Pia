@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -39,6 +41,12 @@ pub struct ConversationHistory {
     /// The original user instruction for this task
     #[serde(skip_serializing_if = "Option::is_none")]
     original_instruction: Option<String>,
+    /// Current iteration number (set by the agent loop for progress context)
+    #[serde(skip)]
+    pub iteration: Option<u32>,
+    /// Maximum iterations allowed (set by the agent loop for progress context)
+    #[serde(skip)]
+    pub max_iterations: Option<u32>,
 }
 
 impl ConversationHistory {
@@ -47,6 +55,8 @@ impl ConversationHistory {
         Self {
             messages: VecDeque::new(),
             original_instruction: None,
+            iteration: None,
+            max_iterations: None,
         }
     }
 
@@ -91,7 +101,12 @@ impl ConversationHistory {
     }
 
     /// Adds a tool result message.
-    pub fn add_tool_result(&mut self, success: bool, message: Option<String>, error: Option<String>) {
+    pub fn add_tool_result(
+        &mut self,
+        success: bool,
+        message: Option<String>,
+        error: Option<String>,
+    ) {
         self.add_message(Message::ToolResult {
             success,
             message,
@@ -124,6 +139,8 @@ impl ConversationHistory {
     pub fn clear(&mut self) {
         self.messages.clear();
         self.original_instruction = None;
+        self.iteration = None;
+        self.max_iterations = None;
     }
 
     /// Truncates history to MAX_HISTORY_LENGTH, keeping most recent messages.
@@ -164,13 +181,26 @@ mod tests {
     #[test]
     fn test_add_user_message() {
         let mut conv = ConversationHistory::new();
-        conv.add_user_message("Click the button", Some(Arc::new("base64data".to_string())), Some(1920), Some(1080));
+        conv.add_user_message(
+            "Click the button",
+            Some(Arc::new("base64data".to_string())),
+            Some(1920),
+            Some(1080),
+        );
 
         assert_eq!(conv.len(), 1);
         match &conv.get_messages()[0] {
-            Message::User { instruction, screenshot_base64, screen_width, screen_height } => {
+            Message::User {
+                instruction,
+                screenshot_base64,
+                screen_width,
+                screen_height,
+            } => {
                 assert_eq!(instruction, "Click the button");
-                assert_eq!(screenshot_base64.as_ref().map(|s| s.as_str()), Some("base64data"));
+                assert_eq!(
+                    screenshot_base64.as_ref().map(|s| s.as_str()),
+                    Some("base64data")
+                );
                 assert_eq!(*screen_width, Some(1920));
                 assert_eq!(*screen_height, Some(1080));
             }
@@ -199,7 +229,11 @@ mod tests {
 
         assert_eq!(conv.len(), 1);
         match &conv.get_messages()[0] {
-            Message::ToolResult { success, message, error } => {
+            Message::ToolResult {
+                success,
+                message,
+                error,
+            } => {
                 assert!(*success);
                 assert_eq!(message.as_deref(), Some("Clicked successfully"));
                 assert!(error.is_none());

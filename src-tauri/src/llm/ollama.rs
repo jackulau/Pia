@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
 use super::provider::{
-    build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse,
-    TokenMetrics,
+    build_system_prompt_with_context, history_to_messages, ChunkCallback,
+    LlmError, LlmProvider, LlmResponse, TokenMetrics,
 };
 use super::sse::append_bytes_to_buffer;
 use serde_json::Value;
@@ -9,13 +11,13 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub struct OllamaProvider {
     client: Client,
     host: String,
     model: String,
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -31,6 +33,8 @@ struct OllamaChatRequest {
     model: String,
     messages: Vec<OllamaChatMessage>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Deserialize)]
@@ -51,15 +55,16 @@ struct OllamaChatMessageResponse {
 }
 
 impl OllamaProvider {
-    pub fn new(host: String, model: String) -> Self {
+    pub fn new(host: String, model: String, temperature: Option<f32>) -> Self {
         Self {
             client: Client::new(),
             host,
             model,
+            temperature,
         }
     }
 
-    pub fn with_timeouts(host: String, model: String, connect_timeout: Duration, response_timeout: Duration) -> Self {
+    pub fn with_timeouts(host: String, model: String, temperature: Option<f32>, connect_timeout: Duration, response_timeout: Duration) -> Self {
         let client = Client::builder()
             .connect_timeout(connect_timeout)
             .timeout(response_timeout)
@@ -69,7 +74,13 @@ impl OllamaProvider {
             client,
             host,
             model,
+            temperature,
         }
+    }
+
+    pub fn with_temperature(mut self, temperature: Option<f32>) -> Self {
+        self.temperature = temperature;
+        self
     }
 }
 
@@ -83,7 +94,14 @@ impl LlmProvider for OllamaProvider {
         on_chunk: ChunkCallback,
     ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt(screen_width, screen_height);
+        let instruction = history.original_instruction().map(|s| s.to_string());
+        let system_prompt = build_system_prompt_with_context(
+            screen_width,
+            screen_height,
+            instruction.as_deref(),
+            history.iteration,
+            history.max_iterations,
+        );
 
         let mut messages = Vec::new();
 
@@ -116,6 +134,7 @@ impl LlmProvider for OllamaProvider {
             model: self.model.clone(),
             messages,
             stream: true,
+            temperature: self.temperature,
         };
 
         let response = self
@@ -278,6 +297,7 @@ mod tests {
                 },
             ],
             stream: true,
+            temperature: None,
         };
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["model"], "llava");
@@ -397,20 +417,20 @@ mod tests {
 
     #[test]
     fn test_provider_name() {
-        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string());
+        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string(), None);
         assert_eq!(provider.name(), "ollama");
     }
 
     #[test]
     fn test_chat_request_uses_correct_endpoint() {
-        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string());
+        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string(), None);
         let expected = format!("{}/api/chat", provider.host);
         assert_eq!(expected, "http://localhost:11434/api/chat");
     }
 
     #[test]
     fn test_health_check_url() {
-        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string());
+        let provider = OllamaProvider::new("http://localhost:11434".to_string(), "llava".to_string(), None);
         let url = format!("{}/api/tags", provider.host);
         assert_eq!(url, "http://localhost:11434/api/tags");
     }

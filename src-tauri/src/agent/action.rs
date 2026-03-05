@@ -201,7 +201,7 @@ pub struct ParsedResponse {
 /// Parse an action from an LLM response (either tool_use or text)
 pub fn parse_llm_response(response: &LlmResponse) -> Result<Action, ActionError> {
     match response {
-        LlmResponse::ToolUse(tool_use) => from_tool_use(tool_use),
+        LlmResponse::ToolUse { tool_use, .. } => from_tool_use(tool_use),
         LlmResponse::Text(text) => {
             let parsed = parse_action(text)?;
             Ok(parsed.action)
@@ -212,9 +212,9 @@ pub fn parse_llm_response(response: &LlmResponse) -> Result<Action, ActionError>
 /// Parse an action from an LLM response with reasoning extraction
 pub fn parse_llm_response_with_reasoning(response: &LlmResponse) -> Result<ParsedResponse, ActionError> {
     match response {
-        LlmResponse::ToolUse(tool_use) => {
+        LlmResponse::ToolUse { tool_use, reasoning } => {
             let action = from_tool_use(tool_use)?;
-            Ok(ParsedResponse { action, reasoning: None })
+            Ok(ParsedResponse { action, reasoning: reasoning.clone() })
         }
         LlmResponse::Text(text) => parse_action(text),
     }
@@ -1479,11 +1479,14 @@ mod tests {
 
     #[test]
     fn test_parse_llm_response_tool_use_path() {
-        let response = LlmResponse::ToolUse(ToolUse {
-            id: "tool_1".to_string(),
-            name: "click".to_string(),
-            input: json!({"x": 100, "y": 200}),
-        });
+        let response = LlmResponse::ToolUse {
+            tool_use: ToolUse {
+                id: "tool_1".to_string(),
+                name: "click".to_string(),
+                input: json!({"x": 100, "y": 200}),
+            },
+            reasoning: None,
+        };
         let action = parse_llm_response(&response).unwrap();
         match action {
             Action::Click { x, y, button } => {
@@ -1507,11 +1510,14 @@ mod tests {
 
     #[test]
     fn test_parse_llm_response_tool_use_no_reasoning() {
-        let response = LlmResponse::ToolUse(ToolUse {
-            id: "tool_2".to_string(),
-            name: "complete".to_string(),
-            input: json!({"message": "done"}),
-        });
+        let response = LlmResponse::ToolUse {
+            tool_use: ToolUse {
+                id: "tool_2".to_string(),
+                name: "complete".to_string(),
+                input: json!({"message": "done"}),
+            },
+            reasoning: None,
+        };
         let parsed = parse_llm_response_with_reasoning(&response).unwrap();
         assert!(parsed.reasoning.is_none());
         assert!(matches!(parsed.action, Action::Complete { .. }));
@@ -1844,11 +1850,14 @@ mod tests {
 
     #[test]
     fn test_llm_response_to_string_repr_tool_use() {
-        let resp = LlmResponse::ToolUse(ToolUse {
-            id: "id1".to_string(),
-            name: "click".to_string(),
-            input: json!({"x": 1, "y": 2}),
-        });
+        let resp = LlmResponse::ToolUse {
+            tool_use: ToolUse {
+                id: "id1".to_string(),
+                name: "click".to_string(),
+                input: json!({"x": 1, "y": 2}),
+            },
+            reasoning: None,
+        };
         let repr = resp.to_string_repr();
         let parsed: Value = serde_json::from_str(&repr).unwrap();
         assert_eq!(parsed["name"], "click");

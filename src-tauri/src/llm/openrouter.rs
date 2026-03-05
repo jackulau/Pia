@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
 use super::provider::{
-    build_system_prompt, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse,
-    TokenMetrics,
+    build_system_prompt_with_context, history_to_messages, ChunkCallback,
+    LlmError, LlmProvider, LlmResponse, TokenMetrics,
 };
 use super::sse::{append_bytes_to_buffer, process_sse_buffer};
 use serde_json::Value;
@@ -8,13 +10,14 @@ use crate::agent::conversation::ConversationHistory;
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::time::{Duration, Instant};
 
 pub struct OpenRouterProvider {
     client: Client,
     api_key: String,
     model: String,
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -23,6 +26,8 @@ struct OpenRouterRequest {
     max_tokens: u32,
     messages: Vec<OpenRouterMessage>,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -53,15 +58,16 @@ struct ImageUrl {
 }
 
 impl OpenRouterProvider {
-    pub fn new(api_key: String, model: String) -> Self {
+    pub fn new(api_key: String, model: String, temperature: Option<f32>) -> Self {
         Self {
             client: Client::new(),
             api_key,
             model,
+            temperature,
         }
     }
 
-    pub fn with_timeouts(api_key: String, model: String, connect_timeout: Duration, response_timeout: Duration) -> Self {
+    pub fn with_timeouts(api_key: String, model: String, temperature: Option<f32>, connect_timeout: Duration, response_timeout: Duration) -> Self {
         let client = Client::builder()
             .connect_timeout(connect_timeout)
             .timeout(response_timeout)
@@ -71,7 +77,13 @@ impl OpenRouterProvider {
             client,
             api_key,
             model,
+            temperature,
         }
+    }
+
+    pub fn with_temperature(mut self, temperature: Option<f32>) -> Self {
+        self.temperature = temperature;
+        self
     }
 }
 
@@ -85,7 +97,14 @@ impl LlmProvider for OpenRouterProvider {
         on_chunk: ChunkCallback,
     ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt(screen_width, screen_height);
+        let instruction = history.original_instruction().map(|s| s.to_string());
+        let system_prompt = build_system_prompt_with_context(
+            screen_width,
+            screen_height,
+            instruction.as_deref(),
+            history.iteration,
+            history.max_iterations,
+        );
 
         // Build messages from conversation history
         let mut messages = vec![OpenRouterMessage {
@@ -120,6 +139,7 @@ impl LlmProvider for OpenRouterProvider {
             max_tokens: 1024,
             messages,
             stream: true,
+            temperature: self.temperature,
         };
 
         let response = self
