@@ -19,17 +19,20 @@
       {
         "title": "Pia",
         "label": "main",
-        "width": 420,
+        "width": 500,
         "height": 450,
-        "resizable": false,
+        "minWidth": 400,
+        "minHeight": 320,
+        "maxWidth": 800,
+        "maxHeight": 950,
+        "resizable": true,
         "fullscreen": false,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
-        "visible": false,
+        "visible": true,
         "center": true,
-        "skipTaskbar": true,
-        "backgroundColor": "#00000000"
+        "skipTaskbar": true
       },
       {
         "title": "Pia Overlay",
@@ -44,8 +47,7 @@
         "visible": false,
         "focus": false,
         "width": 1920,
-        "height": 1080,
-        "backgroundColor": "#00000000"
+        "height": 1080
       },
       {
         "title": "Cursor Overlay",
@@ -59,8 +61,7 @@
         "resizable": false,
         "visible": false,
         "width": 800,
-        "height": 600,
-        "backgroundColor": "#00000000"
+        "height": 600
       }
     ],
     "security": {
@@ -84,15 +85,6 @@
       "frameworks": [],
       "providerShortName": null,
       "signingIdentity": null
-    },
-    "windows": {
-      "certificateThumbprint": null,
-      "digestAlgorithm": "sha256",
-      "timestampUrl": ""
-    },
-    "nsis": {
-      "installMode": "currentUser",
-      "displayLanguageSelector": false
     }
   }
 }

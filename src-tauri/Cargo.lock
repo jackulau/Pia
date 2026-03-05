@@ -3809,7 +3809,7 @@ dependencies = [
  "image",
  "log",
  "once_cell",
- "regex",
+ "parking_lot",
  "reqwest",
  "serde",
  "serde_json",

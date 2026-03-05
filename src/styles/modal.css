@@ -24,13 +24,10 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: transparent;
+  background: var(--bg-primary);
   color: var(--text-primary);
   overflow: hidden;
-  -webkit-user-select: none;
   user-select: none;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 #app {
@@ -51,10 +48,7 @@ body {
   background: var(--bg-primary);
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.3),
-    0 8px 32px rgba(0, 0, 0, 0.4),
-    0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   overflow: hidden;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);

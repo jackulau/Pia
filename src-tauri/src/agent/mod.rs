@@ -7,9 +7,7 @@ pub mod queue;
 pub mod recovery;
 pub mod retry;
 pub mod state;
-pub mod task_classifier;
 
-pub use action::DangerLevel;
 pub use delay::*;
 pub use history::*;
 pub use loop_runner::*;

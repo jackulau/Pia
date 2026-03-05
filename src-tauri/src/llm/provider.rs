@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 use crate::agent::conversation::{ConversationHistory, Message};
-use crate::agent::task_classifier::{classify_instruction, get_task_specific_guidance};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -319,135 +318,6 @@ pub fn build_tools() -> Vec<Tool> {
                 "required": ["message"]
             }),
         },
-        Tool {
-            name: "drag".to_string(),
-            description: "Click and drag from one point to another. Use for moving files, resizing windows, adjusting sliders, or selecting text.".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "start_x": {
-                        "type": "integer",
-                        "description": "X coordinate to start dragging from"
-                    },
-                    "start_y": {
-                        "type": "integer",
-                        "description": "Y coordinate to start dragging from"
-                    },
-                    "end_x": {
-                        "type": "integer",
-                        "description": "X coordinate to drag to"
-                    },
-                    "end_y": {
-                        "type": "integer",
-                        "description": "Y coordinate to drag to"
-                    },
-                    "button": {
-                        "type": "string",
-                        "enum": ["left", "right", "middle"],
-                        "default": "left",
-                        "description": "Mouse button to use for dragging"
-                    },
-                    "duration_ms": {
-                        "type": "integer",
-                        "default": 500,
-                        "maximum": 5000,
-                        "description": "Duration of the drag in milliseconds"
-                    }
-                },
-                "required": ["start_x", "start_y", "end_x", "end_y"]
-            }),
-        },
-        Tool {
-            name: "triple_click".to_string(),
-            description: "Triple click at coordinates to select an entire line of text".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "x": {
-                        "type": "integer",
-                        "description": "X coordinate to triple-click"
-                    },
-                    "y": {
-                        "type": "integer",
-                        "description": "Y coordinate to triple-click"
-                    }
-                },
-                "required": ["x", "y"]
-            }),
-        },
-        Tool {
-            name: "right_click".to_string(),
-            description: "Right click at coordinates to open a context menu".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "x": {
-                        "type": "integer",
-                        "description": "X coordinate to right-click"
-                    },
-                    "y": {
-                        "type": "integer",
-                        "description": "Y coordinate to right-click"
-                    }
-                },
-                "required": ["x", "y"]
-            }),
-        },
-        Tool {
-            name: "wait".to_string(),
-            description: "Wait/pause for a specified duration. Useful when waiting for UI elements to load or animations to complete.".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "duration_ms": {
-                        "type": "integer",
-                        "default": 1000,
-                        "maximum": 5000,
-                        "description": "Duration to wait in milliseconds"
-                    }
-                },
-                "required": ["duration_ms"]
-            }),
-        },
-        Tool {
-            name: "batch".to_string(),
-            description: "Execute multiple actions in sequence without intermediate screenshots. Use for predictable action sequences. Max 10 actions per batch.".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "actions": {
-                        "type": "array",
-                        "maxItems": 10,
-                        "description": "Array of actions to execute in sequence",
-                        "items": {
-                            "type": "object",
-                            "description": "An action object (same format as individual tool calls)"
-                        }
-                    }
-                },
-                "required": ["actions"]
-            }),
-        },
-        Tool {
-            name: "wait_for_element".to_string(),
-            description: "Wait for a UI element to appear before proceeding. Use after clicking buttons that trigger loading, navigating to new pages, or when elements may not be immediately visible.".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "description": {
-                        "type": "string",
-                        "description": "Description of the element or state to wait for"
-                    },
-                    "timeout_ms": {
-                        "type": "integer",
-                        "default": 5000,
-                        "maximum": 10000,
-                        "description": "Maximum time to wait in milliseconds"
-                    }
-                },
-                "required": ["description"]
-            }),
-        },
     ]
 }
 
@@ -561,73 +431,48 @@ pub trait LlmProvider: Send + Sync {
     fn name(&self) -> &str;
 }
 
-/// Number of recent screenshots to include in conversation history.
-/// Older screenshots are stripped to save tokens.
-const MAX_SCREENSHOTS_IN_HISTORY: usize = 2;
-
 /// Helper to convert conversation history to provider-specific message format.
 /// Returns a Vec of tuples: (role, text_content, optional_image_base64)
 /// The image_base64 is Arc-wrapped to avoid cloning large screenshot strings.
 ///
-/// Only the most recent `MAX_SCREENSHOTS_IN_HISTORY` user messages retain their
-/// screenshots. Older user messages have their screenshot replaced with `None`
-/// and their text prefixed with "[Screenshot omitted] ".
+/// To reduce token usage, only the 2 most recent User messages retain their screenshots;
+/// older screenshots are stripped (replaced with None).
 pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String, Option<Arc<String>>)> {
-    let messages: Vec<&Message> = history.messages().collect();
+    // Count total User messages to determine which ones keep screenshots
+    let user_msg_count = history.messages().filter(|m| matches!(m, Message::User { .. })).count();
+    let keep_threshold = user_msg_count.saturating_sub(2);
 
-    // Count user messages that have screenshots, from the end
-    let mut screenshots_remaining = MAX_SCREENSHOTS_IN_HISTORY;
-    let mut keep_screenshot: Vec<bool> = vec![false; messages.len()];
-
-    for i in (0..messages.len()).rev() {
-        if let Message::User { screenshot_base64: Some(_), .. } = messages[i] {
-            if screenshots_remaining > 0 {
-                keep_screenshot[i] = true;
-                screenshots_remaining -= 1;
-            }
-        }
-    }
-
-    messages
-        .into_iter()
-        .enumerate()
-        .map(|(i, msg)| match msg {
+    let mut user_index = 0usize;
+    history
+        .messages()
+        .map(|msg| match msg {
             Message::User {
                 instruction,
                 screenshot_base64,
                 ..
             } => {
-                if screenshot_base64.is_some() && !keep_screenshot[i] {
-                    (
-                        "user".to_string(),
-                        format!("[Screenshot omitted] {}", instruction),
-                        None,
-                    )
-                } else {
-                    (
-                        "user".to_string(),
-                        instruction.clone(),
-                        screenshot_base64.clone(),
-                    )
-                }
+                let keep_screenshot = user_index >= keep_threshold;
+                user_index += 1;
+                (
+                    "user".to_string(),
+                    instruction.clone(),
+                    if keep_screenshot { screenshot_base64.clone() } else { None },
+                )
             }
             Message::Assistant { content } => ("assistant".to_string(), content.clone(), None),
-            Message::AssistantToolUse { text, .. } => (
-                "assistant".to_string(),
-                text.clone().unwrap_or_default(),
-                None,
-            ),
             Message::ToolResult {
                 success,
-                message: _,
+                message,
                 error,
-                ..
             } => {
                 let text = if *success {
-                    "OK".to_string()
+                    format!(
+                        "Action executed successfully. {}",
+                        message.as_deref().unwrap_or("")
+                    )
                 } else {
                     format!(
-                        "FAIL: {}",
+                        "Action failed. {}",
                         error.as_deref().unwrap_or("Unknown error")
                     )
                 };
@@ -637,32 +482,20 @@ pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String
         .collect()
 }
 
-/// Build system prompt for tool-based providers (simplified, tools are defined via API).
-/// When `instruction` is provided, task-specific guidance is appended.
+/// Build system prompt for tool-based providers (simplified, tools are defined via API)
 pub fn build_system_prompt_for_tools(screen_width: u32, screen_height: u32) -> String {
-    build_system_prompt_for_tools_with_instruction(screen_width, screen_height, None)
+    build_system_prompt_for_tools_with_context(screen_width, screen_height, None, None, None)
 }
 
-/// Build system prompt for tool-based providers with optional task-specific guidance.
-pub fn build_system_prompt_for_tools_with_instruction(
+/// Build system prompt for tool-based providers with optional task context and progress info
+pub fn build_system_prompt_for_tools_with_context(
     screen_width: u32,
     screen_height: u32,
     instruction: Option<&str>,
+    iteration: Option<u32>,
+    max_iterations: Option<u32>,
 ) -> String {
-    let task_guidance = instruction
-        .map(|instr| {
-            let task_type = classify_instruction(instr);
-            get_task_specific_guidance(&task_type)
-        })
-        .unwrap_or("");
-
-    let guidance_section = if task_guidance.is_empty() {
-        String::new()
-    } else {
-        format!("\n\n{}", task_guidance)
-    };
-
-    format!(
+    let mut prompt = format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
 
 Screen dimensions: {screen_width}x{screen_height} pixels
@@ -673,7 +506,7 @@ Guidelines:
 - Be precise with click locations
 - Wait for UI to update between actions (the system handles this)
 - Use the "complete" tool when the task is done
-- Use the "error" tool if you cannot proceed{guidance_section}
+- Use the "error" tool if you cannot proceed
 
 Use one of the provided tools to perform your next action."#
     );
@@ -692,60 +525,111 @@ Use one of the provided tools to perform your next action."#
     prompt
 }
 
-/// Build system prompt for JSON-based providers (includes action definitions in prompt).
-/// When `instruction` is provided, task-specific guidance is appended.
-pub fn build_system_prompt(screen_width: u32, screen_height: u32) -> String {
-    build_system_prompt_with_instruction(screen_width, screen_height, None)
-}
-
-/// Build system prompt for JSON-based providers with optional task-specific guidance.
-pub fn build_system_prompt_with_instruction(
+/// Build system prompt for JSON-based providers with optional task context and progress info
+pub fn build_system_prompt_with_context(
     screen_width: u32,
     screen_height: u32,
     instruction: Option<&str>,
+    iteration: Option<u32>,
+    max_iterations: Option<u32>,
 ) -> String {
-    let task_guidance = instruction
-        .map(|instr| {
-            let task_type = classify_instruction(instr);
-            get_task_specific_guidance(&task_type)
-        })
-        .unwrap_or("");
+    let mut prompt = build_system_prompt(screen_width, screen_height);
 
-    let guidance_section = if task_guidance.is_empty() {
-        String::new()
-    } else {
-        format!("\n\n{}", task_guidance)
-    };
+    if let Some(instr) = instruction {
+        prompt.push_str(&format!("\n\n## Current Task\n{}", instr));
+    }
 
+    if let (Some(iter), Some(max)) = (iteration, max_iterations) {
+        prompt.push_str(&format!("\n\n## Progress\nStep {} of {}.", iter, max));
+        if max > 0 && iter > (max * 3) / 4 {
+            prompt.push_str("\nYou are running low on steps. Focus on completing the task efficiently.");
+        }
+    }
+
+    prompt
+}
+
+/// Build system prompt for JSON-based providers (includes action definitions in prompt)
+pub fn build_system_prompt(screen_width: u32, screen_height: u32) -> String {
     format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
 
-Screen dimensions: {screen_width}x{screen_height} pixels{task_section}
+Screen dimensions: {screen_width}x{screen_height} pixels
+
+You must respond with a single JSON action. Available actions:
+
+1. Click at coordinates:
+   {{"action": "click", "x": 100, "y": 200, "button": "left"}}
+   button can be "left", "right", or "middle"
+
+2. Double click:
+   {{"action": "double_click", "x": 100, "y": 200}}
+
+3. Type text:
+   {{"action": "type", "text": "Hello World"}}
+
+4. Press a key with optional modifiers:
+   {{"action": "key", "key": "enter"}}
+   {{"action": "key", "key": "c", "modifiers": ["ctrl"]}}
+   {{"action": "key", "key": "v", "modifiers": ["ctrl"]}}
+   Available modifiers: "ctrl", "alt", "shift", "meta" (cmd on macOS)
+
+5. Scroll at position:
+   {{"action": "scroll", "x": 500, "y": 300, "direction": "down", "amount": 3}}
+   direction can be "up", "down", "left", or "right"
+
+6. Move mouse (without clicking):
+   {{"action": "move", "x": 100, "y": 200}}
+
+7. Drag from one point to another:
+   {{"action": "drag", "start_x": 100, "start_y": 200, "end_x": 300, "end_y": 200}}
+   Click and drag from start position to end position.
+   Optional: "button" (default "left"), "duration_ms" (default 500, max 5000)
+   Use for: moving files, resizing windows, adjusting sliders, selecting text
+
+8. Triple click (select entire line):
+   {{"action": "triple_click", "x": 100, "y": 200}}
+   Useful for selecting entire lines of text
+
+9. Right click (context menu):
+   {{"action": "right_click", "x": 100, "y": 200}}
+
+10. Wait/pause execution:
+    {{"action": "wait", "duration_ms": 1000}}
+    Useful when waiting for UI elements to load or animations to complete
+
+11. Wait for element before proceeding:
+    {{"action": "wait_for_element", "timeout_ms": 3000, "description": "page to load"}}
+    Use when:
+    - After clicking a button that triggers loading
+    - After navigating to a new page
+    - When an element might not be immediately visible
+    Default timeout is 5000ms. Max is 10000ms.
+
+12. Complete the task:
+    {{"action": "complete", "message": "Task completed successfully"}}
+
+13. Report an error or inability to proceed:
+    {{"action": "error", "message": "Cannot find the required element"}}
+
+14. Execute multiple actions in sequence (batch):
+   {{"action": "batch", "actions": [{{"action": "type", "text": "hello"}}, {{"action": "key", "key": "tab"}}]}}
+   Use for predictable action sequences that don't need intermediate screenshots.
+   Max 10 actions per batch. Batch stops on first failure or complete action.
 
 Guidelines:
 - Analyze the screenshot carefully before acting
 - Use coordinates that match visible UI elements
 - Be precise with click locations
 - Wait for UI to update between actions (the system handles this)
-- Use "drag" for moving elements, resizing windows, or adjusting sliders
-- Use "triple_click" to select entire lines of text
-- Use "right_click" to open context menus
-- Use "wait" when you need to pause for UI updates or animations
-- Use "batch" for predictable multi-step sequences that don't need intermediate screenshots
-- Use "wait_for_element" after triggering navigation or loading to wait for content to appear
-- Use the "complete" tool when the task is done
-- Use the "error" tool if you cannot proceed
-- Use "drag" for moving files, resizing windows, adjusting sliders, or selecting text
-- Use "right_click" to open context menus
-- Use "triple_click" to select entire lines of text
-- Use "wait" or "wait_for_element" when UI needs time to load
-- Use "batch" for predictable multi-step sequences that don't need intermediate screenshots
+- Use "complete" when the task is done
+- Use "error" if you cannot proceed
 
 Note: Actions are automatically retried up to 3 times if they fail or have no visible effect.
 If an action consistently fails, try:
 - Adjusting coordinates slightly (elements may have shifted)
 - Using a different approach (e.g., keyboard navigation instead of clicking)
-- Waiting longer for elements to load by trying again{guidance_section}
+- Waiting longer for elements to load by trying again
 
 You may think briefly about what you see and what action to take, then respond with a JSON action.
 Format: optional reasoning text, followed by the JSON object. Example:
@@ -914,7 +798,8 @@ mod tests {
         let messages = history_to_messages(&history);
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].0, "user");
-        assert_eq!(messages[0].1, "OK");
+        assert!(messages[0].1.contains("successfully"));
+        assert!(messages[0].1.contains("Clicked successfully"));
     }
 
     #[test]
@@ -925,7 +810,8 @@ mod tests {
         let messages = history_to_messages(&history);
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].0, "user");
-        assert_eq!(messages[0].1, "FAIL: Element not found");
+        assert!(messages[0].1.contains("failed"));
+        assert!(messages[0].1.contains("Element not found"));
     }
 
     #[test]
@@ -952,140 +838,6 @@ mod tests {
     }
 
     #[test]
-    fn test_history_to_messages_strips_old_screenshots() {
-        let mut history = ConversationHistory::new();
-        // Add 4 user messages with screenshots
-        history.add_user_message("First", Some(Arc::new("img1".to_string())), Some(1920), Some(1080));
-        history.add_assistant_message(r#"{"action": "click", "x": 10, "y": 20}"#);
-        history.add_user_message("Second", Some(Arc::new("img2".to_string())), Some(1920), Some(1080));
-        history.add_assistant_message(r#"{"action": "click", "x": 30, "y": 40}"#);
-        history.add_user_message("Third", Some(Arc::new("img3".to_string())), Some(1920), Some(1080));
-        history.add_assistant_message(r#"{"action": "click", "x": 50, "y": 60}"#);
-        history.add_user_message("Fourth", Some(Arc::new("img4".to_string())), Some(1920), Some(1080));
-
-        let messages = history_to_messages(&history);
-        assert_eq!(messages.len(), 7);
-
-        // First two user messages (index 0, 2) should have screenshots stripped
-        assert!(messages[0].1.starts_with("[Screenshot omitted]"));
-        assert!(messages[0].2.is_none());
-
-        assert!(messages[2].1.starts_with("[Screenshot omitted]"));
-        assert!(messages[2].2.is_none());
-
-        // Last two user messages (index 4, 6) should keep their screenshots
-        assert_eq!(messages[4].1, "Third");
-        assert_eq!(messages[4].2.as_deref(), Some(&"img3".to_string()));
-
-        assert_eq!(messages[6].1, "Fourth");
-        assert_eq!(messages[6].2.as_deref(), Some(&"img4".to_string()));
-    }
-
-    #[test]
-    fn test_history_to_messages_preserves_text_in_stripped_messages() {
-        let mut history = ConversationHistory::new();
-        history.add_user_message("Open the file manager", Some(Arc::new("img1".to_string())), Some(1920), Some(1080));
-        history.add_assistant_message("ok");
-        history.add_user_message("Click save", Some(Arc::new("img2".to_string())), Some(1920), Some(1080));
-        history.add_assistant_message("ok");
-        history.add_user_message("Confirm dialog", Some(Arc::new("img3".to_string())), Some(1920), Some(1080));
-
-        let messages = history_to_messages(&history);
-
-        // First user message stripped - text preserved with prefix
-        assert_eq!(messages[0].1, "[Screenshot omitted] Open the file manager");
-        assert!(messages[0].2.is_none());
-
-        // Last two keep screenshots
-        assert_eq!(messages[2].1, "Click save");
-        assert!(messages[2].2.is_some());
-
-        assert_eq!(messages[4].1, "Confirm dialog");
-        assert!(messages[4].2.is_some());
-    }
-
-    #[test]
-    fn test_history_to_messages_fewer_than_max_screenshots() {
-        let mut history = ConversationHistory::new();
-        // Only 1 user message with screenshot - should keep it
-        history.add_user_message("Only one", Some(Arc::new("img1".to_string())), Some(1920), Some(1080));
-
-        let messages = history_to_messages(&history);
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].1, "Only one");
-        assert!(messages[0].2.is_some());
-    }
-
-    #[test]
-    fn test_history_to_messages_exactly_max_screenshots() {
-        let mut history = ConversationHistory::new();
-        // Exactly 2 user messages with screenshots - both should keep
-        history.add_user_message("First", Some(Arc::new("img1".to_string())), Some(1920), Some(1080));
-        history.add_assistant_message("ok");
-        history.add_user_message("Second", Some(Arc::new("img2".to_string())), Some(1920), Some(1080));
-
-        let messages = history_to_messages(&history);
-        assert_eq!(messages.len(), 3);
-        assert_eq!(messages[0].1, "First");
-        assert!(messages[0].2.is_some());
-        assert_eq!(messages[2].1, "Second");
-        assert!(messages[2].2.is_some());
-    }
-
-    #[test]
-    fn test_history_to_messages_user_without_screenshot_not_affected() {
-        let mut history = ConversationHistory::new();
-        // Mix of user messages with and without screenshots
-        history.add_user_message("With screenshot 1", Some(Arc::new("img1".to_string())), Some(1920), Some(1080));
-        history.add_user_message("No screenshot", None, None, None);
-        history.add_user_message("With screenshot 2", Some(Arc::new("img2".to_string())), Some(1920), Some(1080));
-        history.add_user_message("With screenshot 3", Some(Arc::new("img3".to_string())), Some(1920), Some(1080));
-
-        let messages = history_to_messages(&history);
-        assert_eq!(messages.len(), 4);
-
-        // First user with screenshot: stripped
-        assert!(messages[0].1.starts_with("[Screenshot omitted]"));
-        assert!(messages[0].2.is_none());
-
-        // User without screenshot: unchanged (no prefix added)
-        assert_eq!(messages[1].1, "No screenshot");
-        assert!(messages[1].2.is_none());
-
-        // Last 2 with screenshots: kept
-        assert_eq!(messages[2].1, "With screenshot 2");
-        assert!(messages[2].2.is_some());
-        assert_eq!(messages[3].1, "With screenshot 3");
-        assert!(messages[3].2.is_some());
-    }
-
-    #[test]
-    fn test_history_to_messages_tool_results_unaffected_by_stripping() {
-        let mut history = ConversationHistory::new();
-        history.add_user_message("Step 1", Some(Arc::new("img1".to_string())), Some(1920), Some(1080));
-        history.add_tool_result(true, Some("Done".to_string()), None);
-        history.add_user_message("Step 2", Some(Arc::new("img2".to_string())), Some(1920), Some(1080));
-        history.add_tool_result(false, None, Some("Error".to_string()));
-        history.add_user_message("Step 3", Some(Arc::new("img3".to_string())), Some(1920), Some(1080));
-
-        let messages = history_to_messages(&history);
-        assert_eq!(messages.len(), 5);
-
-        // First user message: stripped
-        assert!(messages[0].1.starts_with("[Screenshot omitted]"));
-
-        // Tool results: unchanged
-        assert!(messages[1].1.contains("successfully"));
-        assert!(messages[3].1.contains("failed"));
-
-        // Last 2 user messages with screenshots: kept
-        assert_eq!(messages[2].1, "Step 2");
-        assert!(messages[2].2.is_some());
-        assert_eq!(messages[4].1, "Step 3");
-        assert!(messages[4].2.is_some());
-    }
-
-    #[test]
     fn test_build_system_prompt_contains_all_action_types() {
         let prompt = build_system_prompt(1920, 1080);
         assert!(prompt.contains("click"));
@@ -1105,52 +857,6 @@ mod tests {
     }
 
     #[test]
-    fn test_build_system_prompt_is_compact() {
-        let prompt = build_system_prompt(1920, 1080);
-        // Should be under 1000 bytes (target ~800, was ~2000)
-        assert!(
-            prompt.len() < 1000,
-            "System prompt should be compact, got {} bytes",
-            prompt.len()
-        );
-    }
-
-    #[test]
-    fn test_tools_and_prompt_cover_same_actions() {
-        let tools = build_tools();
-        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
-        let prompt = build_system_prompt(1920, 1080);
-
-        // Every tool name should appear in the JSON prompt
-        for name in &tool_names {
-            assert!(
-                prompt.contains(name),
-                "Action '{}' missing from build_system_prompt()",
-                name
-            );
-        }
-
-        // Every action in the prompt should have a corresponding tool
-        let expected_actions = [
-            "click", "double_click", "triple_click", "right_click", "move",
-            "drag", "type", "key", "scroll", "wait", "wait_for_element",
-            "batch", "complete", "error",
-        ];
-        for action in &expected_actions {
-            assert!(
-                tool_names.contains(action),
-                "Action '{}' missing from build_tools()",
-                action
-            );
-            assert!(
-                prompt.contains(action),
-                "Action '{}' missing from build_system_prompt()",
-                action
-            );
-        }
-    }
-
-    #[test]
     fn test_build_tools_schema_has_required_fields() {
         let tools = build_tools();
         let click_tool = tools.iter().find(|t| t.name == "click").unwrap();
@@ -1158,43 +864,5 @@ mod tests {
         let required_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
         assert!(required_strs.contains(&"x"));
         assert!(required_strs.contains(&"y"));
-    }
-
-    #[test]
-    fn test_build_system_prompt_with_form_instruction() {
-        let prompt = build_system_prompt_with_instruction(1920, 1080, Some("Fill out the registration form"));
-        assert!(prompt.contains("form filling"), "Prompt should contain form filling guidance");
-        assert!(prompt.contains("Tab between fields"));
-    }
-
-    #[test]
-    fn test_build_system_prompt_with_general_instruction() {
-        let prompt = build_system_prompt_with_instruction(1920, 1080, Some("do something"));
-        // General type should not add guidance
-        assert!(!prompt.contains("Task-specific guidance"));
-    }
-
-    #[test]
-    fn test_build_system_prompt_with_no_instruction() {
-        let prompt_no_instr = build_system_prompt_with_instruction(1920, 1080, None);
-        let prompt_compat = build_system_prompt(1920, 1080);
-        assert_eq!(prompt_no_instr, prompt_compat);
-    }
-
-    #[test]
-    fn test_build_system_prompt_for_tools_with_nav_instruction() {
-        let prompt = build_system_prompt_for_tools_with_instruction(
-            1920, 1080,
-            Some("Navigate to google.com and search for Rust"),
-        );
-        assert!(prompt.contains("web navigation"), "Prompt should contain web navigation guidance");
-        assert!(prompt.contains("address bar"));
-    }
-
-    #[test]
-    fn test_build_system_prompt_for_tools_with_no_instruction() {
-        let prompt_no_instr = build_system_prompt_for_tools_with_instruction(1920, 1080, None);
-        let prompt_compat = build_system_prompt_for_tools(1920, 1080);
-        assert_eq!(prompt_no_instr, prompt_compat);
     }
 }

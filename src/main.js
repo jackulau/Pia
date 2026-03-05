@@ -4,6 +4,13 @@ import { getActionIcon } from './icons/action-icons.js';
 import { getCurrentWindow, LogicalSize, PhysicalPosition, PhysicalSize, availableMonitors, currentMonitor } from '@tauri-apps/api/window';
 // CSS is inlined in index.html for transparent window support
 
+// Size presets configuration
+const SIZE_PRESETS = {
+  mini: { width: 300, height: 180, name: 'Mini', cssClass: 'size-mini' },
+  standard: { width: 420, height: 380, name: 'Standard', cssClass: 'size-standard' },
+  detailed: { width: 550, height: 520, name: 'Detailed', cssClass: 'size-detailed' }
+};
+
 // DOM Elements
 const mainModal = document.getElementById('main-modal');
 const settingsPanel = document.getElementById('settings-panel');
@@ -21,8 +28,9 @@ const settingsCloseBtn = document.getElementById('settings-close-btn');
 const closeBtn = document.getElementById('close-btn');
 const saveSettingsBtn = document.getElementById('save-settings-btn');
 const dragHandle = document.querySelector('.drag-handle');
+const expandBtn = document.getElementById('expand-btn');
 
-// Elapsed/actions elements
+// Expanded mode elements
 const elapsedValue = document.getElementById('elapsed-value');
 const actionsCount = document.getElementById('actions-count');
 const actionHistoryList = document.getElementById('action-history-list');
@@ -82,12 +90,9 @@ const templateSelect = document.getElementById('template-select');
 const saveTemplateBtn = document.getElementById('save-template-btn');
 const saveTemplateDialog = document.getElementById('save-template-dialog');
 const templateNameInput = document.getElementById('template-name-input');
-const templateCategorySelect = document.getElementById('template-category-select');
-const templateDialogTitle = document.getElementById('template-dialog-title');
 const cancelTemplateBtn = document.getElementById('cancel-template-btn');
 const confirmTemplateBtn = document.getElementById('confirm-template-btn');
 const templateList = document.getElementById('template-list');
-const templateCategoryFilter = document.getElementById('template-category-filter');
 
 // Provider-specific settings
 const providerSettings = {
@@ -114,6 +119,11 @@ const historyClearBtn = document.getElementById('history-clear-btn');
 // Preview mode
 const previewToggle = document.getElementById('preview-toggle');
 
+// Size selector buttons
+const sizeMiniBtn = document.getElementById('size-mini');
+const sizeStandardBtn = document.getElementById('size-standard');
+const sizeDetailedBtn = document.getElementById('size-detailed');
+
 // Position menu elements
 const positionBtn = document.getElementById('position-btn');
 const positionDropdown = document.getElementById('position-dropdown');
@@ -133,6 +143,7 @@ let currentConfig = null;
 let lastIteration = 0;
 let lastTokens = 0;
 let lastAction = null;
+let isExpanded = localStorage.getItem('pia-expanded-mode') === 'true';
 let actionHistory = [];
 let totalActionsCount = 0;
 let sessionStartTime = null;
@@ -143,10 +154,10 @@ let previousStatus = null;
 let historyEntries = [];
 let queueItems = [];
 let previewMode = false;
+let resizeDebounceTimer = null;
+let currentSizePreset = 'standard';
 let currentPosition = localStorage.getItem('pia-window-position') || null;
 let cachedTemplates = [];
-let editingTemplateId = null;
-let templateCategoryFilterValue = '';
 let killSwitchTriggered = false;
 let canUndo = false;
 let lastUndoableAction = null;
@@ -157,12 +168,16 @@ let pendingAgentStateRAF = null;
 let lastSubmittedInstruction = null;
 let errorLog = [];
 
+// Window sizes
+const COMPACT_SIZE = { width: 420, height: 380 };
+const EXPANDED_SIZE = { width: 500, height: 550 };
+
 // Position constants
 const POSITION_PADDING = 20;
 
-// Platform detection
-const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0 ||
-              navigator.userAgent.toUpperCase().indexOf('MAC') >= 0;
+// Platform detection (set asynchronously via Tauri command at init)
+let detectedPlatform = 'macos'; // default fallback until async init completes
+let isMac = true; // default fallback
 
 // Touch state
 let touchState = {
@@ -178,17 +193,30 @@ let touchState = {
 
 // Initialize
 async function init() {
+  // Detect platform first — other setup depends on isMac / detectedPlatform
+  try {
+    detectedPlatform = await invoke('get_platform');
+    isMac = detectedPlatform === 'macos';
+  } catch (e) {
+    console.error('Failed to detect platform, defaulting to macOS:', e);
+  }
+
   await loadConfig();
   await loadHistory();
   await loadPreviewMode();
+  await restoreWindowSize();
   await loadTemplates();
   setupEventListeners();
   setupTauriListeners();
   setupKeyboardNavigation();
+  setupResizeListener();
+  setupSizeSelector();
   setupPositionMenu();
   setupKillSwitchDisplay();
   setupTouchListeners();
+  await restoreExpandedState();
   await refreshQueue();
+  await loadSavedSizePreset();
   await restoreSavedPosition();
 
   // Check onboarding after everything is loaded
@@ -240,27 +268,46 @@ async function showOnboardingWizard() {
     }
   }
 
-  // Check permissions (macOS)
+  // Check permissions (platform-appropriate)
   const permissionsEl = document.getElementById('onboarding-permissions');
-  if (permissionsEl && isMac) {
-    try {
-      const perms = await invoke('check_permissions');
-      const screenOk = perms.screen_capture;
-      const accessOk = perms.accessibility;
+  if (permissionsEl) {
+    if (isMac) {
+      try {
+        const perms = await invoke('check_permissions');
+        const screenOk = perms.screen_capture;
+        const accessOk = perms.accessibility;
+        permissionsEl.innerHTML = `
+          <p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;">macOS Permissions</p>
+          <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
+            <span style="color:${screenOk ? '#32d74b' : '#ff453a'};font-size:12px;">${screenOk ? '&#10003;' : '&#10007;'}</span>
+            <span style="font-size:12px;color:rgba(255,255,255,0.8);">Screen Recording</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
+            <span style="color:${accessOk ? '#32d74b' : '#ff453a'};font-size:12px;">${accessOk ? '&#10003;' : '&#10007;'}</span>
+            <span style="font-size:12px;color:rgba(255,255,255,0.8);">Accessibility</span>
+          </div>
+          ${(!screenOk || !accessOk) ? '<p style="font-size:10px;color:rgba(255,159,10,0.9);margin-top:4px;">Grant permissions in System Settings &gt; Privacy &amp; Security</p>' : ''}
+        `;
+      } catch (e) {
+        permissionsEl.innerHTML = '';
+      }
+    } else if (detectedPlatform === 'windows') {
       permissionsEl.innerHTML = `
-        <p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;">macOS Permissions</p>
+        <p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;">Windows Permissions</p>
         <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
-          <span style="color:${screenOk ? '#32d74b' : '#ff453a'};font-size:12px;">${screenOk ? '&#10003;' : '&#10007;'}</span>
-          <span style="font-size:12px;color:rgba(255,255,255,0.8);">Screen Recording</span>
+          <span style="color:#32d74b;font-size:12px;">&#10003;</span>
+          <span style="font-size:12px;color:rgba(255,255,255,0.8);">No special permissions needed</span>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
-          <span style="color:${accessOk ? '#32d74b' : '#ff453a'};font-size:12px;">${accessOk ? '&#10003;' : '&#10007;'}</span>
-          <span style="font-size:12px;color:rgba(255,255,255,0.8);">Accessibility</span>
-        </div>
-        ${(!screenOk || !accessOk) ? '<p style="font-size:10px;color:rgba(255,159,10,0.9);margin-top:4px;">Grant permissions in System Settings &gt; Privacy &amp; Security</p>' : ''}
       `;
-    } catch (e) {
-      permissionsEl.innerHTML = '';
+    } else {
+      permissionsEl.innerHTML = `
+        <p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;">Linux Permissions</p>
+        <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
+          <span style="color:#32d74b;font-size:12px;">&#10003;</span>
+          <span style="font-size:12px;color:rgba(255,255,255,0.8);">Ensure X11 display access</span>
+        </div>
+        <p style="font-size:10px;color:rgba(255,159,10,0.9);margin-top:4px;">Wayland may have limitations for screen capture</p>
+      `;
     }
   }
 
@@ -549,23 +596,9 @@ async function loadTemplates() {
   }
 }
 
-// Extract {{variable}} names from instruction text (frontend mirror of backend logic)
-function extractVariableNames(instruction) {
-  const re = /\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g;
-  const seen = new Set();
-  const names = [];
-  let match;
-  while ((match = re.exec(instruction)) !== null) {
-    if (!seen.has(match[1])) {
-      seen.add(match[1]);
-      names.push(match[1]);
-    }
-  }
-  return names;
-}
-
 // Update template dropdown
 function updateTemplateDropdown() {
+  // Clear existing options (keep the placeholder)
   templateSelect.innerHTML = '<option value="">Select a template...</option>';
 
   // Sort templates alphabetically by name
@@ -574,40 +607,9 @@ function updateTemplateDropdown() {
   sorted.forEach(template => {
     const option = document.createElement('option');
     option.value = template.id;
-    const varCount = (template.variables || []).length;
-    option.textContent = varCount > 0 ? `${template.name} (${varCount} var${varCount === 1 ? '' : 's'})` : template.name;
+    option.textContent = template.name;
     templateSelect.appendChild(option);
   });
-
-  // Sort categories, putting General last
-  const sortedCats = Object.keys(groups).sort((a, b) => {
-    if (a === 'General') return 1;
-    if (b === 'General') return -1;
-    return a.localeCompare(b);
-  });
-
-  if (sortedCats.length <= 1 && cachedTemplates.length > 0) {
-    // Only one category - no need for optgroups
-    const sorted = [...cachedTemplates].sort((a, b) => a.name.localeCompare(b.name));
-    sorted.forEach(template => {
-      const option = document.createElement('option');
-      option.value = template.id;
-      option.textContent = template.name;
-      templateSelect.appendChild(option);
-    });
-  } else {
-    sortedCats.forEach(cat => {
-      const optgroup = document.createElement('optgroup');
-      optgroup.label = cat;
-      groups[cat].sort((a, b) => a.name.localeCompare(b.name)).forEach(template => {
-        const option = document.createElement('option');
-        option.value = template.id;
-        option.textContent = template.name;
-        optgroup.appendChild(option);
-      });
-      templateSelect.appendChild(optgroup);
-    });
-  }
 }
 
 // Update template list in settings
@@ -617,34 +619,15 @@ function updateTemplateList() {
     return;
   }
 
-  // Filter by category if selected
-  let filtered = cachedTemplates;
-  if (templateCategoryFilterValue) {
-    filtered = cachedTemplates.filter(t => (t.category || 'General') === templateCategoryFilterValue);
-  }
+  const sorted = [...cachedTemplates].sort((a, b) => a.name.localeCompare(b.name));
 
-  templateList.innerHTML = sorted.map(template => {
-    const vars = template.variables || [];
-    const varTags = vars.length > 0
-      ? `<div class="template-var-tags">${vars.map(v => `<span class="template-var-tag">${escapeHtml(v.name)}</span>`).join('')}</div>`
-      : '';
-    return `
+  templateList.innerHTML = sorted.map(template => `
     <div class="template-item" data-id="${template.id}">
       <div class="template-item-info">
-        <div class="template-item-name">
-          ${escapeHtml(template.name)}
-          <span class="template-category-badge">${escapeHtml(cat)}</span>
-        </div>
+        <div class="template-item-name">${escapeHtml(template.name)}</div>
         <div class="template-item-preview">${escapeHtml(template.instruction.substring(0, 60))}${template.instruction.length > 60 ? '...' : ''}</div>
-        ${varTags}
       </div>
       <div class="template-item-actions">
-        <button class="template-edit-btn" data-id="${template.id}" title="Edit template">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-          </svg>
-        </button>
         <button class="template-delete-btn" data-id="${template.id}" title="Delete template">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"></polyline>
@@ -652,8 +635,8 @@ function updateTemplateList() {
           </svg>
         </button>
       </div>
-    </div>`;
-  }).join('');
+    </div>
+  `).join('');
 
   // Add delete handlers
   templateList.querySelectorAll('.template-delete-btn').forEach(btn => {
@@ -665,126 +648,22 @@ function updateTemplateList() {
   });
 }
 
-// Open dialog to edit an existing template
-function openEditTemplateDialog(id) {
-  const template = cachedTemplates.find(t => t.id === id);
-  if (!template) return;
-
-  editingTemplateId = id;
-  templateDialogTitle.textContent = 'Edit Template';
-  templateNameInput.value = template.name;
-  templateCategorySelect.value = template.category || '';
-  confirmTemplateBtn.textContent = 'Update';
-  saveTemplateDialog.classList.remove('hidden');
-  templateNameInput.focus();
-}
-
-// Open dialog to save a new template
-function openSaveTemplateDialog() {
-  const instruction = instructionInput.value.trim();
-  if (!instruction) {
-    showToast('Enter an instruction first', 'error');
-    return;
-  }
-  editingTemplateId = null;
-  templateDialogTitle.textContent = 'Save as Template';
-  templateNameInput.value = '';
-  templateCategorySelect.value = '';
-  confirmTemplateBtn.textContent = 'Save';
-  saveTemplateDialog.classList.remove('hidden');
-  templateNameInput.focus();
-}
-
-// Handle template dialog confirm (save or update)
-async function handleTemplateDialogConfirm() {
-  const name = templateNameInput.value;
-  const category = templateCategorySelect.value || null;
-
-  if (editingTemplateId) {
-    await updateTemplate(editingTemplateId, name, category);
-  } else {
-    await saveAsTemplate(name, category);
-  }
-  saveTemplateDialog.classList.add('hidden');
-}
-
 // Select a template
 function selectTemplate(id) {
   if (!id) {
+    instructionInput.value = '';
     return;
   }
 
   const template = cachedTemplates.find(t => t.id === id);
-  if (!template) return;
-
-  const vars = template.variables || [];
-  if (vars.length === 0) {
-    // No variables - directly set instruction
+  if (template) {
     instructionInput.value = template.instruction;
     instructionInput.focus();
-  } else {
-    // Has variables - show fill-in dialog
-    showVariableFillInDialog(template);
   }
-
-  // Reset dropdown
-  templateSelect.value = '';
-}
-
-// Show variable fill-in dialog for a template
-function showVariableFillInDialog(template) {
-  const dialog = document.getElementById('variable-fill-dialog');
-  const form = document.getElementById('variable-fill-form');
-  const templateNameEl = document.getElementById('variable-fill-template-name');
-
-  templateNameEl.textContent = template.name;
-
-  const vars = template.variables || [];
-  form.innerHTML = vars.map(v => `
-    <div class="variable-fill-field">
-      <label class="variable-fill-label" for="var-input-${escapeHtml(v.name)}">${escapeHtml(v.name)}</label>
-      <input type="text" class="variable-fill-input" id="var-input-${escapeHtml(v.name)}"
-        data-var-name="${escapeHtml(v.name)}"
-        placeholder="${v.default_value ? escapeHtml(v.default_value) : 'Enter value...'}"
-        value="${v.default_value ? escapeHtml(v.default_value) : ''}"
-        autocomplete="off">
-    </div>
-  `).join('');
-
-  dialog.classList.remove('hidden');
-  dialog.dataset.templateId = template.id;
-
-  // Focus first input
-  const firstInput = form.querySelector('.variable-fill-input');
-  if (firstInput) firstInput.focus();
-}
-
-// Apply variable values and populate instruction
-function applyVariableFillIn() {
-  const dialog = document.getElementById('variable-fill-dialog');
-  const templateId = dialog.dataset.templateId;
-  const template = cachedTemplates.find(t => t.id === templateId);
-  if (!template) return;
-
-  const inputs = document.querySelectorAll('#variable-fill-form .variable-fill-input');
-  let instruction = template.instruction;
-
-  inputs.forEach(input => {
-    const varName = input.dataset.varName;
-    const value = input.value || input.placeholder;
-    if (value && value !== 'Enter value...') {
-      const regex = new RegExp(`\\{\\{${varName}\\}\\}`, 'g');
-      instruction = instruction.replace(regex, value);
-    }
-  });
-
-  instructionInput.value = instruction;
-  instructionInput.focus();
-  dialog.classList.add('hidden');
 }
 
 // Save current instruction as template
-async function saveAsTemplate(name, category) {
+async function saveAsTemplate(name) {
   const instruction = instructionInput.value.trim();
 
   if (!instruction) {
@@ -803,43 +682,13 @@ async function saveAsTemplate(name, category) {
   }
 
   try {
-    const template = await invoke('save_template', { name: name.trim(), instruction, category });
+    const template = await invoke('save_template', { name: name.trim(), instruction });
     cachedTemplates.push(template);
     updateTemplateDropdown();
     updateTemplateList();
     showToast('Template saved', 'success');
   } catch (error) {
     console.error('Failed to save template:', error);
-    showToast(error, 'error');
-  }
-}
-
-// Update an existing template
-async function updateTemplate(id, name, category) {
-  const template = cachedTemplates.find(t => t.id === id);
-  if (!template) return;
-
-  if (!name || !name.trim()) {
-    showToast('Template name is required', 'error');
-    return;
-  }
-
-  if (name.length > 50) {
-    showToast('Template name must be 50 characters or less', 'error');
-    return;
-  }
-
-  try {
-    const updated = await invoke('update_template', {
-      id, name: name.trim(), instruction: template.instruction, category
-    });
-    const idx = cachedTemplates.findIndex(t => t.id === id);
-    if (idx !== -1) cachedTemplates[idx] = updated;
-    updateTemplateDropdown();
-    updateTemplateList();
-    showToast('Template updated', 'success');
-  } catch (error) {
-    console.error('Failed to update template:', error);
     showToast(error, 'error');
   }
 }
@@ -861,21 +710,6 @@ async function deleteTemplate(id) {
   } catch (error) {
     console.error('Failed to delete template:', error);
     showToast(error, 'error');
-  }
-}
-
-// Update variable preview in the save template dialog
-function updateSaveTemplateVariablePreview(instruction) {
-  const preview = document.getElementById('save-template-var-preview');
-  if (!preview) return;
-  const varNames = extractVariableNames(instruction);
-  if (varNames.length === 0) {
-    preview.classList.add('hidden');
-    preview.innerHTML = '';
-  } else {
-    preview.classList.remove('hidden');
-    preview.innerHTML = '<span class="var-preview-label">Variables:</span> ' +
-      varNames.map(n => `<span class="template-var-tag">${escapeHtml(n)}</span>`).join('');
   }
 }
 
@@ -1055,7 +889,6 @@ function setupEventListeners() {
       return;
     }
     templateNameInput.value = '';
-    updateSaveTemplateVariablePreview(instruction);
     saveTemplateDialog.classList.remove('hidden');
     templateNameInput.focus();
   });
@@ -1065,45 +898,24 @@ function setupEventListeners() {
     saveTemplateDialog.classList.add('hidden');
   });
 
-  // Confirm save/update template
+  // Confirm save template
   confirmTemplateBtn.addEventListener('click', async () => {
-    await handleTemplateDialogConfirm();
+    const name = templateNameInput.value;
+    await saveAsTemplate(name);
+    saveTemplateDialog.classList.add('hidden');
   });
 
   // Enter key in template name input
   templateNameInput.addEventListener('keydown', async (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      await handleTemplateDialogConfirm();
+      const name = templateNameInput.value;
+      await saveAsTemplate(name);
+      saveTemplateDialog.classList.add('hidden');
     } else if (e.key === 'Escape') {
       saveTemplateDialog.classList.add('hidden');
     }
   });
-
-  // Variable fill-in dialog events
-  const varFillApplyBtn = document.getElementById('variable-fill-apply');
-  const varFillCancelBtn = document.getElementById('variable-fill-cancel');
-  const varFillDialog = document.getElementById('variable-fill-dialog');
-
-  if (varFillApplyBtn) {
-    varFillApplyBtn.addEventListener('click', applyVariableFillIn);
-  }
-  if (varFillCancelBtn) {
-    varFillCancelBtn.addEventListener('click', () => {
-      varFillDialog.classList.add('hidden');
-    });
-  }
-  if (varFillDialog) {
-    // Enter to submit, Escape to close
-    varFillDialog.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        applyVariableFillIn();
-      } else if (e.key === 'Escape') {
-        varFillDialog.classList.add('hidden');
-      }
-    });
-  }
 
   // Close button
   closeBtn.addEventListener('click', async () => {
@@ -1113,7 +925,6 @@ function setupEventListeners() {
   // Confirmation dialog
   cancelActionBtn.addEventListener('click', async () => {
     confirmationDialog.classList.add('hidden');
-    confirmationDialog.classList.remove('danger-high', 'danger-critical');
     try {
       await invoke('deny_action');
     } catch (error) {
@@ -1124,7 +935,6 @@ function setupEventListeners() {
 
   confirmActionBtn.addEventListener('click', async () => {
     confirmationDialog.classList.add('hidden');
-    confirmationDialog.classList.remove('danger-high', 'danger-critical');
     try {
       await invoke('confirm_action');
     } catch (error) {
@@ -1143,12 +953,11 @@ function setupEventListeners() {
     window.addEventListener('mouseup', () => {
       mainModal.classList.remove('dragging');
     });
+  }
 
-    // Double-click on drag handle toggles minimize
-    dragHandle.addEventListener('dblclick', (e) => {
-      e.preventDefault();
-      toggleMinimizeMode();
-    });
+  // Expand/collapse toggle
+  if (expandBtn) {
+    expandBtn.addEventListener('click', toggleExpandedMode);
   }
 
   // Clear hotkey button
@@ -1317,28 +1126,8 @@ async function setupTauriListeners() {
     previousFocusElement = document.activeElement;
     confirmationMessage.textContent = event.payload;
     confirmationDialog.classList.remove('hidden');
-    // Add danger styling based on current danger level
-    confirmationDialog.classList.remove('danger-high', 'danger-critical');
-    // Check if the message indicates critical or high danger
-    if (event.payload.toLowerCase().includes('dangerous') || event.payload.toLowerCase().includes('critical')) {
-      confirmationDialog.classList.add('danger-critical');
-    } else {
-      confirmationDialog.classList.add('danger-high');
-    }
     // Focus cancel button (safer default)
     cancelActionBtn.focus();
-  }));
-
-  // Danger warning for medium+ risk actions (visual indicator only, no blocking)
-  tauriUnlisteners.push(await listen('danger-warning', (event) => {
-    const { level, warning } = event.payload;
-    if (level === 'critical') {
-      showDangerIndicator(warning || 'Critical action detected', 'critical');
-    } else if (level === 'high') {
-      showDangerIndicator(warning || 'High-risk action detected', 'high');
-    } else if (level === 'medium') {
-      showDangerIndicator(warning || 'Caution: action may modify state', 'medium');
-    }
   }));
 
   // Retry info notification
@@ -1780,12 +1569,9 @@ function updateAgentState(state) {
     }
   }
 
-  // Update action display with preview mode awareness and danger level
+  // Update action display with preview mode awareness
   if (actionContent) {
-    actionContent.classList.remove('preview-action', 'danger-safe', 'danger-low', 'danger-medium', 'danger-high', 'danger-critical');
-    if (state.danger_level && state.danger_level !== 'safe') {
-      actionContent.classList.add(`danger-${state.danger_level}`);
-    }
+    actionContent.classList.remove('preview-action');
     if (state.last_error) {
       actionContent.textContent = `Error: ${state.last_error}`;
       actionContent.style.color = 'var(--error)';
@@ -2409,27 +2195,6 @@ function updateErrorLogUI() {
   content.scrollTop = content.scrollHeight;
 }
 
-// Show danger indicator banner for risky actions
-function showDangerIndicator(message, level = 'medium') {
-  // Remove any existing danger indicator
-  const existing = document.querySelector('.danger-indicator');
-  if (existing) existing.remove();
-
-  const indicator = document.createElement('div');
-  indicator.className = `danger-indicator danger-${level}`;
-
-  const icon = level === 'critical' ? '!!' : level === 'high' ? '!' : '~';
-  indicator.innerHTML = `<span class="danger-icon">${icon}</span><span class="danger-text">${escapeHtml(message)}</span>`;
-  document.body.appendChild(indicator);
-
-  // Auto-remove after display period (longer for critical)
-  const displayTime = level === 'critical' ? 5000 : level === 'high' ? 4000 : 3000;
-  setTimeout(() => {
-    indicator.classList.add('danger-hiding');
-    indicator.addEventListener('animationend', () => indicator.remove(), { once: true });
-  }, displayTime);
-}
-
 // Show toast notification with animation
 function showToast(message, type = 'info') {
   // Persist errors to error log
@@ -2482,6 +2247,55 @@ function announceStatus(status) {
   announcement.textContent = `Agent status: ${status}`;
   document.body.appendChild(announcement);
   setTimeout(() => announcement.remove(), 1000);
+}
+
+// Toggle expanded mode
+async function toggleExpandedMode() {
+  isExpanded = !isExpanded;
+  await applyExpandedState();
+  localStorage.setItem('pia-expanded-mode', isExpanded.toString());
+}
+
+// Apply expanded state to UI and window
+async function applyExpandedState() {
+  const appWindow = getCurrentWindow();
+
+  if (isExpanded) {
+    mainModal.classList.add('expanded');
+    expandBtn.classList.add('active');
+    expandBtn.title = 'Collapse';
+    // Update icon to collapse
+    expandBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="4 14 10 14 10 20"></polyline>
+        <polyline points="20 10 14 10 14 4"></polyline>
+        <line x1="14" y1="10" x2="21" y2="3"></line>
+        <line x1="3" y1="21" x2="10" y2="14"></line>
+      </svg>
+    `;
+    await appWindow.setSize(new LogicalSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height));
+  } else {
+    mainModal.classList.remove('expanded');
+    expandBtn.classList.remove('active');
+    expandBtn.title = 'Expand';
+    // Update icon to expand
+    expandBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="15 3 21 3 21 9"></polyline>
+        <polyline points="9 21 3 21 3 15"></polyline>
+        <line x1="21" y1="3" x2="14" y2="10"></line>
+        <line x1="3" y1="21" x2="10" y2="14"></line>
+      </svg>
+    `;
+    await appWindow.setSize(new LogicalSize(COMPACT_SIZE.width, COMPACT_SIZE.height));
+  }
+}
+
+// Restore expanded state on app launch
+async function restoreExpandedState() {
+  if (isExpanded) {
+    await applyExpandedState();
+  }
 }
 
 // Add action to history
@@ -2587,13 +2401,6 @@ function setupKeyboardNavigation() {
       return;
     }
 
-    // Cmd/Ctrl + M - Toggle minimize mode
-    if (isMod && e.key === 'm') {
-      e.preventDefault();
-      toggleMinimizeMode();
-      return;
-    }
-
     // Cmd/Ctrl + Enter - Force submit
     if (isMod && e.key === 'Enter') {
       e.preventDefault();
@@ -2622,13 +2429,7 @@ function setupKeyboardNavigation() {
 }
 
 // Open settings panel
-async function openSettings() {
-  // Restore from minimized state before opening settings
-  if (isMinimized) {
-    isMinimized = false;
-    localStorage.setItem('pia-minimized', 'false');
-    await applyMinimizedState();
-  }
+function openSettings() {
   previousFocusElement = document.activeElement;
   mainModal.classList.add('hidden');
   settingsPanel.classList.remove('hidden');
@@ -2832,6 +2633,89 @@ queueList.addEventListener('click', (e) => {
     if (id) removeFromQueue(id);
   }
 });
+
+// Window size persistence
+const WINDOW_SIZE_KEY = 'pia-window-size';
+
+async function restoreWindowSize() {
+  try {
+    const saved = localStorage.getItem(WINDOW_SIZE_KEY);
+    if (saved) {
+      const { width, height } = JSON.parse(saved);
+      const appWindow = getCurrentWindow();
+      await appWindow.setSize(new LogicalSize(Math.round(width), Math.round(height)));
+    }
+  } catch (error) {
+    console.error('Failed to restore window size:', error);
+  }
+}
+
+function saveWindowSize(width, height) {
+  try {
+    localStorage.setItem(WINDOW_SIZE_KEY, JSON.stringify({ width, height }));
+  } catch (error) {
+    console.error('Failed to save window size:', error);
+  }
+}
+
+function setupResizeListener() {
+  const appWindow = getCurrentWindow();
+  appWindow.onResized(({ payload: size }) => {
+    // Debounce to avoid excessive saves during drag
+    clearTimeout(resizeDebounceTimer);
+    resizeDebounceTimer = setTimeout(() => {
+      saveWindowSize(size.width, size.height);
+    }, 300);
+  });
+}
+
+// Apply size preset
+async function applySizePreset(presetName) {
+  const preset = SIZE_PRESETS[presetName];
+  if (!preset) return;
+
+  currentSizePreset = presetName;
+
+  // Update window size via Tauri
+  try {
+    const appWindow = getCurrentWindow();
+    await appWindow.setSize(new LogicalSize(preset.width, preset.height));
+  } catch (error) {
+    console.error('Failed to resize window:', error);
+  }
+
+  // Update CSS class on modal
+  Object.values(SIZE_PRESETS).forEach(p => {
+    mainModal.classList.remove(p.cssClass);
+  });
+  mainModal.classList.add(preset.cssClass);
+
+  // Update button states
+  sizeMiniBtn.classList.toggle('active', presetName === 'mini');
+  sizeStandardBtn.classList.toggle('active', presetName === 'standard');
+  sizeDetailedBtn.classList.toggle('active', presetName === 'detailed');
+
+  // Persist preference
+  localStorage.setItem('pia-size-preset', presetName);
+}
+
+// Load saved size preset
+async function loadSavedSizePreset() {
+  const saved = localStorage.getItem('pia-size-preset');
+  if (saved && SIZE_PRESETS[saved]) {
+    await applySizePreset(saved);
+  } else {
+    // Apply default standard preset
+    mainModal.classList.add(SIZE_PRESETS.standard.cssClass);
+  }
+}
+
+// Setup size selector event listeners
+function setupSizeSelector() {
+  sizeMiniBtn.addEventListener('click', () => applySizePreset('mini'));
+  sizeStandardBtn.addEventListener('click', () => applySizePreset('standard'));
+  sizeDetailedBtn.addEventListener('click', () => applySizePreset('detailed'));
+}
 
 // Setup position menu
 function setupPositionMenu() {

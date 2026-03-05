@@ -18,14 +18,12 @@
     html, body {
       width: 100%;
       height: 100%;
-      background: transparent !important;
+      background: transparent;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       color: #fff;
       overflow: hidden;
       -webkit-user-select: none;
       user-select: none;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
     }
     #app {
       width: 100%;
@@ -34,7 +32,7 @@
       align-items: stretch;
       justify-content: center;
       padding: 6px;
-      background: transparent !important;
+      background: transparent;
       overflow: hidden;
     }
     .hidden { display: none !important; }
@@ -58,8 +56,7 @@
       max-width: none;
       display: flex;
       flex-direction: column;
-      /* Solid fallback for platforms without backdrop-filter (e.g. some Windows WebView2 configs) */
-      background: rgb(30, 30, 32);
+      background: rgba(30, 30, 32, 0.95);
       -webkit-backdrop-filter: blur(50px) saturate(180%);
       backdrop-filter: blur(50px) saturate(180%);
       border-radius: 14px;
@@ -71,12 +68,6 @@
       overflow-x: hidden;
       overflow-y: auto;
       transition: box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
-    }
-    /* When backdrop-filter is supported, use translucent background */
-    @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-      .modal {
-        background: rgba(30, 30, 32, 0.95);
-      }
     }
 
     .drag-handle {
@@ -239,6 +230,24 @@
     .status-text { font-size: 12px; color: rgba(255, 255, 255, 0.6); font-weight: 500; }
 
     .header-actions { display: flex; gap: 2px; align-items: center; }
+    .size-selector { display: flex; gap: 1px; margin-right: 4px; }
+    .size-btn {
+      min-width: 44px;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: rgba(255, 255, 255, 0.4);
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+    .size-btn:hover { background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.7); }
+    .size-btn.active { background: rgba(10, 132, 255, 0.3); color: #0a84ff; }
     .icon-btn {
       width: 44px;
       height: 44px;
@@ -260,6 +269,7 @@
       outline: none;
       box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.5);
     }
+    .size-btn:focus-visible,
     .submit-btn:focus-visible,
     .record-btn:focus-visible,
     .stop-btn:focus-visible,
@@ -619,7 +629,6 @@
       font-size: 12px;
       outline: none;
       cursor: pointer;
-      -webkit-appearance: none;
       appearance: none;
     }
     .template-select:focus { border-color: rgba(10, 132, 255, 0.5); background: rgba(255, 255, 255, 0.1); }
@@ -660,7 +669,6 @@
     .template-item-name { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.9); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .template-item-preview { font-size: 10px; color: rgba(255, 255, 255, 0.4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
     .template-item-actions { display: flex; gap: 4px; margin-left: 8px; }
-    .template-edit-btn,
     .template-delete-btn {
       width: 24px;
       height: 24px;
@@ -670,36 +678,11 @@
       background: transparent;
       border: none;
       border-radius: 4px;
+      color: rgba(255, 69, 58, 0.7);
       cursor: pointer;
       transition: all 0.15s;
     }
-    .template-edit-btn { color: rgba(10, 132, 255, 0.7); }
-    .template-edit-btn:hover { background: rgba(10, 132, 255, 0.2); color: #0a84ff; }
-    .template-delete-btn { color: rgba(255, 69, 58, 0.7); }
     .template-delete-btn:hover { background: rgba(255, 69, 58, 0.2); color: #ff453a; }
-    .template-category-badge {
-      display: inline-block;
-      font-size: 9px;
-      font-weight: 500;
-      color: rgba(255, 255, 255, 0.5);
-      background: rgba(255, 255, 255, 0.08);
-      border-radius: 3px;
-      padding: 1px 5px;
-      margin-left: 6px;
-      vertical-align: middle;
-    }
-    .template-category-filter {
-      height: 24px;
-      padding: 0 6px;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 4px;
-      color: rgba(255, 255, 255, 0.6);
-      font-size: 10px;
-      outline: none;
-      cursor: pointer;
-    }
-    .template-category-filter option { background: #2a2a2a; color: #fff; }
     .no-templates { font-size: 11px; color: rgba(255, 255, 255, 0.4); text-align: center; padding: 20px 0; }
 
     /* Save template modal */
@@ -735,87 +718,8 @@
       margin-bottom: 4px;
     }
     .save-template-content input:focus { border-color: rgba(10, 132, 255, 0.5); background: rgba(255, 255, 255, 0.12); }
-    .save-template-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-bottom: 8px; }
-    .save-template-var-preview {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 4px;
-      padding: 8px;
-      margin-bottom: 12px;
-      background: rgba(10, 132, 255, 0.08);
-      border: 1px solid rgba(10, 132, 255, 0.15);
-      border-radius: 6px;
-      font-size: 10px;
-    }
-    .var-preview-label { color: rgba(255, 255, 255, 0.5); font-size: 10px; }
+    .save-template-hint { font-size: 10px; color: rgba(255, 255, 255, 0.4); margin-bottom: 16px; }
     .save-template-actions { display: flex; gap: 8px; justify-content: flex-end; }
-    .template-select optgroup { color: rgba(255, 255, 255, 0.5); font-size: 11px; font-style: normal; }
-    .template-select optgroup option { color: #fff; font-size: 12px; padding-left: 8px; }
-
-    /* Template variable tags */
-    .template-var-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
-    .template-var-tag {
-      display: inline-block;
-      padding: 1px 6px;
-      background: rgba(10, 132, 255, 0.15);
-      color: rgba(10, 132, 255, 0.9);
-      border-radius: 3px;
-      font-size: 9px;
-      font-weight: 500;
-      letter-spacing: 0.3px;
-    }
-
-    /* Variable fill-in dialog */
-    .variable-fill-dialog {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 110;
-    }
-    .variable-fill-content {
-      background: rgba(40, 40, 40, 0.95);
-      -webkit-backdrop-filter: blur(20px);
-      backdrop-filter: blur(20px);
-      border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      padding: 20px;
-      width: 300px;
-      max-height: 80vh;
-      overflow-y: auto;
-    }
-    .variable-fill-content h3 { font-size: 15px; margin-bottom: 4px; }
-    .variable-fill-template-name {
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.4);
-      margin-bottom: 14px;
-    }
-    .variable-fill-form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
-    .variable-fill-field { display: flex; flex-direction: column; gap: 4px; }
-    .variable-fill-label {
-      font-size: 11px;
-      font-weight: 500;
-      color: rgba(10, 132, 255, 0.9);
-    }
-    .variable-fill-input {
-      width: 100%;
-      height: 34px;
-      padding: 0 10px;
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 6px;
-      color: #fff;
-      font-size: 13px;
-      outline: none;
-    }
-    .variable-fill-input:focus {
-      border-color: rgba(10, 132, 255, 0.5);
-      background: rgba(255, 255, 255, 0.12);
-    }
-    .variable-fill-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
     .thinking-display { padding: 10px 12px 6px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
     .thinking-label { font-size: 9px; color: rgba(255, 255, 255, 0.4); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
@@ -1119,7 +1023,7 @@
       animation: focus-ring-pulse 0.3s ease-out;
     }
     .setting-input:focus::placeholder { opacity: 0.6; }
-    .setting-select { cursor: pointer; -webkit-appearance: none; appearance: none; }
+    .setting-select { cursor: pointer; appearance: none; }
     .setting-input:disabled,
     .setting-select:disabled {
       opacity: 0.4;
@@ -1159,7 +1063,6 @@
     .speed-slider { flex: 1; height: 6px; -webkit-appearance: none; appearance: none; background: rgba(255, 255, 255, 0.15); border-radius: 3px; outline: none; }
     .speed-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; background: #0a84ff; border-radius: 50%; cursor: pointer; transition: transform 0.1s; }
     .speed-slider::-webkit-slider-thumb:hover { transform: scale(1.1); }
-    .speed-slider::-webkit-slider-runnable-track { height: 6px; background: rgba(255, 255, 255, 0.15); border-radius: 3px; border: none; }
     .speed-slider::-moz-range-thumb { width: 16px; height: 16px; background: #0a84ff; border: none; border-radius: 50%; cursor: pointer; }
     .speed-slider::-moz-range-track { height: 6px; background: rgba(255, 255, 255, 0.15); border-radius: 3px; border: none; }
     .speed-slider-value { font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.8); min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
@@ -1357,108 +1260,6 @@
       border-color: rgba(255, 69, 58, 0.4);
     }
 
-    /* Danger level styling for confirmation dialog */
-    .confirmation-dialog.danger-high .confirmation-content {
-      border-color: rgba(255, 159, 10, 0.5);
-      box-shadow: 0 0 20px rgba(255, 159, 10, 0.15);
-    }
-    .confirmation-dialog.danger-high .confirmation-content h3 {
-      color: #ff9f0a;
-    }
-    .confirmation-dialog.danger-critical .confirmation-content {
-      border-color: rgba(255, 69, 58, 0.6);
-      box-shadow: 0 0 24px rgba(255, 69, 58, 0.2);
-      animation: danger-pulse 1.5s ease-in-out infinite;
-    }
-    .confirmation-dialog.danger-critical .confirmation-content h3 {
-      color: #ff453a;
-    }
-    @keyframes danger-pulse {
-      0%, 100% { box-shadow: 0 0 24px rgba(255, 69, 58, 0.2); }
-      50% { box-shadow: 0 0 32px rgba(255, 69, 58, 0.35); }
-    }
-
-    /* Danger level styling for action content display */
-    .action-content.danger-medium {
-      border-left: 2px solid rgba(255, 159, 10, 0.6);
-      padding-left: 8px;
-    }
-    .action-content.danger-high {
-      border-left: 2px solid rgba(255, 159, 10, 0.8);
-      padding-left: 8px;
-      color: rgba(255, 159, 10, 0.9) !important;
-    }
-    .action-content.danger-critical {
-      border-left: 2px solid rgba(255, 69, 58, 0.8);
-      padding-left: 8px;
-      color: rgba(255, 69, 58, 0.9) !important;
-      animation: danger-text-flash 1s ease-in-out 2;
-    }
-    @keyframes danger-text-flash {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
-    }
-
-    /* Danger indicator banner */
-    .danger-indicator {
-      position: fixed;
-      top: 8px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 16px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      z-index: 250;
-      animation: danger-banner-in 0.3s ease-out;
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-    }
-    .danger-indicator.danger-medium {
-      background: rgba(255, 159, 10, 0.15);
-      border: 1px solid rgba(255, 159, 10, 0.3);
-      color: #ff9f0a;
-    }
-    .danger-indicator.danger-high {
-      background: rgba(255, 159, 10, 0.2);
-      border: 1px solid rgba(255, 159, 10, 0.5);
-      color: #ffb84d;
-    }
-    .danger-indicator.danger-critical {
-      background: rgba(255, 69, 58, 0.2);
-      border: 1px solid rgba(255, 69, 58, 0.5);
-      color: #ff6961;
-      animation: danger-banner-in 0.3s ease-out, danger-banner-pulse 1.5s ease-in-out infinite 0.3s;
-    }
-    .danger-icon {
-      font-size: 14px;
-      font-weight: 900;
-    }
-    .danger-text {
-      max-width: 280px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .danger-indicator.danger-hiding {
-      animation: danger-banner-out 0.25s ease-in forwards;
-    }
-    @keyframes danger-banner-in {
-      from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
-      to { opacity: 1; transform: translateX(-50%) translateY(0); }
-    }
-    @keyframes danger-banner-out {
-      from { opacity: 1; transform: translateX(-50%) translateY(0); }
-      to { opacity: 0; transform: translateX(-50%) translateY(-8px); }
-    }
-    @keyframes danger-banner-pulse {
-      0%, 100% { box-shadow: 0 0 12px rgba(255, 69, 58, 0.2); }
-      50% { box-shadow: 0 0 20px rgba(255, 69, 58, 0.35); }
-    }
-
     * {
       scrollbar-width: thin;
       scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
@@ -1573,11 +1374,55 @@
       .submit-btn.loading svg { animation: none !important; opacity: 0.6; }
     }
 
-    /* Action History */
+    /* Expandable Mode */
+    .expanded-only { display: none !important; }
+
+    .modal.expanded .expanded-only { display: flex !important; }
+
+    .modal {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .modal.expanded {
+      max-width: 480px;
+    }
+
+    .modal.expanded .input-area {
+      padding-bottom: 16px;
+    }
+
+    .modal.expanded #instruction-input {
+      height: 44px;
+    }
+
+    .modal.expanded .submit-btn {
+      width: 44px;
+      height: 44px;
+    }
+
+    .modal.expanded .metrics-bar {
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px 16px;
+    }
+
+    .modal.expanded .metric {
+      min-width: 60px;
+    }
+
+    .modal.expanded .action-display {
+      padding: 14px 16px;
+    }
+
+    .modal.expanded .action-content {
+      max-height: 60px;
+      font-size: 12px;
+    }
+
+    /* Action History (expanded only) */
     .action-history {
       padding: 0 16px 14px;
       border-top: 1px solid rgba(255, 255, 255, 0.06);
-      display: flex;
       flex-direction: column;
     }
 
@@ -1606,6 +1451,27 @@
     .action-history-item:first-child {
       color: rgba(255, 255, 255, 0.7);
       background: rgba(255, 255, 255, 0.08);
+    }
+
+    /* Expand button active state */
+    #expand-btn.active {
+      background: rgba(10, 132, 255, 0.2);
+      color: #0a84ff;
+    }
+
+    /* Transition animations for content */
+    .action-history,
+    .modal.expanded .action-display,
+    .metrics-bar .metric {
+      transition: opacity 0.2s ease-in-out;
+    }
+
+    .modal:not(.expanded) .expanded-only {
+      opacity: 0;
+    }
+
+    .modal.expanded .expanded-only {
+      opacity: 1;
     }
 
     /* Queue UI Styles */
@@ -1809,6 +1675,42 @@
 
     .status-dot.preview { background: #ff9500; animation: pulse 1.5s infinite; }
 
+    /* Resize Handle */
+    .resize-handle {
+      position: absolute;
+      bottom: 4px;
+      right: 4px;
+      width: 16px;
+      height: 16px;
+      cursor: se-resize;
+      opacity: 0.4;
+      transition: opacity 0.15s;
+    }
+    .resize-handle:hover { opacity: 0.7; }
+    .resize-handle::before,
+    .resize-handle::after {
+      content: '';
+      position: absolute;
+      background: rgba(255, 255, 255, 0.5);
+      border-radius: 1px;
+    }
+    .resize-handle::before {
+      width: 10px;
+      height: 2px;
+      bottom: 2px;
+      right: 2px;
+      transform: rotate(-45deg);
+      transform-origin: bottom right;
+    }
+    .resize-handle::after {
+      width: 6px;
+      height: 2px;
+      bottom: 5px;
+      right: 2px;
+      transform: rotate(-45deg);
+      transform-origin: bottom right;
+    }
+
     /* Responsive Breakpoints */
     /* Small: 300-350px - Compact mode */
     @media (max-width: 350px) {
@@ -1999,51 +1901,6 @@
       visibility: visible;
     }
 
-    /* Minimize Mode */
-    .modal.minimized .drag-handle {
-      height: 20px;
-    }
-    .modal.minimized .drag-handle::after {
-      width: 30px;
-      height: 4px;
-    }
-    .modal.minimized .preview-toggle-container,
-    .modal.minimized .template-row,
-    .modal.minimized .metrics-bar,
-    .modal.minimized .screenshot-preview,
-    .modal.minimized .thinking-display,
-    .modal.minimized .action-display,
-    .modal.minimized .action-timeline,
-    .modal.minimized .action-history,
-    .modal.minimized .queue-panel,
-    .modal.minimized .recording-panel,
-    .modal.minimized .export-btn,
-    .modal.minimized .undo-btn,
-    .modal.minimized .resize-handle {
-      display: none !important;
-    }
-    /* Hide non-essential header buttons in minimized mode */
-    .modal.minimized .size-selector,
-    .modal.minimized .position-menu-container,
-    .modal.minimized #expand-btn,
-    .modal.minimized .kill-switch,
-    .modal.minimized #settings-btn {
-      display: none !important;
-    }
-    .modal.minimized .modal-header {
-      padding: 2px 12px 4px;
-    }
-    .modal.minimized .input-area {
-      padding: 0 12px 8px;
-    }
-    .modal.minimized .status-text {
-      font-size: 11px;
-    }
-    .minimize-btn {
-      font-size: 14px;
-      line-height: 1;
-    }
-
     /* Prevent text selection during touch interactions */
     .touch-no-select {
       -webkit-user-select: none;
@@ -2085,6 +1942,11 @@
           <span class="preview-badge">Preview</span>
         </div>
         <div class="header-actions">
+          <div class="size-selector">
+            <button class="size-btn" id="size-mini" title="Small - Compact view" aria-label="Small view">S</button>
+            <button class="size-btn active" id="size-standard" title="Medium - Standard view" aria-label="Medium view">M</button>
+            <button class="size-btn" id="size-detailed" title="Large - Detailed view with full info" aria-label="Large view">L</button>
+          </div>
           <div class="position-menu-container">
             <button class="icon-btn" id="position-btn" title="Snap Position" aria-label="Snap to corner">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -2117,6 +1979,14 @@
               </button>
             </div>
           </div>
+          <button class="icon-btn" id="expand-btn" title="Expand" aria-label="Expand/collapse window">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <polyline points="9 21 3 21 3 15"></polyline>
+              <line x1="21" y1="3" x2="14" y2="10"></line>
+              <line x1="3" y1="21" x2="10" y2="14"></line>
+            </svg>
+          </button>
           <div class="kill-switch kill-switch--idle" id="kill-switch">
             <span class="kill-switch-icon">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -2222,11 +2092,11 @@
         <div class="metric">
           <span class="metric-value hidden" id="retry-indicator">0 retries</span>
         </div>
-        <div class="metric">
+        <div class="metric expanded-only">
           <span class="metric-label">Elapsed</span>
           <span class="metric-value" id="elapsed-value">0:00</span>
         </div>
-        <div class="metric">
+        <div class="metric expanded-only">
           <span class="metric-label">Actions</span>
           <span class="metric-value" id="actions-count">0</span>
         </div>
@@ -2262,7 +2132,7 @@
           <div class="timeline-empty">Waiting for instruction...</div>
         </div>
       </div>
-      <div class="action-history">
+      <div class="action-history expanded-only">
         <div class="action-label">Action History</div>
         <div class="action-history-list" id="action-history-list"></div>
       </div>
@@ -2331,6 +2201,7 @@
         </svg>
         Undo
       </button>
+      <div class="resize-handle" title="Resize"></div>
     </div>
 
     <div class="settings-panel hidden" id="settings-panel" role="region" aria-label="Settings" aria-labelledby="settings-title">
@@ -2619,17 +2490,6 @@
         <div class="templates-section">
           <div class="templates-header">
             <h3>Task Templates</h3>
-            <select id="template-category-filter" class="template-category-filter">
-              <option value="">All Categories</option>
-              <option value="Form Filling">Form Filling</option>
-              <option value="Web Navigation">Web Navigation</option>
-              <option value="Data Entry">Data Entry</option>
-              <option value="Data Extraction">Data Extraction</option>
-              <option value="File Management">File Management</option>
-              <option value="Text Editing">Text Editing</option>
-              <option value="App Interaction">App Interaction</option>
-              <option value="General">General</option>
-            </select>
           </div>
           <div class="template-list" id="template-list">
             <div class="no-templates">No templates saved yet</div>
@@ -2640,25 +2500,12 @@
 
     <div class="save-template-dialog hidden" id="save-template-dialog">
       <div class="save-template-content">
-        <h3 id="template-dialog-title">Save as Template</h3>
+        <h3>Save as Template</h3>
         <input type="text" id="template-name-input" placeholder="Template name" maxlength="50" autocomplete="off">
-        <div class="save-template-hint">Max 50 characters. Use {{variable_name}} for placeholders.</div>
-        <div class="save-template-var-preview hidden" id="save-template-var-preview"></div>
+        <div class="save-template-hint">Max 50 characters</div>
         <div class="save-template-actions">
           <button class="btn btn-cancel" id="cancel-template-btn">Cancel</button>
           <button class="btn btn-confirm" id="confirm-template-btn">Save</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="variable-fill-dialog hidden" id="variable-fill-dialog">
-      <div class="variable-fill-content">
-        <h3>Fill In Variables</h3>
-        <div class="variable-fill-template-name" id="variable-fill-template-name"></div>
-        <div class="variable-fill-form" id="variable-fill-form"></div>
-        <div class="variable-fill-actions">
-          <button class="btn btn-cancel" id="variable-fill-cancel">Cancel</button>
-          <button class="btn btn-confirm" id="variable-fill-apply">Apply</button>
         </div>
       </div>
     </div>

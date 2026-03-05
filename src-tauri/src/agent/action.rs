@@ -12,92 +12,31 @@ use serde_json::{json, Value};
 use std::time::Duration;
 use thiserror::Error;
 
-/// Risk level classification for actions.
-/// Used to determine whether to show warnings or require confirmation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DangerLevel {
-    /// Safe action (clicks, scrolls, moves)
-    Safe,
-    /// Low risk (typing text, simple key presses)
-    Low,
-    /// Medium risk (key combos that could alter state, e.g., Ctrl+A, Enter in unknown context)
-    Medium,
-    /// High risk (destructive key combos, dangerous typed commands)
-    High,
-    /// Critical risk (system-level destructive actions: quit, force quit, delete with modifiers)
-    Critical,
+#[derive(Debug, Clone, Copy)]
+pub struct ScreenBounds {
+    pub width: u32,
+    pub height: u32,
+    pub scale_x: f64,
+    pub scale_y: f64,
 }
 
-impl Default for DangerLevel {
-    fn default() -> Self {
-        Self::Safe
-    }
-}
-
-impl std::fmt::Display for DangerLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DangerLevel::Safe => write!(f, "safe"),
-            DangerLevel::Low => write!(f, "low"),
-            DangerLevel::Medium => write!(f, "medium"),
-            DangerLevel::High => write!(f, "high"),
-            DangerLevel::Critical => write!(f, "critical"),
+impl ScreenBounds {
+    pub fn new(image_width: u32, image_height: u32, physical_width: u32, physical_height: u32) -> Self {
+        Self {
+            width: image_width,
+            height: image_height,
+            scale_x: physical_width as f64 / image_width as f64,
+            scale_y: physical_height as f64 / image_height as f64,
         }
     }
-}
 
-/// Patterns in typed text that indicate potentially dangerous shell commands
-const DANGEROUS_TEXT_PATTERNS: &[&str] = &[
-    "rm -rf",
-    "rm -r",
-    "rmdir",
-    "del /f",
-    "del /s",
-    "format c:",
-    "format d:",
-    "mkfs",
-    "dd if=",
-    "sudo rm",
-    "sudo mkfs",
-    "sudo dd",
-    ":(){ :|:& };:",  // fork bomb
-    "> /dev/sda",
-    "chmod -R 777",
-    "chmod 777",
-    "shutdown",
-    "reboot",
-    "halt",
-    "poweroff",
-    "kill -9",
-    "killall",
-    "pkill",
-    "taskkill",
-    "reg delete",
-    "diskutil erase",
-];
-
-/// Check if typed text contains dangerous command patterns
-fn is_dangerous_text(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    DANGEROUS_TEXT_PATTERNS.iter().any(|pattern| lower.contains(pattern))
-}
-
-/// Check if typed text contains medium-risk patterns
-fn is_medium_risk_text(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    let medium_patterns = [
-        "sudo ",
-        "npm publish",
-        "git push --force",
-        "git push -f",
-        "git reset --hard",
-        "drop table",
-        "drop database",
-        "truncate table",
-        "delete from",
-    ];
-    medium_patterns.iter().any(|pattern| lower.contains(pattern))
+    pub fn transform(&self, x: i32, y: i32) -> (i32, i32) {
+        let clamped_x = x.max(0).min(self.width as i32 - 1);
+        let clamped_y = y.max(0).min(self.height as i32 - 1);
+        let physical_x = (clamped_x as f64 * self.scale_x) as i32;
+        let physical_y = (clamped_y as f64 * self.scale_y) as i32;
+        (physical_x, physical_y)
+    }
 }
 
 #[derive(Error, Debug)]
@@ -276,15 +215,18 @@ pub struct ActionResult {
 }
 
 impl ActionResult {
-    /// Convert this ActionResult to a compact tool_result content string for the LLM.
-    /// Success returns "OK", failure returns "FAIL: <message>".
-    /// The LLM already knows what action it requested, so we omit redundant details.
+    /// Convert this ActionResult to a tool_result content string for the Anthropic API
     pub fn to_tool_result_content(&self) -> String {
-        if self.success {
-            "OK".to_string()
-        } else {
-            format!("FAIL: {}", self.message.as_deref().unwrap_or("Unknown error"))
-        }
+        let status = if self.success { "success" } else { "error" };
+        let result = json!({
+            "status": status,
+            "action": self.action_type,
+            "message": self.message,
+            "details": self.details,
+        });
+        serde_json::to_string(&result).unwrap_or_else(|_| {
+            format!("Action {} {}", self.action_type, status)
+        })
     }
 
     /// Set the tool_use_id for this result
@@ -376,49 +318,6 @@ pub fn from_tool_use(tool_use: &ToolUse) -> Result<Action, ActionError> {
         "error" => {
             let message = get_string(input, "message")?;
             Ok(Action::Error { message })
-        }
-        "drag" => {
-            let start_x = get_i32(input, "start_x")?;
-            let start_y = get_i32(input, "start_y")?;
-            let end_x = get_i32(input, "end_x")?;
-            let end_y = get_i32(input, "end_y")?;
-            let button = get_string_or_default(input, "button", "left");
-            let duration_ms = get_i32_or_default(input, "duration_ms", 500) as u32;
-            Ok(Action::Drag { start_x, start_y, end_x, end_y, button, duration_ms })
-        }
-        "triple_click" => {
-            let x = get_i32(input, "x")?;
-            let y = get_i32(input, "y")?;
-            Ok(Action::TripleClick { x, y })
-        }
-        "right_click" => {
-            let x = get_i32(input, "x")?;
-            let y = get_i32(input, "y")?;
-            Ok(Action::RightClick { x, y })
-        }
-        "wait" => {
-            let duration_ms = get_i32_or_default(input, "duration_ms", 1000) as u64;
-            Ok(Action::Wait { duration_ms })
-        }
-        "batch" => {
-            let actions_val = input.get("actions")
-                .and_then(|v| v.as_array())
-                .ok_or_else(|| ActionError::ParseError("Missing or invalid field: actions".to_string()))?;
-            let mut actions = Vec::new();
-            for action_val in actions_val {
-                let action_str = serde_json::to_string(action_val)
-                    .map_err(|e| ActionError::ParseError(format!("Invalid batch action: {}", e)))?;
-                let parsed = parse_action(&action_str)?;
-                actions.push(parsed.action);
-            }
-            Ok(Action::Batch { actions })
-        }
-        "wait_for_element" => {
-            let description = get_string(input, "description")?;
-            let timeout_ms = input.get("timeout_ms")
-                .and_then(|v| v.as_i64())
-                .map(|v| v as u32);
-            Ok(Action::WaitForElement { description, timeout_ms })
         }
         _ => Err(ActionError::UnknownAction(tool_use.name.clone())),
     }
@@ -670,16 +569,16 @@ pub async fn execute_action_with_delay(
         }
 
         Action::Type { text } => {
-            // Check for dangerous text patterns when confirmation is enabled
-            if confirm_dangerous && is_dangerous_text(text) {
-                return Err(ActionError::RequiresConfirmation(format!(
-                    "Dangerous command detected in typed text: {}",
-                    truncate_string(text, 60)
-                )));
-            }
+            let text_clone = text.clone();
+            let text_preview = truncate_string(text, 50);
+            let text_len = text.len();
 
-            let mut keyboard = KeyboardController::new()?;
-            keyboard.type_text(text)?;
+            tokio::task::spawn_blocking(move || {
+                let mut keyboard = KeyboardController::new()?;
+                keyboard.type_text(&text_clone)
+            })
+            .await
+            .map_err(|e| ActionError::KeyboardError(crate::input::KeyboardError::ActionError(e.to_string())))??;
 
             Ok(ActionResult {
                 success: true,
@@ -929,22 +828,6 @@ pub async fn execute_action_with_delay(
                 });
             }
 
-            // Check if any sub-action in the batch is dangerous
-            if confirm_dangerous {
-                let batch_danger = action.danger_level();
-                if matches!(batch_danger, DangerLevel::High | DangerLevel::Critical) {
-                    let dangerous_actions: Vec<String> = actions
-                        .iter()
-                        .filter(|a| matches!(a.danger_level(), DangerLevel::High | DangerLevel::Critical))
-                        .map(|a| a.describe())
-                        .collect();
-                    return Err(ActionError::RequiresConfirmation(format!(
-                        "Batch contains dangerous actions: {}",
-                        dangerous_actions.join(", ")
-                    )));
-                }
-            }
-
             if actions.len() > MAX_BATCH_SIZE {
                 return Ok(ActionResult {
                     success: false,
@@ -1118,105 +1001,6 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 }
 
 impl Action {
-    /// Classify the danger level of this action.
-    /// Returns a `DangerLevel` indicating how risky the action is.
-    pub fn danger_level(&self) -> DangerLevel {
-        match self {
-            // Key combinations - check against known dangerous combos
-            Action::Key { key, modifiers } => {
-                let mods: Vec<Modifier> = modifiers
-                    .iter()
-                    .filter_map(|m| parse_modifier(m))
-                    .collect();
-
-                // Critical: known destructive key combos (Cmd+Q, Alt+F4, Cmd+Delete, etc.)
-                if is_dangerous_key_combination(key, &mods) {
-                    return DangerLevel::Critical;
-                }
-
-                // High: key combos with Cmd/Ctrl that could modify state significantly
-                let has_cmd_or_ctrl = mods.contains(&Modifier::Meta) || mods.contains(&Modifier::Ctrl);
-                if has_cmd_or_ctrl {
-                    let key_lower = key.to_lowercase();
-                    // Select all, cut, paste in bulk, open/close tabs
-                    match key_lower.as_str() {
-                        "a" | "x" | "v" => return DangerLevel::Medium,
-                        // Close tab
-                        "w" => return DangerLevel::High,
-                        // New/Undo/Redo are generally safe
-                        "z" | "n" | "s" | "c" => return DangerLevel::Low,
-                        _ => return DangerLevel::Medium,
-                    }
-                }
-
-                // Simple key presses are low risk
-                DangerLevel::Low
-            }
-
-            // Typed text - check for dangerous commands
-            Action::Type { text } => {
-                if is_dangerous_text(text) {
-                    DangerLevel::Critical
-                } else if is_medium_risk_text(text) {
-                    DangerLevel::Medium
-                } else {
-                    DangerLevel::Low
-                }
-            }
-
-            // Batch actions - highest danger level among sub-actions
-            Action::Batch { actions } => {
-                actions
-                    .iter()
-                    .map(|a| a.danger_level())
-                    .max_by_key(|d| match d {
-                        DangerLevel::Safe => 0,
-                        DangerLevel::Low => 1,
-                        DangerLevel::Medium => 2,
-                        DangerLevel::High => 3,
-                        DangerLevel::Critical => 4,
-                    })
-                    .unwrap_or(DangerLevel::Safe)
-            }
-
-            // Mouse actions are generally safe
-            Action::Click { .. }
-            | Action::DoubleClick { .. }
-            | Action::TripleClick { .. }
-            | Action::RightClick { .. }
-            | Action::Move { .. }
-            | Action::Scroll { .. }
-            | Action::Drag { .. } => DangerLevel::Safe,
-
-            // Wait actions are safe
-            Action::Wait { .. } | Action::WaitForElement { .. } => DangerLevel::Safe,
-
-            // Terminal actions are safe (they just signal completion)
-            Action::Complete { .. } | Action::Error { .. } => DangerLevel::Safe,
-        }
-    }
-
-    /// Returns true if this action requires user confirmation based on its danger level.
-    pub fn requires_confirmation(&self) -> bool {
-        matches!(self.danger_level(), DangerLevel::High | DangerLevel::Critical)
-    }
-
-    /// Returns a human-readable warning message if the action is dangerous.
-    pub fn danger_warning(&self) -> Option<String> {
-        match self.danger_level() {
-            DangerLevel::Critical => {
-                Some(format!("CRITICAL: {} - This action may cause data loss or system damage", self.describe()))
-            }
-            DangerLevel::High => {
-                Some(format!("WARNING: {} - This action may have significant side effects", self.describe()))
-            }
-            DangerLevel::Medium => {
-                Some(format!("Caution: {} - This action modifies system state", self.describe()))
-            }
-            _ => None,
-        }
-    }
-
     /// Returns true if this action should produce visible screen changes
     /// and should be verified after execution.
     pub fn should_verify_effect(&self) -> bool {
@@ -2036,157 +1820,6 @@ mod tests {
     }
 
     #[test]
-    fn test_from_tool_use_drag() {
-        let tu = ToolUse {
-            id: "t_drag".to_string(),
-            name: "drag".to_string(),
-            input: json!({"start_x": 10, "start_y": 20, "end_x": 300, "end_y": 400}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        match action {
-            Action::Drag { start_x, start_y, end_x, end_y, button, duration_ms } => {
-                assert_eq!(start_x, 10);
-                assert_eq!(start_y, 20);
-                assert_eq!(end_x, 300);
-                assert_eq!(end_y, 400);
-                assert_eq!(button, "left");
-                assert_eq!(duration_ms, 500);
-            }
-            _ => panic!("Expected Drag"),
-        }
-    }
-
-    #[test]
-    fn test_from_tool_use_drag_with_options() {
-        let tu = ToolUse {
-            id: "t_drag2".to_string(),
-            name: "drag".to_string(),
-            input: json!({"start_x": 0, "start_y": 0, "end_x": 100, "end_y": 100, "button": "right", "duration_ms": 2000}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        match action {
-            Action::Drag { button, duration_ms, .. } => {
-                assert_eq!(button, "right");
-                assert_eq!(duration_ms, 2000);
-            }
-            _ => panic!("Expected Drag"),
-        }
-    }
-
-    #[test]
-    fn test_from_tool_use_triple_click() {
-        let tu = ToolUse {
-            id: "t_tc".to_string(),
-            name: "triple_click".to_string(),
-            input: json!({"x": 100, "y": 200}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        assert!(matches!(action, Action::TripleClick { x: 100, y: 200 }));
-    }
-
-    #[test]
-    fn test_from_tool_use_right_click() {
-        let tu = ToolUse {
-            id: "t_rc".to_string(),
-            name: "right_click".to_string(),
-            input: json!({"x": 50, "y": 75}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        assert!(matches!(action, Action::RightClick { x: 50, y: 75 }));
-    }
-
-    #[test]
-    fn test_from_tool_use_wait() {
-        let tu = ToolUse {
-            id: "t_wait".to_string(),
-            name: "wait".to_string(),
-            input: json!({"duration_ms": 2000}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        assert!(matches!(action, Action::Wait { duration_ms: 2000 }));
-    }
-
-    #[test]
-    fn test_from_tool_use_wait_default_duration() {
-        let tu = ToolUse {
-            id: "t_wait2".to_string(),
-            name: "wait".to_string(),
-            input: json!({}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        assert!(matches!(action, Action::Wait { duration_ms: 1000 }));
-    }
-
-    #[test]
-    fn test_from_tool_use_wait_for_element() {
-        let tu = ToolUse {
-            id: "t_wfe".to_string(),
-            name: "wait_for_element".to_string(),
-            input: json!({"description": "page to load", "timeout_ms": 3000}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        match action {
-            Action::WaitForElement { description, timeout_ms } => {
-                assert_eq!(description, "page to load");
-                assert_eq!(timeout_ms, Some(3000));
-            }
-            _ => panic!("Expected WaitForElement"),
-        }
-    }
-
-    #[test]
-    fn test_from_tool_use_wait_for_element_no_timeout() {
-        let tu = ToolUse {
-            id: "t_wfe2".to_string(),
-            name: "wait_for_element".to_string(),
-            input: json!({"description": "loading spinner"}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        match action {
-            Action::WaitForElement { description, timeout_ms } => {
-                assert_eq!(description, "loading spinner");
-                assert!(timeout_ms.is_none());
-            }
-            _ => panic!("Expected WaitForElement"),
-        }
-    }
-
-    #[test]
-    fn test_from_tool_use_batch() {
-        let tu = ToolUse {
-            id: "t_batch".to_string(),
-            name: "batch".to_string(),
-            input: json!({"actions": [
-                {"action": "type", "text": "hello"},
-                {"action": "key", "key": "enter"}
-            ]}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        match action {
-            Action::Batch { actions } => {
-                assert_eq!(actions.len(), 2);
-                assert!(matches!(&actions[0], Action::Type { text } if text == "hello"));
-                assert!(matches!(&actions[1], Action::Key { key, .. } if key == "enter"));
-            }
-            _ => panic!("Expected Batch"),
-        }
-    }
-
-    #[test]
-    fn test_from_tool_use_batch_empty() {
-        let tu = ToolUse {
-            id: "t_batch2".to_string(),
-            name: "batch".to_string(),
-            input: json!({"actions": []}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        match action {
-            Action::Batch { actions } => assert!(actions.is_empty()),
-            _ => panic!("Expected Batch"),
-        }
-    }
-
-    #[test]
     fn test_from_tool_use_unknown_action() {
         let tu = ToolUse {
             id: "t10".to_string(),
@@ -2275,7 +1908,9 @@ mod tests {
             tool_use_id: None,
         };
         let content = result.to_tool_result_content();
-        assert_eq!(content, "OK");
+        let parsed: Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["status"], "success");
+        assert_eq!(parsed["action"], "click");
     }
 
     #[test]
@@ -2377,164 +2012,10 @@ mod tests {
     }
 
     #[test]
-    fn test_truncate_string_multibyte_utf8() {
-        // Each CJK character is 3 bytes; slicing at byte boundary would panic
-        let s = "こんにちは世界";
-        let result = truncate_string(s, 3);
-        assert_eq!(result, "こんに...");
-    }
-
-    #[test]
-    fn test_truncate_string_emoji() {
-        let s = "Hello 🌍🌎🌏 World";
-        let result = truncate_string(s, 8);
-        assert_eq!(result, "Hello 🌍🌎...");
-    }
-
-    #[test]
-    fn test_truncate_string_exact_length() {
-        assert_eq!(truncate_string("abcde", 5), "abcde");
-    }
-
-    // ── from_tool_use tests for new action types ──────────────────────
-
-    #[test]
-    fn test_from_tool_use_drag() {
-        let tu = ToolUse {
-            id: "t_drag".to_string(),
-            name: "drag".to_string(),
-            input: json!({"start_x": 10, "start_y": 20, "end_x": 300, "end_y": 400}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        match action {
-            Action::Drag { start_x, start_y, end_x, end_y, button, duration_ms } => {
-                assert_eq!(start_x, 10);
-                assert_eq!(start_y, 20);
-                assert_eq!(end_x, 300);
-                assert_eq!(end_y, 400);
-                assert_eq!(button, "left");
-                assert_eq!(duration_ms, 500);
-            }
-            _ => panic!("Expected Drag"),
-        }
-    }
-
-    #[test]
-    fn test_from_tool_use_drag_with_options() {
-        let tu = ToolUse {
-            id: "t_drag2".to_string(),
-            name: "drag".to_string(),
-            input: json!({"start_x": 0, "start_y": 0, "end_x": 100, "end_y": 100, "button": "right", "duration_ms": 2000}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        match action {
-            Action::Drag { button, duration_ms, .. } => {
-                assert_eq!(button, "right");
-                assert_eq!(duration_ms, 2000);
-            }
-            _ => panic!("Expected Drag"),
-        }
-    }
-
-    #[test]
-    fn test_from_tool_use_triple_click() {
-        let tu = ToolUse {
-            id: "t_tc".to_string(),
-            name: "triple_click".to_string(),
-            input: json!({"x": 100, "y": 200}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        assert!(matches!(action, Action::TripleClick { x: 100, y: 200 }));
-    }
-
-    #[test]
-    fn test_from_tool_use_right_click() {
-        let tu = ToolUse {
-            id: "t_rc".to_string(),
-            name: "right_click".to_string(),
-            input: json!({"x": 50, "y": 75}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        assert!(matches!(action, Action::RightClick { x: 50, y: 75 }));
-    }
-
-    #[test]
-    fn test_from_tool_use_wait() {
-        let tu = ToolUse {
-            id: "t_wait".to_string(),
-            name: "wait".to_string(),
-            input: json!({"duration_ms": 2000}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        assert!(matches!(action, Action::Wait { duration_ms: 2000 }));
-    }
-
-    #[test]
-    fn test_from_tool_use_wait_default() {
-        let tu = ToolUse {
-            id: "t_wait2".to_string(),
-            name: "wait".to_string(),
-            input: json!({}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        assert!(matches!(action, Action::Wait { duration_ms: 1000 }));
-    }
-
-    #[test]
-    fn test_from_tool_use_batch() {
-        let tu = ToolUse {
-            id: "t_batch".to_string(),
-            name: "batch".to_string(),
-            input: json!({
-                "actions": [
-                    {"action": "type", "text": "hello"},
-                    {"action": "key", "key": "enter"}
-                ]
-            }),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        match action {
-            Action::Batch { actions } => {
-                assert_eq!(actions.len(), 2);
-                assert!(matches!(&actions[0], Action::Type { text } if text == "hello"));
-                assert!(matches!(&actions[1], Action::Key { key, .. } if key == "enter"));
-            }
-            _ => panic!("Expected Batch"),
-        }
-    }
-
-    #[test]
-    fn test_from_tool_use_wait_for_element() {
-        let tu = ToolUse {
-            id: "t_wfe".to_string(),
-            name: "wait_for_element".to_string(),
-            input: json!({"description": "page to load", "timeout_ms": 3000}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        match action {
-            Action::WaitForElement { description, timeout_ms } => {
-                assert_eq!(description, "page to load");
-                assert_eq!(timeout_ms, Some(3000));
-            }
-            _ => panic!("Expected WaitForElement"),
-        }
-    }
-
-    #[test]
-    fn test_from_tool_use_wait_for_element_no_timeout() {
-        let tu = ToolUse {
-            id: "t_wfe2".to_string(),
-            name: "wait_for_element".to_string(),
-            input: json!({"description": "spinner to disappear"}),
-        };
-        let action = from_tool_use(&tu).unwrap();
-        match action {
-            Action::WaitForElement { description, timeout_ms } => {
-                assert_eq!(description, "spinner to disappear");
-                assert!(timeout_ms.is_none());
-            }
-            _ => panic!("Expected WaitForElement"),
-        }
+    fn test_truncate_string_unicode() {
+        // B9: char-based truncation should not panic on multi-byte chars
+        assert_eq!(truncate_string("こんにちは世界", 3), "こんに...");
+        assert_eq!(truncate_string("🌍🌎🌏", 2), "🌍🌎...");
     }
 
     // ── LlmResponse tests ──────────────────────────────────────────────
@@ -2898,500 +2379,8 @@ mod tests {
             tool_use_id: None,
         };
         let content = result.to_tool_result_content();
-        assert_eq!(content, "FAIL: Something failed");
-    }
-
-    #[test]
-    fn test_action_result_to_tool_result_content_error_no_message() {
-        let result = ActionResult {
-            success: false,
-            completed: true,
-            message: None,
-            retry_count: 0,
-            action_type: "click".to_string(),
-            details: None,
-            tool_use_id: None,
-        };
-        let content = result.to_tool_result_content();
-        assert_eq!(content, "FAIL: Unknown error");
-    }
-
-    // ── DangerLevel tests ─────────────────────────────────────────────────
-
-    #[test]
-    fn test_danger_level_display() {
-        assert_eq!(DangerLevel::Safe.to_string(), "safe");
-        assert_eq!(DangerLevel::Low.to_string(), "low");
-        assert_eq!(DangerLevel::Medium.to_string(), "medium");
-        assert_eq!(DangerLevel::High.to_string(), "high");
-        assert_eq!(DangerLevel::Critical.to_string(), "critical");
-    }
-
-    #[test]
-    fn test_danger_level_default() {
-        let level: DangerLevel = Default::default();
-        assert_eq!(level, DangerLevel::Safe);
-    }
-
-    #[test]
-    fn test_danger_level_serialize_deserialize() {
-        let level = DangerLevel::Critical;
-        let json = serde_json::to_string(&level).unwrap();
-        assert_eq!(json, "\"critical\"");
-        let deserialized: DangerLevel = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, DangerLevel::Critical);
-    }
-
-    // ── danger_level() classification tests ───────────────────────────────
-
-    #[test]
-    fn test_danger_level_click_is_safe() {
-        let action = Action::Click { x: 100, y: 200, button: "left".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Safe);
-    }
-
-    #[test]
-    fn test_danger_level_double_click_is_safe() {
-        let action = Action::DoubleClick { x: 10, y: 20 };
-        assert_eq!(action.danger_level(), DangerLevel::Safe);
-    }
-
-    #[test]
-    fn test_danger_level_move_is_safe() {
-        let action = Action::Move { x: 50, y: 50 };
-        assert_eq!(action.danger_level(), DangerLevel::Safe);
-    }
-
-    #[test]
-    fn test_danger_level_scroll_is_safe() {
-        let action = Action::Scroll { x: 0, y: 0, direction: "up".into(), amount: 3 };
-        assert_eq!(action.danger_level(), DangerLevel::Safe);
-    }
-
-    #[test]
-    fn test_danger_level_drag_is_safe() {
-        let action = Action::Drag { start_x: 0, start_y: 0, end_x: 100, end_y: 100, button: "left".into(), duration_ms: 500 };
-        assert_eq!(action.danger_level(), DangerLevel::Safe);
-    }
-
-    #[test]
-    fn test_danger_level_wait_is_safe() {
-        let action = Action::Wait { duration_ms: 1000 };
-        assert_eq!(action.danger_level(), DangerLevel::Safe);
-    }
-
-    #[test]
-    fn test_danger_level_complete_is_safe() {
-        let action = Action::Complete { message: "done".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Safe);
-    }
-
-    #[test]
-    fn test_danger_level_error_is_safe() {
-        let action = Action::Error { message: "oops".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Safe);
-    }
-
-    #[test]
-    fn test_danger_level_type_normal_text_is_low() {
-        let action = Action::Type { text: "Hello, world!".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Low);
-    }
-
-    #[test]
-    fn test_danger_level_type_dangerous_rm_rf() {
-        let action = Action::Type { text: "rm -rf /tmp/test".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Critical);
-    }
-
-    #[test]
-    fn test_danger_level_type_dangerous_sudo_rm() {
-        let action = Action::Type { text: "sudo rm -rf /".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Critical);
-    }
-
-    #[test]
-    fn test_danger_level_type_dangerous_format() {
-        let action = Action::Type { text: "format c: /q".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Critical);
-    }
-
-    #[test]
-    fn test_danger_level_type_dangerous_dd() {
-        let action = Action::Type { text: "dd if=/dev/zero of=/dev/sda".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Critical);
-    }
-
-    #[test]
-    fn test_danger_level_type_dangerous_shutdown() {
-        let action = Action::Type { text: "shutdown -h now".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Critical);
-    }
-
-    #[test]
-    fn test_danger_level_type_dangerous_kill() {
-        let action = Action::Type { text: "kill -9 1234".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Critical);
-    }
-
-    #[test]
-    fn test_danger_level_type_medium_sudo() {
-        let action = Action::Type { text: "sudo apt install vim".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Medium);
-    }
-
-    #[test]
-    fn test_danger_level_type_medium_git_force_push() {
-        let action = Action::Type { text: "git push --force origin main".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Medium);
-    }
-
-    #[test]
-    fn test_danger_level_type_medium_git_force_push_short() {
-        let action = Action::Type { text: "git push -f origin main".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Medium);
-    }
-
-    #[test]
-    fn test_danger_level_type_medium_git_reset_hard() {
-        let action = Action::Type { text: "git reset --hard HEAD~3".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Medium);
-    }
-
-    #[test]
-    fn test_danger_level_type_medium_drop_table() {
-        let action = Action::Type { text: "DROP TABLE users;".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Medium);
-    }
-
-    #[test]
-    fn test_danger_level_type_medium_npm_publish() {
-        let action = Action::Type { text: "npm publish --access public".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Medium);
-    }
-
-    #[test]
-    fn test_danger_level_type_case_insensitive() {
-        // "RM -RF" should still match
-        let action = Action::Type { text: "RM -RF /tmp".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Critical);
-    }
-
-    #[test]
-    fn test_danger_level_key_simple_is_low() {
-        let action = Action::Key { key: "a".into(), modifiers: vec![] };
-        assert_eq!(action.danger_level(), DangerLevel::Low);
-    }
-
-    #[test]
-    fn test_danger_level_key_enter_is_low() {
-        let action = Action::Key { key: "enter".into(), modifiers: vec![] };
-        assert_eq!(action.danger_level(), DangerLevel::Low);
-    }
-
-    #[test]
-    fn test_danger_level_key_cmd_q_is_critical() {
-        // Cmd+Q is a known dangerous key combo (quit app)
-        let action = Action::Key { key: "q".into(), modifiers: vec!["cmd".into()] };
-        assert_eq!(action.danger_level(), DangerLevel::Critical);
-    }
-
-    #[test]
-    fn test_danger_level_key_cmd_c_is_low() {
-        // Cmd+C (copy) is safe
-        let action = Action::Key { key: "c".into(), modifiers: vec!["cmd".into()] };
-        assert_eq!(action.danger_level(), DangerLevel::Low);
-    }
-
-    #[test]
-    fn test_danger_level_key_cmd_z_is_low() {
-        // Cmd+Z (undo) is safe
-        let action = Action::Key { key: "z".into(), modifiers: vec!["cmd".into()] };
-        assert_eq!(action.danger_level(), DangerLevel::Low);
-    }
-
-    #[test]
-    fn test_danger_level_key_cmd_w_is_critical() {
-        // Cmd+W (close window) is critical - caught by is_dangerous_key_combination
-        let action = Action::Key { key: "w".into(), modifiers: vec!["cmd".into()] };
-        assert_eq!(action.danger_level(), DangerLevel::Critical);
-    }
-
-    #[test]
-    fn test_danger_level_key_ctrl_w_is_high() {
-        // Ctrl+W (close tab on Linux/Windows) is high risk but not caught by is_dangerous_key_combination
-        let action = Action::Key { key: "w".into(), modifiers: vec!["ctrl".into()] };
-        assert_eq!(action.danger_level(), DangerLevel::High);
-    }
-
-    #[test]
-    fn test_danger_level_key_cmd_a_is_medium() {
-        // Cmd+A (select all) is medium risk
-        let action = Action::Key { key: "a".into(), modifiers: vec!["cmd".into()] };
-        assert_eq!(action.danger_level(), DangerLevel::Medium);
-    }
-
-    #[test]
-    fn test_danger_level_key_cmd_x_is_medium() {
-        // Cmd+X (cut) is medium risk
-        let action = Action::Key { key: "x".into(), modifiers: vec!["cmd".into()] };
-        assert_eq!(action.danger_level(), DangerLevel::Medium);
-    }
-
-    #[test]
-    fn test_danger_level_key_cmd_v_is_medium() {
-        // Cmd+V (paste) is medium risk
-        let action = Action::Key { key: "v".into(), modifiers: vec!["cmd".into()] };
-        assert_eq!(action.danger_level(), DangerLevel::Medium);
-    }
-
-    #[test]
-    fn test_danger_level_key_cmd_unknown_is_medium() {
-        // Unknown Cmd+key combos default to medium
-        let action = Action::Key { key: "p".into(), modifiers: vec!["cmd".into()] };
-        assert_eq!(action.danger_level(), DangerLevel::Medium);
-    }
-
-    #[test]
-    fn test_danger_level_key_alt_f4_is_critical() {
-        // Alt+F4 is a dangerous key combo (close window)
-        let action = Action::Key { key: "F4".into(), modifiers: vec!["alt".into()] };
-        assert_eq!(action.danger_level(), DangerLevel::Critical);
-    }
-
-    // ── Batch danger level propagation tests ──────────────────────────────
-
-    #[test]
-    fn test_danger_level_batch_empty_is_safe() {
-        let action = Action::Batch { actions: vec![] };
-        assert_eq!(action.danger_level(), DangerLevel::Safe);
-    }
-
-    #[test]
-    fn test_danger_level_batch_all_safe() {
-        let action = Action::Batch {
-            actions: vec![
-                Action::Click { x: 10, y: 20, button: "left".into() },
-                Action::Wait { duration_ms: 500 },
-            ],
-        };
-        assert_eq!(action.danger_level(), DangerLevel::Safe);
-    }
-
-    #[test]
-    fn test_danger_level_batch_propagates_highest() {
-        // Batch with one critical action should be critical
-        let action = Action::Batch {
-            actions: vec![
-                Action::Click { x: 10, y: 20, button: "left".into() },
-                Action::Type { text: "rm -rf /".into() },
-            ],
-        };
-        assert_eq!(action.danger_level(), DangerLevel::Critical);
-    }
-
-    #[test]
-    fn test_danger_level_batch_medium_from_subaction() {
-        let action = Action::Batch {
-            actions: vec![
-                Action::Click { x: 10, y: 20, button: "left".into() },
-                Action::Type { text: "sudo apt update".into() },
-            ],
-        };
-        assert_eq!(action.danger_level(), DangerLevel::Medium);
-    }
-
-    // ── requires_confirmation() tests ─────────────────────────────────────
-
-    #[test]
-    fn test_requires_confirmation_safe_false() {
-        let action = Action::Click { x: 0, y: 0, button: "left".into() };
-        assert!(!action.requires_confirmation());
-    }
-
-    #[test]
-    fn test_requires_confirmation_low_false() {
-        let action = Action::Type { text: "hello".into() };
-        assert!(!action.requires_confirmation());
-    }
-
-    #[test]
-    fn test_requires_confirmation_medium_false() {
-        let action = Action::Type { text: "sudo ls".into() };
-        assert!(!action.requires_confirmation());
-    }
-
-    #[test]
-    fn test_requires_confirmation_high_true() {
-        // Ctrl+W is High (not caught by is_dangerous_key_combination, but "w" maps to High)
-        let action = Action::Key { key: "w".into(), modifiers: vec!["ctrl".into()] };
-        assert!(action.requires_confirmation());
-    }
-
-    #[test]
-    fn test_requires_confirmation_critical_true() {
-        let action = Action::Type { text: "rm -rf /".into() };
-        assert!(action.requires_confirmation());
-    }
-
-    // ── danger_warning() tests ────────────────────────────────────────────
-
-    #[test]
-    fn test_danger_warning_safe_is_none() {
-        let action = Action::Click { x: 0, y: 0, button: "left".into() };
-        assert!(action.danger_warning().is_none());
-    }
-
-    #[test]
-    fn test_danger_warning_low_is_none() {
-        let action = Action::Type { text: "hello".into() };
-        assert!(action.danger_warning().is_none());
-    }
-
-    #[test]
-    fn test_danger_warning_medium_has_caution() {
-        let action = Action::Type { text: "sudo apt install vim".into() };
-        let warning = action.danger_warning().unwrap();
-        assert!(warning.contains("Caution:"));
-    }
-
-    #[test]
-    fn test_danger_warning_high_has_warning() {
-        // Ctrl+W is High (not caught by is_dangerous_key_combination)
-        let action = Action::Key { key: "w".into(), modifiers: vec!["ctrl".into()] };
-        let warning = action.danger_warning().unwrap();
-        assert!(warning.contains("WARNING:"));
-    }
-
-    #[test]
-    fn test_danger_warning_critical_has_critical() {
-        let action = Action::Type { text: "rm -rf /".into() };
-        let warning = action.danger_warning().unwrap();
-        assert!(warning.contains("CRITICAL:"));
-    }
-
-    // ── is_dangerous_text() tests ─────────────────────────────────────────
-
-    #[test]
-    fn test_is_dangerous_text_rm_rf() {
-        assert!(is_dangerous_text("rm -rf /"));
-    }
-
-    #[test]
-    fn test_is_dangerous_text_rm_r() {
-        assert!(is_dangerous_text("rm -r /tmp/test"));
-    }
-
-    #[test]
-    fn test_is_dangerous_text_format_c() {
-        assert!(is_dangerous_text("format c: /q"));
-    }
-
-    #[test]
-    fn test_is_dangerous_text_dd_if() {
-        assert!(is_dangerous_text("dd if=/dev/zero of=/dev/sda"));
-    }
-
-    #[test]
-    fn test_is_dangerous_text_fork_bomb() {
-        assert!(is_dangerous_text(":(){ :|:& };:"));
-    }
-
-    #[test]
-    fn test_is_dangerous_text_chmod_777() {
-        assert!(is_dangerous_text("chmod 777 /"));
-    }
-
-    #[test]
-    fn test_is_dangerous_text_chmod_r_777() {
-        assert!(is_dangerous_text("chmod -R 777 /"));
-    }
-
-    #[test]
-    fn test_is_dangerous_text_safe_text() {
-        assert!(!is_dangerous_text("echo hello"));
-        assert!(!is_dangerous_text("ls -la"));
-        assert!(!is_dangerous_text("cat file.txt"));
-        assert!(!is_dangerous_text("npm install"));
-    }
-
-    #[test]
-    fn test_is_dangerous_text_case_insensitive() {
-        assert!(is_dangerous_text("RM -RF /tmp"));
-        assert!(is_dangerous_text("SHUTDOWN -h now"));
-    }
-
-    #[test]
-    fn test_is_dangerous_text_diskutil_erase() {
-        assert!(is_dangerous_text("diskutil erase disk0"));
-    }
-
-    #[test]
-    fn test_is_dangerous_text_reg_delete() {
-        assert!(is_dangerous_text("reg delete HKCU\\Software"));
-    }
-
-    // ── is_medium_risk_text() tests ───────────────────────────────────────
-
-    #[test]
-    fn test_is_medium_risk_sudo() {
-        assert!(is_medium_risk_text("sudo apt install vim"));
-    }
-
-    #[test]
-    fn test_is_medium_risk_git_force_push() {
-        assert!(is_medium_risk_text("git push --force origin main"));
-    }
-
-    #[test]
-    fn test_is_medium_risk_git_push_f() {
-        assert!(is_medium_risk_text("git push -f origin main"));
-    }
-
-    #[test]
-    fn test_is_medium_risk_git_reset_hard() {
-        assert!(is_medium_risk_text("git reset --hard HEAD~3"));
-    }
-
-    #[test]
-    fn test_is_medium_risk_drop_table() {
-        assert!(is_medium_risk_text("DROP TABLE users;"));
-    }
-
-    #[test]
-    fn test_is_medium_risk_drop_database() {
-        assert!(is_medium_risk_text("DROP DATABASE mydb;"));
-    }
-
-    #[test]
-    fn test_is_medium_risk_truncate_table() {
-        assert!(is_medium_risk_text("TRUNCATE TABLE orders;"));
-    }
-
-    #[test]
-    fn test_is_medium_risk_delete_from() {
-        assert!(is_medium_risk_text("DELETE FROM users WHERE id > 10;"));
-    }
-
-    #[test]
-    fn test_is_medium_risk_npm_publish() {
-        assert!(is_medium_risk_text("npm publish"));
-    }
-
-    #[test]
-    fn test_is_medium_risk_safe_text() {
-        assert!(!is_medium_risk_text("echo hello"));
-        assert!(!is_medium_risk_text("git push origin main"));
-        assert!(!is_medium_risk_text("npm install"));
-    }
-
-    // ── Dangerous text takes priority over medium risk ────────────────────
-
-    #[test]
-    fn test_dangerous_overrides_medium() {
-        // "sudo rm -rf /" is both medium (sudo) and dangerous (rm -rf)
-        // danger_level should return Critical since is_dangerous_text is checked first
-        let action = Action::Type { text: "sudo rm -rf /".into() };
-        assert_eq!(action.danger_level(), DangerLevel::Critical);
+        let parsed: Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["status"], "error");
+        assert_eq!(parsed["action"], "click");
     }
 }

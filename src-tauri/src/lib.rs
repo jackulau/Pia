@@ -9,7 +9,6 @@ mod permissions;
 use agent::{validate_speed_multiplier, ActionHistory, AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse, InstructionQueue, QueueFailureMode, QueueManager, RecordedAction};
 use agent::action::execute_action;
 use config::{Config, TaskTemplate};
-use config::settings::extract_variables;
 use config::credentials::{self, DetectedCredentialPayload};
 use history::{HistoryEntry, InstructionHistory};
 use llm::{
@@ -55,8 +54,6 @@ struct AgentStatePayload {
     recorded_actions_count: usize,
     can_undo: bool,
     last_undoable_action: Option<String>,
-    danger_level: String,
-    danger_warning: Option<String>,
 }
 
 #[tauri::command]
@@ -163,8 +160,6 @@ async fn get_agent_state(state: State<'_, AppState>) -> Result<AgentStatePayload
         recorded_actions_count: s.recorded_actions.len(),
         can_undo: s.can_undo,
         last_undoable_action: s.last_undoable_action,
-        danger_level: s.danger_level.to_string(),
-        danger_warning: s.danger_warning,
     })
 }
 
@@ -348,7 +343,6 @@ async fn get_templates(state: State<'_, AppState>) -> Result<Vec<TaskTemplate>, 
 async fn save_template(
     name: String,
     instruction: String,
-    category: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<TaskTemplate, String> {
     if name.len() > 50 {
@@ -359,7 +353,7 @@ async fn save_template(
         return Err("Instruction cannot be empty".to_string());
     }
 
-    let template = TaskTemplate::new_with_category(name, instruction, category);
+    let template = TaskTemplate::new(name, instruction);
     let mut config = state.config.write().await;
     config.templates.push(template.clone());
     config.save().map_err(|e| e.to_string())?;
@@ -386,7 +380,6 @@ async fn update_template(
     id: String,
     name: String,
     instruction: String,
-    category: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<TaskTemplate, String> {
     if name.len() > 50 {
@@ -405,9 +398,7 @@ async fn update_template(
         .ok_or_else(|| "Template not found".to_string())?;
 
     template.name = name;
-    template.variables = extract_variables(&instruction);
     template.instruction = instruction;
-    template.category = category;
     let updated = template.clone();
 
     config.save().map_err(|e| e.to_string())?;
@@ -849,6 +840,17 @@ fn check_permissions() -> permissions::PermissionStatus {
     permissions::check_permissions()
 }
 
+#[tauri::command]
+fn get_platform() -> String {
+    if cfg!(target_os = "macos") {
+        "macos".to_string()
+    } else if cfg!(target_os = "windows") {
+        "windows".to_string()
+    } else {
+        "linux".to_string()
+    }
+}
+
 /// Create a provider instance from config for a given provider name
 fn create_provider_from_config(
     provider_name: &str,
@@ -898,6 +900,18 @@ fn create_provider_from_config(
                 .as_ref()
                 .ok_or("OpenRouter not configured")?;
             Ok(Box::new(OpenRouterProvider::new(
+                cfg.api_key.clone(),
+                cfg.model.clone(),
+                cfg.temperature,
+            )))
+        }
+        "glm" => {
+            let cfg = config
+                .providers
+                .glm
+                .as_ref()
+                .ok_or("GLM not configured")?;
+            Ok(Box::new(GlmProvider::new(
                 cfg.api_key.clone(),
                 cfg.model.clone(),
                 cfg.temperature,
@@ -1053,22 +1067,7 @@ pub fn run() {
                 }
             })?;
 
-            // Set overlay windows as click-through on Windows
-            #[cfg(target_os = "windows")]
-            {
-                if let Some(overlay) = app.get_webview_window("overlay") {
-                    if let Err(e) = overlay.set_ignore_cursor_events(true) {
-                        log::warn!("Failed to set overlay click-through on Windows: {}", e);
-                    }
-                }
-                if let Some(cursor_overlay) = app.get_webview_window("cursor-overlay") {
-                    if let Err(e) = cursor_overlay.set_ignore_cursor_events(true) {
-                        log::warn!("Failed to set cursor-overlay click-through on Windows: {}", e);
-                    }
-                }
-            }
-
-            // Show main window on startup (starts hidden to prevent white flash)
+            // Show main window on startup
             if let Some(window) = app.get_webview_window("main") {
                 println!("Window found, showing...");
                 let _ = window.show();
@@ -1093,22 +1092,18 @@ pub fn run() {
 
             if show_visual_feedback {
                 if let Some(overlay) = app.get_webview_window("overlay") {
-                    // Make window click-through (supported on macOS and Windows in Tauri 2.x)
-                    if let Err(e) = overlay.set_ignore_cursor_events(true) {
-                        log::warn!("Failed to set overlay click-through: {}", e);
+                    // Make window click-through on macOS
+                    #[cfg(target_os = "macos")]
+                    {
+                        if let Err(e) = overlay.set_ignore_cursor_events(true) {
+                            log::warn!("Failed to set overlay click-through: {}", e);
+                        }
                     }
 
                     let _ = overlay.show();
                     println!("Overlay window initialized");
                 } else {
                     println!("WARN: Overlay window not found");
-                }
-            }
-
-            // Make cursor-overlay click-through (supported on macOS and Windows in Tauri 2.x)
-            if let Some(cursor_overlay) = app.get_webview_window("cursor-overlay") {
-                if let Err(e) = cursor_overlay.set_ignore_cursor_events(true) {
-                    log::warn!("Failed to set cursor-overlay click-through: {}", e);
                 }
             }
 
@@ -1166,7 +1161,176 @@ pub fn run() {
             check_provider_health,
             list_provider_models,
             check_permissions,
+            get_platform,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── get_platform tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_get_platform_returns_valid_value() {
+        let platform = get_platform();
+        assert!(
+            platform == "macos" || platform == "windows" || platform == "linux",
+            "get_platform() returned unexpected value: {}",
+            platform
+        );
+    }
+
+    #[test]
+    fn test_get_platform_matches_current_os() {
+        let platform = get_platform();
+        if cfg!(target_os = "macos") {
+            assert_eq!(platform, "macos");
+        } else if cfg!(target_os = "windows") {
+            assert_eq!(platform, "windows");
+        } else {
+            assert_eq!(platform, "linux");
+        }
+    }
+
+    #[test]
+    fn test_get_platform_returns_string_type() {
+        // Ensures the function returns a non-empty String
+        let platform = get_platform();
+        assert!(!platform.is_empty());
+    }
+
+    // ── parse_shortcut tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_shortcut_simple_key() {
+        assert!(parse_shortcut("Ctrl+P").is_ok());
+    }
+
+    #[test]
+    fn test_parse_shortcut_multiple_modifiers() {
+        assert!(parse_shortcut("Ctrl+Shift+A").is_ok());
+    }
+
+    #[test]
+    fn test_parse_shortcut_escape_key() {
+        // Kill switch shortcut: Ctrl+Shift+Escape
+        assert!(parse_shortcut("Ctrl+Shift+Escape").is_ok());
+    }
+
+    #[test]
+    fn test_parse_shortcut_cmd_modifier() {
+        // macOS kill switch: Cmd+Shift+Escape
+        assert!(parse_shortcut("Cmd+Shift+Escape").is_ok());
+    }
+
+    #[test]
+    fn test_parse_shortcut_function_key() {
+        assert!(parse_shortcut("Ctrl+F5").is_ok());
+    }
+
+    #[test]
+    fn test_parse_shortcut_digit() {
+        assert!(parse_shortcut("Alt+3").is_ok());
+    }
+
+    #[test]
+    fn test_parse_shortcut_all_letters() {
+        for letter in 'A'..='Z' {
+            let shortcut_str = format!("Ctrl+{}", letter);
+            assert!(
+                parse_shortcut(&shortcut_str).is_ok(),
+                "Failed to parse shortcut for key: {}",
+                letter
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_shortcut_all_digits() {
+        for digit in '0'..='9' {
+            let shortcut_str = format!("Ctrl+{}", digit);
+            assert!(
+                parse_shortcut(&shortcut_str).is_ok(),
+                "Failed to parse shortcut for digit: {}",
+                digit
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_shortcut_all_function_keys() {
+        for i in 1..=12 {
+            let shortcut_str = format!("Ctrl+F{}", i);
+            assert!(
+                parse_shortcut(&shortcut_str).is_ok(),
+                "Failed to parse shortcut for F{}",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_shortcut_special_keys() {
+        let special_keys = [
+            "Space", "Enter", "Return", "Tab", "Escape", "Esc", "Backspace", "Delete",
+        ];
+        for key in &special_keys {
+            let shortcut_str = format!("Ctrl+{}", key);
+            assert!(
+                parse_shortcut(&shortcut_str).is_ok(),
+                "Failed to parse shortcut for key: {}",
+                key
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_shortcut_all_modifiers() {
+        // Test all supported modifier names
+        let modifiers = [
+            "Cmd", "Command", "Super", "Meta",
+            "Ctrl", "Control",
+            "CmdOrCtrl", "CommandOrControl",
+            "Shift",
+            "Alt", "Option",
+        ];
+        for modifier in &modifiers {
+            let shortcut_str = format!("{}+A", modifier);
+            assert!(
+                parse_shortcut(&shortcut_str).is_ok(),
+                "Failed to parse shortcut with modifier: {}",
+                modifier
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_shortcut_unknown_modifier_fails() {
+        let result = parse_shortcut("FooBar+A");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown modifier"));
+    }
+
+    #[test]
+    fn test_parse_shortcut_unknown_key_fails() {
+        let result = parse_shortcut("Ctrl+InvalidKey");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown key"));
+    }
+
+    #[test]
+    fn test_parse_shortcut_empty_fails() {
+        let result = parse_shortcut("");
+        // Empty string splits to [""] which is treated as an unknown key
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_shortcut_cmdorctrl_modifier() {
+        // CmdOrCtrl maps to META on macOS, CONTROL on other platforms
+        assert!(parse_shortcut("CmdOrCtrl+Q").is_ok());
+    }
 }
