@@ -903,18 +903,6 @@ fn create_provider_from_config(
                 cfg.temperature,
             )))
         }
-        "glm" => {
-            let cfg = config
-                .providers
-                .glm
-                .as_ref()
-                .ok_or("GLM not configured")?;
-            Ok(Box::new(GlmProvider::new(
-                cfg.api_key.clone(),
-                cfg.model.clone(),
-                cfg.temperature,
-            )))
-        }
         "openai-compatible" => {
             let cfg = config
                 .providers

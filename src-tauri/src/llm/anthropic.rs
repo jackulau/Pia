@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
 use super::provider::{
-    build_system_prompt_for_tools_with_instruction, build_tools, ChunkCallback, LlmError,
-    LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse, history_to_messages,
+    build_system_prompt_for_tools_with_context,
+    build_tools, ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse,
+    history_to_messages,
 };
 use super::sse::append_bytes_to_buffer;
 use crate::agent::conversation::ConversationHistory;
@@ -141,10 +142,13 @@ impl LlmProvider for AnthropicProvider {
         on_chunk: ChunkCallback,
     ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt_for_tools_with_instruction(
+        let instruction = history.original_instruction().map(|s| s.to_string());
+        let system_prompt = build_system_prompt_for_tools_with_context(
             screen_width,
             screen_height,
-            history.original_instruction(),
+            instruction.as_deref(),
+            history.iteration,
+            history.max_iterations,
         );
         let tools = build_tools();
 

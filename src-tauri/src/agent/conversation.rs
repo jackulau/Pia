@@ -111,24 +111,13 @@ impl ConversationHistory {
         });
     }
 
-    /// Adds an assistant tool_use message (for native tool_use providers like Anthropic).
-    pub fn add_assistant_tool_use(
+    /// Adds a tool result message.
+    pub fn add_tool_result(
         &mut self,
-        tool_use_id: String,
-        tool_name: String,
-        tool_input: serde_json::Value,
-        text: Option<String>,
+        success: bool,
+        message: Option<String>,
+        error: Option<String>,
     ) {
-        self.add_message(Message::AssistantToolUse {
-            tool_use_id,
-            tool_name,
-            tool_input,
-            text,
-        });
-    }
-
-    /// Adds a tool result message (backward compatible, no tool_use_id).
-    pub fn add_tool_result(&mut self, success: bool, message: Option<String>, error: Option<String>) {
         self.add_message(Message::ToolResult {
             success,
             tool_use_id: None,
@@ -267,7 +256,11 @@ mod tests {
 
         assert_eq!(conv.len(), 1);
         match &conv.get_messages()[0] {
-            Message::ToolResult { success, tool_use_id, message, error } => {
+            Message::ToolResult {
+                success,
+                message,
+                error,
+            } => {
                 assert!(*success);
                 assert!(tool_use_id.is_none());
                 assert_eq!(message.as_deref(), Some("Clicked successfully"));

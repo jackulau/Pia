@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 use super::provider::{
-    build_system_prompt_with_instruction, history_to_messages, ChunkCallback, LlmError, LlmProvider, LlmResponse,
-    TokenMetrics,
+    build_system_prompt_with_context, history_to_messages, ChunkCallback,
+    LlmError, LlmProvider, LlmResponse, TokenMetrics,
 };
 use serde_json::Value;
 use crate::agent::conversation::ConversationHistory;
@@ -109,10 +109,13 @@ impl LlmProvider for OpenAICompatibleProvider {
         on_chunk: ChunkCallback,
     ) -> Result<(LlmResponse, TokenMetrics), LlmError> {
         let start = Instant::now();
-        let system_prompt = build_system_prompt_with_instruction(
+        let instruction = history.original_instruction().map(|s| s.to_string());
+        let system_prompt = build_system_prompt_with_context(
             screen_width,
             screen_height,
-            history.original_instruction(),
+            instruction.as_deref(),
+            history.iteration,
+            history.max_iterations,
         );
 
         // Full wrapper only on the first screenshot message; subsequent ones are minimal.
