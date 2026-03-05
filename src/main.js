@@ -260,15 +260,24 @@ async function showOnboardingWizard() {
     }
   }
 
-  // Check permissions (macOS)
+  // Check permissions (all platforms)
   const permissionsEl = document.getElementById('onboarding-permissions');
-  if (permissionsEl && isMac) {
+  if (permissionsEl) {
     try {
       const perms = await invoke('check_permissions');
       const screenOk = perms.screen_capture;
       const accessOk = perms.accessibility;
+      const platformLabel = isMac ? 'macOS Permissions' : 'System Permissions';
+      const detailsHtml = perms.details
+        ? `<p style="font-size:10px;color:rgba(255,159,10,0.9);margin-top:4px;">${escapeHtml(perms.details)}</p>`
+        : '';
+      const guidanceHtml = (!screenOk || !accessOk)
+        ? (isMac
+            ? '<p style="font-size:10px;color:rgba(255,159,10,0.9);margin-top:4px;">Grant permissions in System Settings &gt; Privacy &amp; Security</p>'
+            : detailsHtml)
+        : '';
       permissionsEl.innerHTML = `
-        <p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;">macOS Permissions</p>
+        <p style="font-size:11px;font-weight:600;color:rgba(255,255,255,0.7);margin-bottom:4px;">${platformLabel}</p>
         <div style="display:flex;align-items:center;gap:6px;padding:3px 0;">
           <span style="color:${screenOk ? '#32d74b' : '#ff453a'};font-size:12px;">${screenOk ? '&#10003;' : '&#10007;'}</span>
           <span style="font-size:12px;color:rgba(255,255,255,0.8);">Screen Recording</span>
@@ -277,7 +286,7 @@ async function showOnboardingWizard() {
           <span style="color:${accessOk ? '#32d74b' : '#ff453a'};font-size:12px;">${accessOk ? '&#10003;' : '&#10007;'}</span>
           <span style="font-size:12px;color:rgba(255,255,255,0.8);">Accessibility</span>
         </div>
-        ${(!screenOk || !accessOk) ? '<p style="font-size:10px;color:rgba(255,159,10,0.9);margin-top:4px;">Grant permissions in System Settings &gt; Privacy &amp; Security</p>' : ''}
+        ${guidanceHtml}
       `;
     } catch (e) {
       permissionsEl.innerHTML = '';
