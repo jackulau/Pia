@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -17,6 +19,45 @@ pub enum ConfigError {
     NoDirFound,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TemplateVariable {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_value: Option<String>,
+}
+
+/// Extract `{{variable_name}}` placeholders from instruction text.
+/// Returns unique variables in order of first appearance.
+pub fn extract_variables(instruction: &str) -> Vec<TemplateVariable> {
+    let re = Regex::new(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}").unwrap();
+    let mut seen = std::collections::HashSet::new();
+    let mut vars = Vec::new();
+    for cap in re.captures_iter(instruction) {
+        let name = cap[1].to_string();
+        if seen.insert(name.clone()) {
+            vars.push(TemplateVariable {
+                name,
+                description: None,
+                default_value: None,
+            });
+        }
+    }
+    vars
+}
+
+/// Replace `{{variable_name}}` placeholders with provided values.
+/// Variables without a provided value are left as-is.
+pub fn render_instruction(instruction: &str, values: &HashMap<String, String>) -> String {
+    let re = Regex::new(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}").unwrap();
+    re.replace_all(instruction, |caps: &regex::Captures| {
+        let name = &caps[1];
+        values.get(name).cloned().unwrap_or_else(|| caps[0].to_string())
+    })
+    .to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskTemplate {
     pub id: String,
@@ -24,7 +65,7 @@ pub struct TaskTemplate {
     pub instruction: String,
     pub created_at: DateTime<Utc>,
     #[serde(default)]
-    pub category: Option<String>,
+    pub variables: Vec<TemplateVariable>,
 }
 
 /// Predefined template categories for organizing tasks.
@@ -41,22 +82,13 @@ pub const TEMPLATE_CATEGORIES: &[&str] = &[
 
 impl TaskTemplate {
     pub fn new(name: String, instruction: String) -> Self {
+        let variables = extract_variables(&instruction);
         Self {
             id: Uuid::new_v4().to_string(),
             name,
             instruction,
             created_at: Utc::now(),
-            category: None,
-        }
-    }
-
-    pub fn new_with_category(name: String, instruction: String, category: Option<String>) -> Self {
-        Self {
-            id: Uuid::new_v4().to_string(),
-            name,
-            instruction,
-            created_at: Utc::now(),
-            category,
+            variables,
         }
     }
 }
@@ -371,104 +403,150 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_template_new_defaults_to_no_category() {
-        let template = TaskTemplate::new("Test".to_string(), "Do something".to_string());
-        assert_eq!(template.name, "Test");
-        assert_eq!(template.instruction, "Do something");
-        assert!(template.category.is_none());
-        assert!(!template.id.is_empty());
+    fn test_extract_variables_single() {
+        let vars = extract_variables("Go to {{url}}");
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].name, "url");
     }
 
     #[test]
-    fn test_template_new_with_category() {
-        let template = TaskTemplate::new_with_category(
-            "Fill Form".to_string(),
-            "Fill the login form".to_string(),
-            Some("Form Filling".to_string()),
+    fn test_extract_variables_multiple() {
+        let vars = extract_variables("Fill form at {{url}} with email {{email}} and name {{name}}");
+        assert_eq!(vars.len(), 3);
+        assert_eq!(vars[0].name, "url");
+        assert_eq!(vars[1].name, "email");
+        assert_eq!(vars[2].name, "name");
+    }
+
+    #[test]
+    fn test_extract_variables_dedup() {
+        let vars = extract_variables("{{url}} and again {{url}}");
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].name, "url");
+    }
+
+    #[test]
+    fn test_extract_variables_none() {
+        let vars = extract_variables("No variables here");
+        assert!(vars.is_empty());
+    }
+
+    #[test]
+    fn test_extract_variables_empty_braces() {
+        let vars = extract_variables("Empty {{}} braces");
+        assert!(vars.is_empty());
+    }
+
+    #[test]
+    fn test_extract_variables_nested_braces() {
+        let vars = extract_variables("{{{name}}}");
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].name, "name");
+    }
+
+    #[test]
+    fn test_extract_variables_underscores() {
+        let vars = extract_variables("{{my_var}} and {{another_one}}");
+        assert_eq!(vars.len(), 2);
+        assert_eq!(vars[0].name, "my_var");
+        assert_eq!(vars[1].name, "another_one");
+    }
+
+    #[test]
+    fn test_extract_variables_with_numbers() {
+        let vars = extract_variables("{{field1}} and {{item2}}");
+        assert_eq!(vars.len(), 2);
+        assert_eq!(vars[0].name, "field1");
+        assert_eq!(vars[1].name, "item2");
+    }
+
+    #[test]
+    fn test_extract_variables_ignores_spaces() {
+        // Spaces inside braces should not match
+        let vars = extract_variables("{{ name }} is not valid");
+        assert!(vars.is_empty());
+    }
+
+    #[test]
+    fn test_render_instruction_all_values() {
+        let mut values = HashMap::new();
+        values.insert("url".to_string(), "https://example.com".to_string());
+        values.insert("email".to_string(), "test@test.com".to_string());
+        let result = render_instruction("Go to {{url}} with {{email}}", &values);
+        assert_eq!(result, "Go to https://example.com with test@test.com");
+    }
+
+    #[test]
+    fn test_render_instruction_missing_values() {
+        let values = HashMap::new();
+        let result = render_instruction("Go to {{url}}", &values);
+        assert_eq!(result, "Go to {{url}}");
+    }
+
+    #[test]
+    fn test_render_instruction_partial_values() {
+        let mut values = HashMap::new();
+        values.insert("url".to_string(), "https://example.com".to_string());
+        let result = render_instruction("Go to {{url}} with {{email}}", &values);
+        assert_eq!(result, "Go to https://example.com with {{email}}");
+    }
+
+    #[test]
+    fn test_render_instruction_extra_values() {
+        let mut values = HashMap::new();
+        values.insert("url".to_string(), "https://example.com".to_string());
+        values.insert("unused".to_string(), "ignored".to_string());
+        let result = render_instruction("Go to {{url}}", &values);
+        assert_eq!(result, "Go to https://example.com");
+    }
+
+    #[test]
+    fn test_render_instruction_no_variables() {
+        let values = HashMap::new();
+        let result = render_instruction("No variables here", &values);
+        assert_eq!(result, "No variables here");
+    }
+
+    #[test]
+    fn test_render_instruction_duplicate_variables() {
+        let mut values = HashMap::new();
+        values.insert("name".to_string(), "Alice".to_string());
+        let result = render_instruction("Hello {{name}}, your name is {{name}}", &values);
+        assert_eq!(result, "Hello Alice, your name is Alice");
+    }
+
+    #[test]
+    fn test_task_template_new_extracts_variables() {
+        let template = TaskTemplate::new(
+            "Test".to_string(),
+            "Go to {{url}} with {{email}}".to_string(),
         );
-        assert_eq!(template.category, Some("Form Filling".to_string()));
+        assert_eq!(template.variables.len(), 2);
+        assert_eq!(template.variables[0].name, "url");
+        assert_eq!(template.variables[1].name, "email");
     }
 
     #[test]
-    fn test_template_new_with_none_category() {
-        let template = TaskTemplate::new_with_category(
-            "General task".to_string(),
-            "Do it".to_string(),
-            None,
+    fn test_task_template_new_no_variables() {
+        let template = TaskTemplate::new(
+            "Test".to_string(),
+            "Simple instruction".to_string(),
         );
-        assert!(template.category.is_none());
+        assert!(template.variables.is_empty());
     }
 
     #[test]
-    fn test_template_serialize_with_category() {
-        let template = TaskTemplate::new_with_category(
-            "Nav".to_string(),
-            "Go to site".to_string(),
-            Some("Web Navigation".to_string()),
-        );
-        let serialized = toml::to_string(&template).unwrap();
-        assert!(serialized.contains("category"));
-        assert!(serialized.contains("Web Navigation"));
-    }
-
-    #[test]
-    fn test_template_deserialize_without_category_backwards_compat() {
+    fn test_backwards_compatibility_deserialize() {
+        // Simulate a template without the variables field (old format)
         let toml_str = r#"
             id = "abc-123"
             name = "Old Template"
-            instruction = "Do old stuff"
+            instruction = "Go to {{url}}"
             created_at = "2024-01-01T00:00:00Z"
         "#;
         let template: TaskTemplate = toml::from_str(toml_str).unwrap();
         assert_eq!(template.name, "Old Template");
-        assert!(template.category.is_none());
-    }
-
-    #[test]
-    fn test_template_deserialize_with_category() {
-        let toml_str = r#"
-            id = "abc-456"
-            name = "Form Template"
-            instruction = "Fill form fields"
-            created_at = "2024-06-01T00:00:00Z"
-            category = "Form Filling"
-        "#;
-        let template: TaskTemplate = toml::from_str(toml_str).unwrap();
-        assert_eq!(template.category, Some("Form Filling".to_string()));
-    }
-
-    #[test]
-    fn test_template_categories_constant() {
-        assert!(TEMPLATE_CATEGORIES.contains(&"General"));
-        assert!(TEMPLATE_CATEGORIES.contains(&"Form Filling"));
-        assert!(TEMPLATE_CATEGORIES.contains(&"Web Navigation"));
-        assert!(TEMPLATE_CATEGORIES.contains(&"Data Entry"));
-        assert!(TEMPLATE_CATEGORIES.contains(&"Data Extraction"));
-        assert!(TEMPLATE_CATEGORIES.contains(&"File Management"));
-        assert!(TEMPLATE_CATEGORIES.contains(&"Text Editing"));
-        assert!(TEMPLATE_CATEGORIES.contains(&"App Interaction"));
-        assert_eq!(TEMPLATE_CATEGORIES.len(), 8);
-    }
-
-    #[test]
-    fn test_config_with_categorized_templates() {
-        let mut config = Config::default();
-        let t1 = TaskTemplate::new_with_category(
-            "T1".to_string(),
-            "Instruction 1".to_string(),
-            Some("Data Entry".to_string()),
-        );
-        let t2 = TaskTemplate::new("T2".to_string(), "Instruction 2".to_string());
-        config.templates.push(t1);
-        config.templates.push(t2);
-
-        let serialized = toml::to_string_pretty(&config).unwrap();
-        let deserialized: Config = toml::from_str(&serialized).unwrap();
-        assert_eq!(deserialized.templates.len(), 2);
-        assert_eq!(
-            deserialized.templates[0].category,
-            Some("Data Entry".to_string())
-        );
-        assert!(deserialized.templates[1].category.is_none());
+        // variables field defaults to empty vec via serde(default)
+        assert!(template.variables.is_empty());
     }
 }
