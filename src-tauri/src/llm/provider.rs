@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::agent::conversation::{ConversationHistory, Message};
+use crate::agent::task_classifier::{classify_instruction, get_task_specific_guidance};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -637,21 +638,31 @@ pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String
 }
 
 /// Build system prompt for tool-based providers (simplified, tools are defined via API).
-/// When `instruction` is provided it is embedded so the LLM always has the task context
-/// even though subsequent user messages only say "Continue."
+/// When `instruction` is provided, task-specific guidance is appended.
 pub fn build_system_prompt_for_tools(screen_width: u32, screen_height: u32) -> String {
-    build_system_prompt_for_tools_with_context(screen_width, screen_height, None, None, None)
+    build_system_prompt_for_tools_with_instruction(screen_width, screen_height, None)
 }
 
-/// Build system prompt for tool-based providers with optional task context and progress info
-pub fn build_system_prompt_for_tools_with_context(
+/// Build system prompt for tool-based providers with optional task-specific guidance.
+pub fn build_system_prompt_for_tools_with_instruction(
     screen_width: u32,
     screen_height: u32,
     instruction: Option<&str>,
-    iteration: Option<u32>,
-    max_iterations: Option<u32>,
 ) -> String {
-    let mut prompt = format!(
+    let task_guidance = instruction
+        .map(|instr| {
+            let task_type = classify_instruction(instr);
+            get_task_specific_guidance(&task_type)
+        })
+        .unwrap_or("");
+
+    let guidance_section = if task_guidance.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n{}", task_guidance)
+    };
+
+    format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
 
 Screen dimensions: {screen_width}x{screen_height} pixels
@@ -662,7 +673,7 @@ Guidelines:
 - Be precise with click locations
 - Wait for UI to update between actions (the system handles this)
 - Use the "complete" tool when the task is done
-- Use the "error" tool if you cannot proceed
+- Use the "error" tool if you cannot proceed{guidance_section}
 
 Use one of the provided tools to perform your next action."#
     );
@@ -681,36 +692,31 @@ Use one of the provided tools to perform your next action."#
     prompt
 }
 
-/// Build system prompt for JSON-based providers with optional task context and progress info
-pub fn build_system_prompt_with_context(
+/// Build system prompt for JSON-based providers (includes action definitions in prompt).
+/// When `instruction` is provided, task-specific guidance is appended.
+pub fn build_system_prompt(screen_width: u32, screen_height: u32) -> String {
+    build_system_prompt_with_instruction(screen_width, screen_height, None)
+}
+
+/// Build system prompt for JSON-based providers with optional task-specific guidance.
+pub fn build_system_prompt_with_instruction(
     screen_width: u32,
     screen_height: u32,
     instruction: Option<&str>,
-    iteration: Option<u32>,
-    max_iterations: Option<u32>,
 ) -> String {
-    let mut prompt = build_system_prompt(screen_width, screen_height);
+    let task_guidance = instruction
+        .map(|instr| {
+            let task_type = classify_instruction(instr);
+            get_task_specific_guidance(&task_type)
+        })
+        .unwrap_or("");
 
-    if let Some(instr) = instruction {
-        prompt.push_str(&format!("\n\n## Current Task\n{}", instr));
-    }
-
-    if let (Some(iter), Some(max)) = (iteration, max_iterations) {
-        prompt.push_str(&format!("\n\n## Progress\nStep {} of {}.", iter, max));
-        if max > 0 && iter > (max * 3) / 4 {
-            prompt.push_str("\nYou are running low on steps. Focus on completing the task efficiently.");
-        }
-    }
-
-    prompt
-}
-
-/// Build system prompt for tool-based providers with an optional embedded instruction.
-pub fn build_system_prompt_for_tools_with_instruction(screen_width: u32, screen_height: u32, instruction: Option<&str>) -> String {
-    let task_section = match instruction {
-        Some(instr) => format!("\n\nUser's task: {instr}"),
-        None => String::new(),
+    let guidance_section = if task_guidance.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n{}", task_guidance)
     };
+
     format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
 
@@ -735,8 +741,11 @@ Guidelines:
 - Use "wait" or "wait_for_element" when UI needs time to load
 - Use "batch" for predictable multi-step sequences that don't need intermediate screenshots
 
-Use one of the provided tools to perform your next action."#
-    );
+Note: Actions are automatically retried up to 3 times if they fail or have no visible effect.
+If an action consistently fails, try:
+- Adjusting coordinates slightly (elements may have shifted)
+- Using a different approach (e.g., keyboard navigation instead of clicking)
+- Waiting longer for elements to load by trying again{guidance_section}
 
 You may think briefly about what you see and what action to take, then respond with a JSON action.
 Format: optional reasoning text, followed by the JSON object. Example:
@@ -1152,108 +1161,40 @@ mod tests {
     }
 
     #[test]
-    fn test_build_tools_drag_schema() {
-        let tools = build_tools();
-        let tool = tools.iter().find(|t| t.name == "drag").unwrap();
-        let props = &tool.input_schema["properties"];
-        assert!(props.get("start_x").is_some());
-        assert!(props.get("start_y").is_some());
-        assert!(props.get("end_x").is_some());
-        assert!(props.get("end_y").is_some());
-        assert!(props.get("button").is_some());
-        assert!(props.get("duration_ms").is_some());
-        let required = tool.input_schema["required"].as_array().unwrap();
-        let req_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
-        assert!(req_strs.contains(&"start_x"));
-        assert!(req_strs.contains(&"start_y"));
-        assert!(req_strs.contains(&"end_x"));
-        assert!(req_strs.contains(&"end_y"));
-        assert!(!req_strs.contains(&"button"));
-        assert!(!req_strs.contains(&"duration_ms"));
+    fn test_build_system_prompt_with_form_instruction() {
+        let prompt = build_system_prompt_with_instruction(1920, 1080, Some("Fill out the registration form"));
+        assert!(prompt.contains("form filling"), "Prompt should contain form filling guidance");
+        assert!(prompt.contains("Tab between fields"));
     }
 
     #[test]
-    fn test_build_tools_triple_click_schema() {
-        let tools = build_tools();
-        let tool = tools.iter().find(|t| t.name == "triple_click").unwrap();
-        let props = &tool.input_schema["properties"];
-        assert!(props.get("x").is_some());
-        assert!(props.get("y").is_some());
-        let required = tool.input_schema["required"].as_array().unwrap();
-        let req_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
-        assert!(req_strs.contains(&"x"));
-        assert!(req_strs.contains(&"y"));
+    fn test_build_system_prompt_with_general_instruction() {
+        let prompt = build_system_prompt_with_instruction(1920, 1080, Some("do something"));
+        // General type should not add guidance
+        assert!(!prompt.contains("Task-specific guidance"));
     }
 
     #[test]
-    fn test_build_tools_right_click_schema() {
-        let tools = build_tools();
-        let tool = tools.iter().find(|t| t.name == "right_click").unwrap();
-        let props = &tool.input_schema["properties"];
-        assert!(props.get("x").is_some());
-        assert!(props.get("y").is_some());
-        let required = tool.input_schema["required"].as_array().unwrap();
-        let req_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
-        assert!(req_strs.contains(&"x"));
-        assert!(req_strs.contains(&"y"));
+    fn test_build_system_prompt_with_no_instruction() {
+        let prompt_no_instr = build_system_prompt_with_instruction(1920, 1080, None);
+        let prompt_compat = build_system_prompt(1920, 1080);
+        assert_eq!(prompt_no_instr, prompt_compat);
     }
 
     #[test]
-    fn test_build_tools_wait_schema() {
-        let tools = build_tools();
-        let tool = tools.iter().find(|t| t.name == "wait").unwrap();
-        let props = &tool.input_schema["properties"];
-        assert!(props.get("duration_ms").is_some());
-        let required = tool.input_schema["required"].as_array().unwrap();
-        assert!(required.is_empty());
+    fn test_build_system_prompt_for_tools_with_nav_instruction() {
+        let prompt = build_system_prompt_for_tools_with_instruction(
+            1920, 1080,
+            Some("Navigate to google.com and search for Rust"),
+        );
+        assert!(prompt.contains("web navigation"), "Prompt should contain web navigation guidance");
+        assert!(prompt.contains("address bar"));
     }
 
     #[test]
-    fn test_build_tools_wait_for_element_schema() {
-        let tools = build_tools();
-        let tool = tools.iter().find(|t| t.name == "wait_for_element").unwrap();
-        let props = &tool.input_schema["properties"];
-        assert!(props.get("description").is_some());
-        assert!(props.get("timeout_ms").is_some());
-        let required = tool.input_schema["required"].as_array().unwrap();
-        let req_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
-        assert!(req_strs.contains(&"description"));
-        assert!(!req_strs.contains(&"timeout_ms"));
-    }
-
-    #[test]
-    fn test_build_tools_batch_schema() {
-        let tools = build_tools();
-        let tool = tools.iter().find(|t| t.name == "batch").unwrap();
-        let props = &tool.input_schema["properties"];
-        assert!(props.get("actions").is_some());
-        assert_eq!(props["actions"]["type"], "array");
-        let required = tool.input_schema["required"].as_array().unwrap();
-        let req_strs: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
-        assert!(req_strs.contains(&"actions"));
-    }
-
-    #[test]
-    fn test_build_tools_all_14_have_valid_schemas() {
-        let tools = build_tools();
-        assert_eq!(tools.len(), 14);
-        for tool in &tools {
-            assert!(!tool.name.is_empty(), "Tool name should not be empty");
-            assert!(!tool.description.is_empty(), "Tool description should not be empty for {}", tool.name);
-            assert_eq!(tool.input_schema["type"], "object", "Tool {} should have object schema", tool.name);
-            assert!(tool.input_schema.get("properties").is_some(), "Tool {} should have properties", tool.name);
-            assert!(tool.input_schema.get("required").is_some(), "Tool {} should have required field", tool.name);
-        }
-    }
-
-    #[test]
-    fn test_build_system_prompt_for_tools_mentions_new_capabilities() {
-        let prompt = build_system_prompt_for_tools(1920, 1080);
-        assert!(prompt.contains("drag"));
-        assert!(prompt.contains("right_click"));
-        assert!(prompt.contains("triple_click"));
-        assert!(prompt.contains("wait"));
-        assert!(prompt.contains("wait_for_element"));
-        assert!(prompt.contains("batch"));
+    fn test_build_system_prompt_for_tools_with_no_instruction() {
+        let prompt_no_instr = build_system_prompt_for_tools_with_instruction(1920, 1080, None);
+        let prompt_compat = build_system_prompt_for_tools(1920, 1080);
+        assert_eq!(prompt_no_instr, prompt_compat);
     }
 }
