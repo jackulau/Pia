@@ -1,0 +1,11 @@
+id: coordinate-overlay
+status: complete
+branch: pia/coordinate-overlay
+worktree_path: .claude-workspace/worktrees/coordinate-overlay/worktree
+assigned_to: null
+started_at: 2026-01-28T20:04:00Z
+completed_at: 2026-01-28T20:30:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: e2ee60ab9beca80b9d72893946f2c14e64e2cb94
+tests_passing: true
