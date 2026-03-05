@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use chrono::Utc;
+use super::action::DangerLevel;
 use super::history::HistoryManager;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -82,6 +83,12 @@ pub struct AgentState {
     pub can_undo: bool,
     /// Description of the last action that can be undone
     pub last_undoable_action: Option<String>,
+    /// Danger level of the current/last action
+    #[serde(default)]
+    pub danger_level: DangerLevel,
+    /// Warning message for dangerous actions
+    #[serde(default)]
+    pub danger_warning: Option<String>,
 }
 
 impl Default for AgentState {
@@ -113,6 +120,8 @@ impl Default for AgentState {
             total_retries: 0,
             can_undo: false,
             last_undoable_action: None,
+            danger_level: DangerLevel::Safe,
+            danger_warning: None,
         }
     }
 }
@@ -512,5 +521,19 @@ impl AgentStateManager {
         let mut state = self.state.write().await;
         state.can_undo = can_undo;
         state.last_undoable_action = last_undoable;
+    }
+
+    /// Update the danger level for the current action
+    pub async fn set_danger_level(&self, level: DangerLevel, warning: Option<String>) {
+        let mut state = self.state.write().await;
+        state.danger_level = level;
+        state.danger_warning = warning;
+    }
+
+    /// Reset danger level back to safe (after action completes)
+    pub async fn clear_danger_level(&self) {
+        let mut state = self.state.write().await;
+        state.danger_level = DangerLevel::Safe;
+        state.danger_warning = None;
     }
 }
