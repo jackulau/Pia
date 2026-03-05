@@ -10,7 +10,7 @@ use super::recovery::{
     RetryPolicy,
 };
 use super::state::{AgentStateManager, AgentStatus, ConfirmationResponse, ExecutionMode};
-use crate::capture::{capture_primary_screen_with_config, CaptureError, Screenshot, ScreenshotConfig};
+use crate::capture::{capture_primary_screen_with_config, quick_screenshot_hash, CaptureError, Screenshot, ScreenshotConfig};
 use crate::config::Config;
 use crate::llm::{
     AnthropicProvider, GlmProvider, LlmProvider, OllamaProvider, OpenAICompatibleProvider,
@@ -257,6 +257,12 @@ impl AgentLoop {
         let delay_controller = DelayController::new(speed_multiplier);
         let target_iteration_delay = delay_controller.iteration_delay();
 
+        // Track screenshot fingerprint to detect unchanged screens and skip resending.
+        // This saves significant image tokens when the screen hasn't changed between iterations.
+        let mut last_screenshot_hash: Option<u64> = None;
+        // Force screenshot inclusion after errors so the LLM always has current visual context.
+        let mut force_screenshot = false;
+
         loop {
             // Check if should stop
             if self.state.should_stop() {
@@ -344,21 +350,45 @@ impl AgentLoop {
             conversation.iteration = Some(iteration);
             conversation.max_iterations = Some(max_iterations);
 
-            // Add user message with current screenshot to conversation
-            // First message includes full instruction; subsequent messages use a short continuation prompt
-            let user_text = if conversation.is_empty() {
-                instruction.to_string()
-            } else {
-                "Here is the current screenshot. Continue working on the task.".to_string()
-            };
-            conversation.add_user_message(
-                &user_text,
-                Some(screenshot.base64.clone()),
-                Some(screenshot.width),
-                Some(screenshot.height),
+            // Compute a fast fingerprint of the screenshot to detect unchanged screens.
+            // First iteration always sends the screenshot; subsequent iterations compare hashes.
+            let current_hash = quick_screenshot_hash(&screenshot.base64);
+            let is_first_message = conversation.is_empty();
+            let screen_changed = should_send_screenshot(
+                current_hash,
+                last_screenshot_hash,
+                is_first_message,
+                force_screenshot,
             );
 
-            // Store screenshot in state for frontend preview
+            // Reset force flag now that we've checked it
+            force_screenshot = false;
+
+            // Add user message: include screenshot only if the screen changed
+            if screen_changed {
+                let user_text = if is_first_message {
+                    instruction.to_string()
+                } else {
+                    "Here is the current screenshot. Continue working on the task.".to_string()
+                };
+                conversation.add_user_message(
+                    &user_text,
+                    Some(screenshot.base64.clone()),
+                    Some(screenshot.width),
+                    Some(screenshot.height),
+                );
+                last_screenshot_hash = Some(current_hash);
+            } else {
+                // Screen unchanged - skip sending the image to save tokens
+                conversation.add_user_message(
+                    "[Screen unchanged] Continue working on the task.",
+                    None,
+                    None,
+                    None,
+                );
+            }
+
+            // Store screenshot in state for frontend preview (always, regardless of change)
             self.state
                 .set_last_screenshot(screenshot.base64.clone())
                 .await;
@@ -403,6 +433,7 @@ impl AgentLoop {
                         ErrorClassification::RateLimited { wait_seconds } => {
                             log::warn!("Rate limited, waiting {} seconds before retry", wait_seconds);
                             sleep(Duration::from_secs(wait_seconds)).await;
+                            force_screenshot = true;
                             continue;
                         }
                         ErrorClassification::Retryable => {
@@ -412,6 +443,7 @@ impl AgentLoop {
                             let delay = policy.delay_for_attempt(consecutive);
                             log::warn!("LLM error (attempt {}), retrying after {:?}: {}", consecutive, delay, e);
                             sleep(delay).await;
+                            force_screenshot = true;
                             continue;
                         }
                     }
@@ -461,6 +493,7 @@ impl AgentLoop {
                     // Continue to next iteration - the LLM will see the error
                     // in subsequent iterations via conversation context
                     sleep(delay_controller.parse_error_delay()).await;
+                    force_screenshot = true;
                     continue;
                 }
             };
@@ -677,11 +710,12 @@ impl AgentLoop {
 
                     // Check if error is recoverable
                     if e.is_recoverable() {
-                        log::warn!("Recoverable action error (consecutive: {}): {}", 
+                        log::warn!("Recoverable action error (consecutive: {}): {}",
                             self.state.get_consecutive_errors(), e);
                         self.state.set_error(e.to_string()).await;
                         self.emit_state_update().await;
                         sleep(Duration::from_millis(500)).await;
+                        force_screenshot = true;
                         continue;
                     }
 
@@ -1089,5 +1123,115 @@ impl AgentLoop {
             let queue_state = queue.get_state().await;
             let _ = self.app_handle.emit("queue-update", queue_state);
         }
+    }
+}
+
+/// Determine whether a screenshot should be sent to the LLM.
+///
+/// Returns `true` if the screenshot should be included in the conversation message,
+/// `false` if it can be skipped (screen unchanged).
+///
+/// A screenshot is always sent when:
+/// - It is the first message in the conversation (`is_first_message`)
+/// - A previous error requires fresh visual context (`force_screenshot`)
+/// - No previous hash exists (`last_hash` is `None`)
+/// - The screen content has changed (hash mismatch)
+fn should_send_screenshot(
+    current_hash: u64,
+    last_hash: Option<u64>,
+    is_first_message: bool,
+    force_screenshot: bool,
+) -> bool {
+    is_first_message
+        || force_screenshot
+        || last_hash.map_or(true, |h| h != current_hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::capture::quick_screenshot_hash;
+
+    #[test]
+    fn test_should_send_screenshot_first_message() {
+        // First message always sends screenshot regardless of hash
+        assert!(should_send_screenshot(42, None, true, false));
+        assert!(should_send_screenshot(42, Some(42), true, false));
+    }
+
+    #[test]
+    fn test_should_send_screenshot_force_after_error() {
+        // Forced screenshot sends even if hash matches
+        assert!(should_send_screenshot(42, Some(42), false, true));
+    }
+
+    #[test]
+    fn test_should_send_screenshot_no_previous_hash() {
+        // No previous hash means we must send
+        assert!(should_send_screenshot(42, None, false, false));
+    }
+
+    #[test]
+    fn test_should_send_screenshot_hash_changed() {
+        // Different hash means screen changed
+        assert!(should_send_screenshot(42, Some(99), false, false));
+    }
+
+    #[test]
+    fn test_should_skip_screenshot_unchanged() {
+        // Same hash, not first message, not forced = skip
+        assert!(!should_send_screenshot(42, Some(42), false, false));
+    }
+
+    #[test]
+    fn test_screenshot_dedup_simulation() {
+        // Simulate a multi-iteration loop where the screen doesn't change
+        let screenshot_data = "x".repeat(5000);
+        let hash = quick_screenshot_hash(&screenshot_data);
+
+        // Iteration 1: first message
+        let mut last_hash: Option<u64> = None;
+        let mut force = false;
+        let send = should_send_screenshot(hash, last_hash, true, force);
+        assert!(send, "First iteration must send screenshot");
+        last_hash = Some(hash);
+
+        // Iteration 2: same screenshot, no error
+        force = false;
+        let send = should_send_screenshot(hash, last_hash, false, force);
+        assert!(!send, "Unchanged screen should skip screenshot");
+
+        // Iteration 3: same screenshot but forced due to error
+        force = true;
+        let send = should_send_screenshot(hash, last_hash, false, force);
+        assert!(send, "Forced screenshot after error should send");
+
+        // Iteration 4: screen changes
+        let new_data = "y".repeat(5000);
+        let new_hash = quick_screenshot_hash(&new_data);
+        force = false;
+        let send = should_send_screenshot(new_hash, last_hash, false, force);
+        assert!(send, "Changed screen should send screenshot");
+        last_hash = Some(new_hash);
+
+        // Iteration 5: same as new screen
+        let send = should_send_screenshot(new_hash, last_hash, false, false);
+        assert!(!send, "Same screen again should skip");
+    }
+
+    #[test]
+    fn test_quick_hash_integration_with_dedup() {
+        // Verify that identical strings produce the same hash and trigger dedup
+        let data = "abcdef".repeat(1000);
+        let h1 = quick_screenshot_hash(&data);
+        let h2 = quick_screenshot_hash(&data);
+        assert_eq!(h1, h2);
+        assert!(!should_send_screenshot(h2, Some(h1), false, false));
+
+        // Different data produces different hash
+        let data2 = "abcdeg".repeat(1000);
+        let h3 = quick_screenshot_hash(&data2);
+        assert_ne!(h1, h3);
+        assert!(should_send_screenshot(h3, Some(h1), false, false));
     }
 }

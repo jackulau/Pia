@@ -4,6 +4,8 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use image::{imageops::FilterType, DynamicImage, ImageFormat};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
 use std::io::Cursor;
 use std::sync::Arc;
 use thiserror::Error;
@@ -30,6 +32,36 @@ pub struct Screenshot {
     /// Screenshots are typically 1-2MB and are shared across conversation history,
     /// action history, and state without copying.
     pub base64: Arc<String>,
+}
+
+/// Compute a fast fingerprint hash of a screenshot's base64 data.
+///
+/// Instead of hashing the entire base64 string (which can be 1-2MB),
+/// this samples the length plus the first 1KB, a middle 1KB, and the
+/// last 1KB of the data. This is sufficient to detect screen changes
+/// while completing in well under 1ms.
+pub fn quick_screenshot_hash(base64: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    let bytes = base64.as_bytes();
+    let len = bytes.len();
+
+    // Always hash the length - different sizes = different screenshots
+    hasher.write_usize(len);
+
+    const SAMPLE_SIZE: usize = 1024;
+
+    if len <= SAMPLE_SIZE * 3 {
+        // Small enough to hash entirely
+        hasher.write(bytes);
+    } else {
+        // Sample first, middle, and last 1KB
+        hasher.write(&bytes[..SAMPLE_SIZE]);
+        let mid = len / 2 - SAMPLE_SIZE / 2;
+        hasher.write(&bytes[mid..mid + SAMPLE_SIZE]);
+        hasher.write(&bytes[len - SAMPLE_SIZE..]);
+    }
+
+    hasher.finish()
 }
 
 /// Configuration for screenshot capture
@@ -274,4 +306,103 @@ pub fn capture_all_screens_with_config(
     }
 
     Ok(screenshots)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quick_hash_identical_strings_produce_same_hash() {
+        let data = "a".repeat(5000);
+        let h1 = quick_screenshot_hash(&data);
+        let h2 = quick_screenshot_hash(&data);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_quick_hash_different_strings_produce_different_hash() {
+        let data_a = "a".repeat(5000);
+        let data_b = "b".repeat(5000);
+        let h1 = quick_screenshot_hash(&data_a);
+        let h2 = quick_screenshot_hash(&data_b);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_quick_hash_different_lengths_produce_different_hash() {
+        let data_a = "a".repeat(5000);
+        let data_b = "a".repeat(5001);
+        let h1 = quick_screenshot_hash(&data_a);
+        let h2 = quick_screenshot_hash(&data_b);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_quick_hash_small_strings() {
+        // Strings small enough to hash entirely (< 3 * 1024 = 3072)
+        let data = "hello world screenshot data";
+        let h1 = quick_screenshot_hash(data);
+        let h2 = quick_screenshot_hash(data);
+        assert_eq!(h1, h2);
+
+        let different = "hello world screenshot datb";
+        let h3 = quick_screenshot_hash(different);
+        assert_ne!(h1, h3);
+    }
+
+    #[test]
+    fn test_quick_hash_detects_middle_change() {
+        // Create two strings that differ only in the middle
+        let data_a: Vec<u8> = vec![b'a'; 5000];
+        let mut data_b = data_a.clone();
+        data_b[2500] = b'z'; // Change a byte in the middle
+
+        let str_a = std::str::from_utf8(&data_a).unwrap();
+        let str_b = std::str::from_utf8(&data_b).unwrap();
+
+        let h1 = quick_screenshot_hash(str_a);
+        let h2 = quick_screenshot_hash(str_b);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_quick_hash_detects_end_change() {
+        // Create two strings that differ only at the end
+        let data_a: Vec<u8> = vec![b'a'; 5000];
+        let mut data_b = data_a.clone();
+        data_b[4999] = b'z'; // Change last byte
+
+        let str_a = std::str::from_utf8(&data_a).unwrap();
+        let str_b = std::str::from_utf8(&data_b).unwrap();
+
+        let h1 = quick_screenshot_hash(str_a);
+        let h2 = quick_screenshot_hash(str_b);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_quick_hash_empty_string() {
+        let h = quick_screenshot_hash("");
+        // Should not panic, just produce some deterministic hash
+        let h2 = quick_screenshot_hash("");
+        assert_eq!(h, h2);
+    }
+
+    #[test]
+    fn test_quick_hash_performance_large_string() {
+        // Simulate a realistic screenshot base64 (~1.5MB)
+        let data = "x".repeat(1_500_000);
+        let start = std::time::Instant::now();
+        for _ in 0..100 {
+            let _ = quick_screenshot_hash(&data);
+        }
+        let elapsed = start.elapsed();
+        // 100 hashes should complete in well under 100ms (should be < 1ms total)
+        assert!(
+            elapsed.as_millis() < 100,
+            "100 hashes of 1.5MB string took {:?}, expected < 100ms",
+            elapsed
+        );
+    }
 }
