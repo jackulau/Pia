@@ -343,6 +343,7 @@ async fn get_templates(state: State<'_, AppState>) -> Result<Vec<TaskTemplate>, 
 async fn save_template(
     name: String,
     instruction: String,
+    category: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<TaskTemplate, String> {
     if name.len() > 50 {
@@ -353,7 +354,7 @@ async fn save_template(
         return Err("Instruction cannot be empty".to_string());
     }
 
-    let template = TaskTemplate::new(name, instruction);
+    let template = TaskTemplate::new_with_category(name, instruction, category);
     let mut config = state.config.write().await;
     config.templates.push(template.clone());
     config.save().map_err(|e| e.to_string())?;
@@ -380,6 +381,7 @@ async fn update_template(
     id: String,
     name: String,
     instruction: String,
+    category: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<TaskTemplate, String> {
     if name.len() > 50 {
@@ -399,6 +401,7 @@ async fn update_template(
 
     template.name = name;
     template.instruction = instruction;
+    template.category = category;
     let updated = template.clone();
 
     config.save().map_err(|e| e.to_string())?;
