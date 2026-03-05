@@ -1,0 +1,11 @@
+id: global-hotkey
+status: complete
+branch: pia/global-hotkey
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/global-hotkey/worktree
+assigned_to: claude
+started_at: 2026-01-29T02:29:55Z
+completed_at: 2026-01-29T02:29:55Z
+dependencies_met: true
+conflicts: []
+commit_sha: f55d17bae373f6650e7039a0da9293a792abe3fa
+tests_passing: true

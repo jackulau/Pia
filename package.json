@@ -1,0 +1,30 @@
+{
+  "name": "pia",
+  "version": "1.0.0",
+  "description": "Cross-platform computer use agent",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jackulau/Pia.git"
+  },
+  "keywords": ["tauri", "computer-use", "agent", "llm"],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jackulau/Pia/issues"
+  },
+  "homepage": "https://github.com/jackulau/Pia#readme",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.6",
+    "vite": "^7.3.1"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  }
+}
