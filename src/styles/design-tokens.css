@@ -39,6 +39,9 @@
   --space-md: 12px;
   --space-lg: 16px;
 
+  /* Typography - cross-platform font stack */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
   /* Animation */
   --duration-fast: 0.15s;
   --duration-normal: 0.25s;
