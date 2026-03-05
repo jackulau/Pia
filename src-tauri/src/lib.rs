@@ -5,6 +5,7 @@ mod history;
 mod input;
 mod llm;
 mod permissions;
+mod platform;
 
 use agent::{validate_speed_multiplier, ActionHistory, AgentLoop, AgentStateManager, AgentStatus, ConfirmationResponse, InstructionQueue, QueueFailureMode, QueueManager, RecordedAction};
 use agent::action::execute_action;
@@ -856,6 +857,16 @@ fn check_permissions() -> permissions::PermissionStatus {
     permissions::check_permissions()
 }
 
+#[tauri::command]
+fn get_display_server() -> platform::DisplayServer {
+    platform::get_display_server()
+}
+
+#[tauri::command]
+fn check_display_compatibility() -> platform::DisplayCompatibility {
+    platform::check_display_compatibility()
+}
+
 /// Create a provider instance from config for a given provider name
 fn create_provider_from_config(
     provider_name: &str,
@@ -970,6 +981,19 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(move |app| {
             println!("Pia starting up...");
+
+            // Detect and log display server
+            let display_compat = platform::check_display_compatibility();
+            println!("Display server: {}", display_compat.display_server);
+            for warning in &display_compat.warnings {
+                println!("WARNING: {}", warning);
+            }
+            if !display_compat.input_supported {
+                log::warn!(
+                    "Input simulation may not work on {}. XWayland is recommended.",
+                    display_compat.display_server
+                );
+            }
 
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -1167,6 +1191,8 @@ pub fn run() {
             check_provider_health,
             list_provider_models,
             check_permissions,
+            get_display_server,
+            check_display_compatibility,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
