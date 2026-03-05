@@ -1,7 +1,0 @@
-id: z-index-fix
-status: complete
-branch: pia/z-index-fix
-worktree_path: null
-completed_at: 2026-02-08T03:57:57Z
-commit_sha: 74c0061364615aa39151b038df1c498ac02ffdd9
-tests_passing: true

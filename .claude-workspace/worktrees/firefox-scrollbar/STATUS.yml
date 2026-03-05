@@ -1,7 +1,0 @@
-id: firefox-scrollbar
-status: complete
-branch: pia/firefox-scrollbar
-worktree_path: null
-completed_at: 2026-02-08T03:57:57Z
-commit_sha: f2eccd544c831deb361124b9b1f9bd235b2e4268
-tests_passing: true

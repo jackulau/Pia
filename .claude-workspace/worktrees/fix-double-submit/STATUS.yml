@@ -1,7 +1,0 @@
-id: fix-double-submit
-status: complete
-branch: pia/fix-double-submit
-worktree_path: null
-completed_at: 2026-02-08T03:57:57Z
-commit_sha: dfe4cc4f7e4c8b62309c7bfdaa58722df3329579
-tests_passing: true

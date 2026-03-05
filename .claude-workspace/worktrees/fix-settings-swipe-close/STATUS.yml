@@ -1,7 +1,0 @@
-id: fix-settings-swipe-close
-status: complete
-branch: pia/fix-settings-swipe-close
-worktree_path: null
-completed_at: 2026-02-08T03:57:57Z
-commit_sha: 204dcd7eed579a5df64c74aa2ed9a8c8434f355b
-tests_passing: true

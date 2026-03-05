@@ -1,7 +1,0 @@
-id: fix-tauri-listener-leak
-status: complete
-branch: pia/fix-tauri-listener-leak
-worktree_path: null
-completed_at: 2026-02-08T03:57:57Z
-commit_sha: af169bfbbacf29ed326f3c142c6f48265ef17ac0
-tests_passing: true

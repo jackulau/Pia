@@ -1,7 +1,0 @@
-id: fix-empty-llm-listener
-status: complete
-branch: pia/fix-empty-llm-listener
-worktree_path: null
-completed_at: 2026-02-08T03:57:57Z
-commit_sha: 4a038a5b52126eb024a5359572f6049f2e3d4a28
-tests_passing: true

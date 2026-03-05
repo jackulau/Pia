@@ -1,7 +1,0 @@
-id: firefox-range-track
-status: complete
-branch: pia/firefox-range-track
-worktree_path: null
-completed_at: 2026-02-08T03:57:57Z
-commit_sha: 76955125637a9f5696aefc052284e603f22c79cb
-tests_passing: true
