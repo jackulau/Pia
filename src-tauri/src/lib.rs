@@ -364,6 +364,14 @@ async fn save_template(
 #[tauri::command]
 async fn delete_template(id: String, state: State<'_, AppState>) -> Result<(), String> {
     let mut config = state.config.write().await;
+
+    // Prevent deletion of built-in templates
+    if let Some(template) = config.templates.iter().find(|t| t.id == id) {
+        if template.is_builtin {
+            return Err("Built-in templates cannot be deleted. You can hide them or restore defaults.".to_string());
+        }
+    }
+
     let original_len = config.templates.len();
     config.templates.retain(|t| t.id != id);
 
@@ -403,6 +411,14 @@ async fn update_template(
 
     config.save().map_err(|e| e.to_string())?;
     Ok(updated)
+}
+
+#[tauri::command]
+async fn restore_default_templates(state: State<'_, AppState>) -> Result<usize, String> {
+    let mut config = state.config.write().await;
+    let restored = config.restore_builtin_templates();
+    config.save().map_err(|e| e.to_string())?;
+    Ok(restored)
 }
 
 #[tauri::command]
@@ -1144,6 +1160,7 @@ pub fn run() {
             save_template,
             delete_template,
             update_template,
+            restore_default_templates,
             undo_last_action,
             detect_credentials,
             apply_detected_credential,
