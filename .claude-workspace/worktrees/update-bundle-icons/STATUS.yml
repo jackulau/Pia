@@ -1,0 +1,11 @@
+id: update-bundle-icons
+status: complete
+branch: pia/update-bundle-icons
+worktree_path: .claude-workspace/worktrees/update-bundle-icons/worktree
+assigned_to: null
+started_at: null
+completed_at: 2026-01-28T19:35:56Z
+dependencies_met: true
+conflicts: []
+commit_sha: b629b7680362bf7e1b867de7da22dc844ba31610
+tests_passing: true

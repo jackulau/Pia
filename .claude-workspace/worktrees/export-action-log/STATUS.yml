@@ -1,0 +1,11 @@
+id: export-action-log
+status: complete
+branch: pia/export-action-log
+worktree_path: .claude-workspace/worktrees/export-action-log/worktree
+assigned_to: claude
+started_at: 2026-01-28T12:15:00Z
+completed_at: 2026-01-29T02:28:39Z
+dependencies_met: true
+conflicts: []
+commit_sha: 6015a65ec87ccb3fb0af1c701fdd0c96be9f43fe
+tests_passing: true

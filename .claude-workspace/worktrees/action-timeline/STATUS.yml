@@ -1,0 +1,11 @@
+id: action-timeline
+status: complete
+branch: pia/action-timeline
+worktree_path: .claude-workspace/worktrees/action-timeline/worktree
+assigned_to: null
+started_at: null
+completed_at: 2026-01-29T02:12:46Z
+dependencies_met: true
+conflicts: []
+commit_sha: 0990e09598bd8564b269749bcf46a60aa24e796c
+tests_passing: true
