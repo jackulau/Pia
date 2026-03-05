@@ -4,13 +4,6 @@ import { getActionIcon } from './icons/action-icons.js';
 import { getCurrentWindow, LogicalSize, PhysicalPosition, PhysicalSize, availableMonitors, currentMonitor } from '@tauri-apps/api/window';
 // CSS is inlined in index.html for transparent window support
 
-// Size presets configuration
-const SIZE_PRESETS = {
-  mini: { width: 300, height: 180, name: 'Mini', cssClass: 'size-mini' },
-  standard: { width: 420, height: 380, name: 'Standard', cssClass: 'size-standard' },
-  detailed: { width: 550, height: 520, name: 'Detailed', cssClass: 'size-detailed' }
-};
-
 // DOM Elements
 const mainModal = document.getElementById('main-modal');
 const settingsPanel = document.getElementById('settings-panel');
@@ -28,10 +21,8 @@ const settingsCloseBtn = document.getElementById('settings-close-btn');
 const closeBtn = document.getElementById('close-btn');
 const saveSettingsBtn = document.getElementById('save-settings-btn');
 const dragHandle = document.querySelector('.drag-handle');
-const expandBtn = document.getElementById('expand-btn');
-const minimizeBtn = document.getElementById('minimize-btn');
 
-// Expanded mode elements
+// Elapsed/actions elements
 const elapsedValue = document.getElementById('elapsed-value');
 const actionsCount = document.getElementById('actions-count');
 const actionHistoryList = document.getElementById('action-history-list');
@@ -123,11 +114,6 @@ const historyClearBtn = document.getElementById('history-clear-btn');
 // Preview mode
 const previewToggle = document.getElementById('preview-toggle');
 
-// Size selector buttons
-const sizeMiniBtn = document.getElementById('size-mini');
-const sizeStandardBtn = document.getElementById('size-standard');
-const sizeDetailedBtn = document.getElementById('size-detailed');
-
 // Position menu elements
 const positionBtn = document.getElementById('position-btn');
 const positionDropdown = document.getElementById('position-dropdown');
@@ -147,8 +133,6 @@ let currentConfig = null;
 let lastIteration = 0;
 let lastTokens = 0;
 let lastAction = null;
-let isExpanded = localStorage.getItem('pia-expanded-mode') === 'true';
-let isMinimized = localStorage.getItem('pia-minimized') === 'true';
 let actionHistory = [];
 let totalActionsCount = 0;
 let sessionStartTime = null;
@@ -159,8 +143,6 @@ let previousStatus = null;
 let historyEntries = [];
 let queueItems = [];
 let previewMode = false;
-let resizeDebounceTimer = null;
-let currentSizePreset = 'standard';
 let currentPosition = localStorage.getItem('pia-window-position') || null;
 let cachedTemplates = [];
 let editingTemplateId = null;
@@ -174,12 +156,6 @@ let lastRenderedTimelineCount = 0;
 let pendingAgentStateRAF = null;
 let lastSubmittedInstruction = null;
 let errorLog = [];
-
-// Window sizes
-const COMPACT_SIZE = { width: 420, height: 380 };
-const EXPANDED_SIZE = { width: 500, height: 550 };
-const MINIMIZED_SIZE = { width: 420, height: 130 };
-const FULL_SIZE = { width: 420, height: 450 };
 
 // Position constants
 const POSITION_PADDING = 20;
@@ -205,20 +181,14 @@ async function init() {
   await loadConfig();
   await loadHistory();
   await loadPreviewMode();
-  await restoreWindowSize();
   await loadTemplates();
   setupEventListeners();
   setupTauriListeners();
   setupKeyboardNavigation();
-  setupResizeListener();
-  setupSizeSelector();
   setupPositionMenu();
   setupKillSwitchDisplay();
   setupTouchListeners();
-  await restoreExpandedState();
-  await restoreMinimizedState();
   await refreshQueue();
-  await loadSavedSizePreset();
   await restoreSavedPosition();
 
   // Check onboarding after everything is loaded
@@ -1075,16 +1045,6 @@ function setupEventListeners() {
       e.preventDefault();
       toggleMinimizeMode();
     });
-  }
-
-  // Expand/collapse toggle
-  if (expandBtn) {
-    expandBtn.addEventListener('click', toggleExpandedMode);
-  }
-
-  // Minimize/restore toggle
-  if (minimizeBtn) {
-    minimizeBtn.addEventListener('click', toggleMinimizeMode);
   }
 
   // Clear hotkey button
@@ -2376,94 +2336,6 @@ function announceStatus(status) {
   setTimeout(() => announcement.remove(), 1000);
 }
 
-// Toggle expanded mode
-async function toggleExpandedMode() {
-  isExpanded = !isExpanded;
-  await applyExpandedState();
-  localStorage.setItem('pia-expanded-mode', isExpanded.toString());
-}
-
-// Apply expanded state to UI and window
-async function applyExpandedState() {
-  const appWindow = getCurrentWindow();
-
-  if (isExpanded) {
-    mainModal.classList.add('expanded');
-    expandBtn.classList.add('active');
-    expandBtn.title = 'Collapse';
-    // Update icon to collapse
-    expandBtn.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polyline points="4 14 10 14 10 20"></polyline>
-        <polyline points="20 10 14 10 14 4"></polyline>
-        <line x1="14" y1="10" x2="21" y2="3"></line>
-        <line x1="3" y1="21" x2="10" y2="14"></line>
-      </svg>
-    `;
-    await appWindow.setSize(new LogicalSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height));
-  } else {
-    mainModal.classList.remove('expanded');
-    expandBtn.classList.remove('active');
-    expandBtn.title = 'Expand';
-    // Update icon to expand
-    expandBtn.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polyline points="15 3 21 3 21 9"></polyline>
-        <polyline points="9 21 3 21 3 15"></polyline>
-        <line x1="21" y1="3" x2="14" y2="10"></line>
-        <line x1="3" y1="21" x2="10" y2="14"></line>
-      </svg>
-    `;
-    await appWindow.setSize(new LogicalSize(COMPACT_SIZE.width, COMPACT_SIZE.height));
-  }
-}
-
-// Restore expanded state on app launch
-async function restoreExpandedState() {
-  if (isExpanded) {
-    await applyExpandedState();
-  }
-}
-
-// Toggle minimize mode
-async function toggleMinimizeMode() {
-  isMinimized = !isMinimized;
-  await applyMinimizedState();
-  localStorage.setItem('pia-minimized', isMinimized.toString());
-}
-
-// Apply minimized state to UI and window
-async function applyMinimizedState() {
-  const appWindow = getCurrentWindow();
-
-  if (isMinimized) {
-    mainModal.classList.add('minimized');
-    await appWindow.setSize(new LogicalSize(MINIMIZED_SIZE.width, MINIMIZED_SIZE.height));
-  } else {
-    mainModal.classList.remove('minimized');
-    // Restore to the appropriate full size based on expanded state
-    if (isExpanded) {
-      await appWindow.setSize(new LogicalSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height));
-    } else {
-      await appWindow.setSize(new LogicalSize(FULL_SIZE.width, FULL_SIZE.height));
-    }
-  }
-
-  // Update button icon and label
-  if (minimizeBtn) {
-    minimizeBtn.textContent = isMinimized ? '\u2B1C' : '\u2581';
-    minimizeBtn.title = isMinimized ? 'Restore full view' : 'Minimize to prompt only';
-    minimizeBtn.setAttribute('aria-label', isMinimized ? 'Restore full view' : 'Minimize to prompt only');
-  }
-}
-
-// Restore minimized state on app launch
-async function restoreMinimizedState() {
-  if (isMinimized) {
-    await applyMinimizedState();
-  }
-}
-
 // Add action to history
 function addToActionHistory(action) {
   const formattedAction = formatAction(action);
@@ -2812,89 +2684,6 @@ queueList.addEventListener('click', (e) => {
     if (id) removeFromQueue(id);
   }
 });
-
-// Window size persistence
-const WINDOW_SIZE_KEY = 'pia-window-size';
-
-async function restoreWindowSize() {
-  try {
-    const saved = localStorage.getItem(WINDOW_SIZE_KEY);
-    if (saved) {
-      const { width, height } = JSON.parse(saved);
-      const appWindow = getCurrentWindow();
-      await appWindow.setSize(new LogicalSize(Math.round(width), Math.round(height)));
-    }
-  } catch (error) {
-    console.error('Failed to restore window size:', error);
-  }
-}
-
-function saveWindowSize(width, height) {
-  try {
-    localStorage.setItem(WINDOW_SIZE_KEY, JSON.stringify({ width, height }));
-  } catch (error) {
-    console.error('Failed to save window size:', error);
-  }
-}
-
-function setupResizeListener() {
-  const appWindow = getCurrentWindow();
-  appWindow.onResized(({ payload: size }) => {
-    // Debounce to avoid excessive saves during drag
-    clearTimeout(resizeDebounceTimer);
-    resizeDebounceTimer = setTimeout(() => {
-      saveWindowSize(size.width, size.height);
-    }, 300);
-  });
-}
-
-// Apply size preset
-async function applySizePreset(presetName) {
-  const preset = SIZE_PRESETS[presetName];
-  if (!preset) return;
-
-  currentSizePreset = presetName;
-
-  // Update window size via Tauri
-  try {
-    const appWindow = getCurrentWindow();
-    await appWindow.setSize(new LogicalSize(preset.width, preset.height));
-  } catch (error) {
-    console.error('Failed to resize window:', error);
-  }
-
-  // Update CSS class on modal
-  Object.values(SIZE_PRESETS).forEach(p => {
-    mainModal.classList.remove(p.cssClass);
-  });
-  mainModal.classList.add(preset.cssClass);
-
-  // Update button states
-  sizeMiniBtn.classList.toggle('active', presetName === 'mini');
-  sizeStandardBtn.classList.toggle('active', presetName === 'standard');
-  sizeDetailedBtn.classList.toggle('active', presetName === 'detailed');
-
-  // Persist preference
-  localStorage.setItem('pia-size-preset', presetName);
-}
-
-// Load saved size preset
-async function loadSavedSizePreset() {
-  const saved = localStorage.getItem('pia-size-preset');
-  if (saved && SIZE_PRESETS[saved]) {
-    await applySizePreset(saved);
-  } else {
-    // Apply default standard preset
-    mainModal.classList.add(SIZE_PRESETS.standard.cssClass);
-  }
-}
-
-// Setup size selector event listeners
-function setupSizeSelector() {
-  sizeMiniBtn.addEventListener('click', () => applySizePreset('mini'));
-  sizeStandardBtn.addEventListener('click', () => applySizePreset('standard'));
-  sizeDetailedBtn.addEventListener('click', () => applySizePreset('detailed'));
-}
 
 // Setup position menu
 function setupPositionMenu() {
