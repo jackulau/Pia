@@ -1,0 +1,11 @@
+id: fix-glm-provider-factory
+status: complete
+branch: Pia/fix-glm-provider-factory
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/fix-glm-provider-factory/worktree
+assigned_to: null
+started_at: 
+completed_at: 2026-03-05T15:58:13Z
+dependencies_met: true
+conflicts: []
+commit_sha: 4330bede3784706a6842ac3dcbb1e6cc8d6fea66
+tests_passing: null

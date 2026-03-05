@@ -1,0 +1,7 @@
+id: fix-null-dom-guards
+status: complete
+branch: pia/fix-null-dom-guards
+worktree_path: null
+completed_at: 2026-02-08T03:57:57Z
+commit_sha: 3b764b83599e7c4fef2713c08f888f93ad424d30
+tests_passing: true

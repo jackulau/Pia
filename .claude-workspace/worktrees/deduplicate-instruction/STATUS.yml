@@ -1,0 +1,11 @@
+id: deduplicate-instruction
+status: completed
+branch: Pia/deduplicate-instruction
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/deduplicate-instruction/worktree
+assigned_to: 13995
+started_at: 2026-02-12T03:35:52Z
+completed_at: 2026-02-12T04:15:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: 068097e
+tests_passing: true

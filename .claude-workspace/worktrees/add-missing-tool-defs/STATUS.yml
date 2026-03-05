@@ -1,0 +1,11 @@
+id: add-missing-tool-defs
+status: complete
+branch: Pia/add-missing-tool-defs
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/add-missing-tool-defs/worktree
+assigned_to: 13673
+started_at: 2026-02-12T03:35:05Z
+completed_at: 2026-02-12T04:42:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: 2da42757c587c5769b378ff93f67ca4a95565d9e
+tests_passing: true

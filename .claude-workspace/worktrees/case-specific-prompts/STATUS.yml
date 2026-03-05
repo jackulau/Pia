@@ -1,0 +1,11 @@
+id: case-specific-prompts
+status: complete
+branch: Pia/case-specific-prompts
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/case-specific-prompts/worktree
+assigned_to: null
+started_at: 
+completed_at: 2026-03-05T15:58:18Z
+dependencies_met: true
+conflicts: []
+commit_sha: 16f3c144f8b61c2e89b3d7a222aefe08e8755360
+tests_passing: null

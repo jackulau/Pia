@@ -1,0 +1,7 @@
+id: fix-formatSingleAction
+status: complete
+branch: pia/fix-formatSingleAction
+worktree_path: null
+completed_at: 2026-02-08T03:57:57Z
+commit_sha: 3769f1557a5a6e61613a2c7bc7464c100f566f91
+tests_passing: true

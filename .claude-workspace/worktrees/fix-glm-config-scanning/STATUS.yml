@@ -1,0 +1,11 @@
+id: fix-glm-config-scanning
+status: complete
+branch: Pia/fix-glm-config-scanning
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/fix-glm-config-scanning/worktree
+assigned_to: null
+started_at: 
+completed_at: 2026-03-05T15:58:08Z
+dependencies_met: true
+conflicts: []
+commit_sha: HEAD
+tests_passing: null

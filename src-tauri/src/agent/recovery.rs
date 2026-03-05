@@ -207,6 +207,8 @@ pub fn classify_capture_error(error: &crate::capture::CaptureError) -> ErrorClas
         CaptureError::CaptureError(_) => ErrorClassification::Retryable,
         // Encoding errors might be transient (memory pressure, etc.)
         CaptureError::EncodeError(_) => ErrorClassification::Retryable,
+        // Wayland errors are fatal - need compositor/portal setup
+        CaptureError::WaylandError(_) => ErrorClassification::Fatal,
     }
 }
 

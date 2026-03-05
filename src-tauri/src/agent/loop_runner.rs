@@ -452,7 +452,7 @@ impl AgentLoop {
 
             // Add assistant response to conversation with native content blocks
             match &response {
-                crate::llm::LlmResponse::ToolUse(tool_use) => {
+                crate::llm::LlmResponse::ToolUse { tool_use, .. } => {
                     conversation.add_assistant_tool_use(
                         tool_use.id.clone(),
                         tool_use.name.clone(),
@@ -552,7 +552,7 @@ impl AgentLoop {
 
             // Extract tool_use_id for threading to tool results
             let tool_use_id = match &response {
-                crate::llm::LlmResponse::ToolUse(tu) => Some(tu.id.clone()),
+                crate::llm::LlmResponse::ToolUse { tool_use: tu, .. } => Some(tu.id.clone()),
                 _ => None,
             };
 

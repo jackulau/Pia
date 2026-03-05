@@ -1,0 +1,7 @@
+id: fix-queue-onclick-xss
+status: complete
+branch: pia/fix-queue-onclick-xss
+worktree_path: null
+completed_at: 2026-02-08T03:57:57Z
+commit_sha: 57c263aac8b8d4c399ed447bd0216d76e6d29fe2
+tests_passing: true

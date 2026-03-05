@@ -1,0 +1,11 @@
+id: xplat-llm-platform-prompt
+status: complete
+branch: Pia/xplat-llm-platform-prompt
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/xplat-llm-platform-prompt/worktree
+assigned_to: null
+started_at: 
+completed_at: 2026-03-05T15:58:27Z
+dependencies_met: true
+conflicts: []
+commit_sha: fc2a0c159baa2270fb377223fa337c64b69132ec
+tests_passing: null

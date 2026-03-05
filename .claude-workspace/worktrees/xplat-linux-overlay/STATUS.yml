@@ -1,0 +1,11 @@
+id: xplat-linux-overlay
+status: complete
+branch: Pia/xplat-linux-overlay
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/xplat-linux-overlay/worktree
+assigned_to: null
+started_at: 
+completed_at: 2026-03-05T15:58:24Z
+dependencies_met: true
+conflicts: []
+commit_sha: 694384d5d666ba814a1c8616593bcd6bd3ed23d1
+tests_passing: null

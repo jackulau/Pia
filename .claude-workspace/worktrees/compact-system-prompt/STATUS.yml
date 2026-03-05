@@ -1,0 +1,11 @@
+id: compact-system-prompt
+status: complete
+branch: Pia/compact-system-prompt
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/compact-system-prompt/worktree
+assigned_to: 13797
+started_at: 2026-02-12T03:35:24Z
+completed_at: 2026-02-12T03:50:00Z
+dependencies_met: true
+conflicts: []
+commit_sha: cab2fd60e95042e0f77f916c920e68a663b68e8d
+tests_passing: true

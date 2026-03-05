@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 use super::provider::{
-    build_system_prompt_for_tools, build_tools, ChunkCallback, LlmError,
-    LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse,
+    build_system_prompt_for_tools, build_system_prompt_for_tools_with_context, build_tools,
+    ChunkCallback, LlmError, LlmProvider, LlmResponse, TokenMetrics, Tool, ToolUse,
 };
 use super::sse::append_bytes_to_buffer;
 use crate::agent::conversation::{ConversationHistory, Message};

@@ -1,0 +1,7 @@
+id: speed-multiplier-validation
+status: complete
+branch: pia/speed-multiplier-validation
+worktree_path: null
+completed_at: 2026-02-08T03:57:57Z
+commit_sha: 9a688d98dbc7d1f99198d774d7682cb3876c3c46
+tests_passing: true

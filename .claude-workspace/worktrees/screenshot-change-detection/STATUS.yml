@@ -1,0 +1,11 @@
+id: screenshot-change-detection
+status: complete
+branch: Pia/screenshot-change-detection
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/screenshot-change-detection/worktree
+assigned_to: null
+started_at: 2026-02-12T03:36:53Z
+completed_at: 2026-03-05T16:13:12Z
+dependencies_met: true
+conflicts: []
+commit_sha: 62cc4a1
+tests_passing: null

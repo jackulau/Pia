@@ -1,0 +1,11 @@
+id: builtin-templates
+status: complete
+branch: Pia/builtin-templates
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/builtin-templates/worktree
+assigned_to: null
+started_at: 2026-02-12T03:35:10Z
+completed_at: 2026-03-05T16:15:25Z
+dependencies_met: true
+conflicts: []
+commit_sha: a631654
+tests_passing: null

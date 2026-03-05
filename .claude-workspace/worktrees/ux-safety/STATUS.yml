@@ -1,0 +1,11 @@
+id: ux-safety
+status: complete
+branch: Pia/ux-safety
+worktree_path: /Users/jacklau/Pia/.claude-workspace/worktrees/ux-safety/worktree
+assigned_to: null
+started_at: 2026-03-05T16:00:00Z
+completed_at: 2026-03-05T16:00:51Z
+dependencies_met: true
+conflicts: []
+commit_sha: 4d1cefc498f3ce35ca41047eb2d0aa49755637fc
+tests_passing: null
