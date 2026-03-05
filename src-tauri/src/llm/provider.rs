@@ -602,23 +602,23 @@ pub fn history_to_messages(history: &ConversationHistory) -> Vec<(String, String
         .collect()
 }
 
-/// Build system prompt for tool-based providers (simplified, tools are defined via API)
+/// Build system prompt for tool-based providers (simplified, tools are defined via API).
+/// When `instruction` is provided it is embedded so the LLM always has the task context
+/// even though subsequent user messages only say "Continue."
 pub fn build_system_prompt_for_tools(screen_width: u32, screen_height: u32) -> String {
-    build_system_prompt_for_tools_with_context(screen_width, screen_height, None, None, None)
+    build_system_prompt_for_tools_with_instruction(screen_width, screen_height, None)
 }
 
-/// Build system prompt for tool-based providers with optional task context and progress info
-pub fn build_system_prompt_for_tools_with_context(
-    screen_width: u32,
-    screen_height: u32,
-    instruction: Option<&str>,
-    iteration: Option<u32>,
-    max_iterations: Option<u32>,
-) -> String {
-    let mut prompt = format!(
+/// Build system prompt for tool-based providers with an optional embedded instruction.
+pub fn build_system_prompt_for_tools_with_instruction(screen_width: u32, screen_height: u32, instruction: Option<&str>) -> String {
+    let task_section = match instruction {
+        Some(instr) => format!("\n\nUser's task: {instr}"),
+        None => String::new(),
+    };
+    format!(
         r#"You are a computer use agent. You can see the user's screen and control their mouse and keyboard to complete tasks.
 
-Screen dimensions: {screen_width}x{screen_height} pixels
+Screen dimensions: {screen_width}x{screen_height} pixels{task_section}
 
 Guidelines:
 - Analyze the screenshot carefully before acting
@@ -674,26 +674,22 @@ pub fn build_system_prompt_with_context(
     prompt
 }
 
-/// Build system prompt for JSON-based providers (includes action definitions in prompt)
+/// Build system prompt for JSON-based providers (includes action definitions in prompt).
 pub fn build_system_prompt(screen_width: u32, screen_height: u32) -> String {
+    build_system_prompt_with_instruction(screen_width, screen_height, None)
+}
+
+/// Build system prompt for JSON-based providers with an optional embedded instruction.
+pub fn build_system_prompt_with_instruction(screen_width: u32, screen_height: u32, instruction: Option<&str>) -> String {
+    let task_section = match instruction {
+        Some(instr) => format!("\n\nUser's task: {instr}"),
+        None => String::new(),
+    };
     format!(
         r#"You are a computer use agent. Screen: {screen_width}x{screen_height}px.
 Respond with a single JSON action. Actions:
 
-{{"action":"click","x":N,"y":N}} - optional "button":"left"|"right"|"middle"
-{{"action":"double_click","x":N,"y":N}}
-{{"action":"triple_click","x":N,"y":N}} - select entire line
-{{"action":"right_click","x":N,"y":N}} - context menu
-{{"action":"move","x":N,"y":N}} - move mouse without clicking
-{{"action":"drag","start_x":N,"start_y":N,"end_x":N,"end_y":N}} - optional "button","duration_ms"
-{{"action":"type","text":"..."}}
-{{"action":"key","key":"enter"}} - optional "modifiers":["ctrl","alt","shift","meta"]
-{{"action":"scroll","x":N,"y":N,"direction":"up|down|left|right"}} - optional "amount":3
-{{"action":"wait","duration_ms":1000}}
-{{"action":"wait_for_element","description":"...","timeout_ms":5000}}
-{{"action":"batch","actions":[...]}} - max 10, stops on first failure
-{{"action":"complete","message":"..."}}
-{{"action":"error","message":"..."}}
+Screen dimensions: {screen_width}x{screen_height} pixels{task_section}
 
 Analyze the screenshot, use precise coordinates, respond with ONLY JSON."#
     )

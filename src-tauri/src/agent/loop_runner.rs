@@ -340,16 +340,13 @@ impl AgentLoop {
                 }
             };
 
-            // Set iteration/max_iterations for progress context in system prompt
-            conversation.iteration = Some(iteration);
-            conversation.max_iterations = Some(max_iterations);
-
-            // Add user message with current screenshot to conversation
-            // First message includes full instruction; subsequent messages use a short continuation prompt
-            let user_text = if conversation.is_empty() {
+            // Add user message with current screenshot to conversation.
+            // First iteration includes the full instruction; subsequent ones use
+            // a short continuation since the instruction is already in the system prompt.
+            let user_text = if iteration == 1 {
                 instruction.to_string()
             } else {
-                "Here is the current screenshot. Continue working on the task.".to_string()
+                "Continue.".to_string()
             };
             conversation.add_user_message(
                 &user_text,
