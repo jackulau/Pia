@@ -574,15 +574,43 @@ function updateTemplateDropdown() {
   // Clear existing options (keep the placeholder)
   templateSelect.innerHTML = '<option value="">Select a template...</option>';
 
-  // Sort templates alphabetically by name
-  const sorted = [...cachedTemplates].sort((a, b) => a.name.localeCompare(b.name));
+  // Group templates: built-in by category first, then user templates
+  const builtinTemplates = cachedTemplates.filter(t => t.is_builtin);
+  const userTemplates = cachedTemplates.filter(t => !t.is_builtin);
 
-  sorted.forEach(template => {
-    const option = document.createElement('option');
-    option.value = template.id;
-    option.textContent = template.name;
-    templateSelect.appendChild(option);
+  // Group built-in templates by category
+  const categories = {};
+  builtinTemplates.forEach(t => {
+    const cat = t.category || 'General';
+    if (!categories[cat]) categories[cat] = [];
+    categories[cat].push(t);
   });
+
+  // Add built-in templates grouped by category
+  Object.keys(categories).sort().forEach(category => {
+    const group = document.createElement('optgroup');
+    group.label = category;
+    categories[category].sort((a, b) => a.name.localeCompare(b.name)).forEach(template => {
+      const option = document.createElement('option');
+      option.value = template.id;
+      option.textContent = template.name;
+      group.appendChild(option);
+    });
+    templateSelect.appendChild(group);
+  });
+
+  // Add user templates
+  if (userTemplates.length > 0) {
+    const userGroup = document.createElement('optgroup');
+    userGroup.label = 'My Templates';
+    userTemplates.sort((a, b) => a.name.localeCompare(b.name)).forEach(template => {
+      const option = document.createElement('option');
+      option.value = template.id;
+      option.textContent = template.name;
+      userGroup.appendChild(option);
+    });
+    templateSelect.appendChild(userGroup);
+  }
 }
 
 // Update template list in settings
@@ -592,26 +620,51 @@ function updateTemplateList() {
     return;
   }
 
-  const sorted = [...cachedTemplates].sort((a, b) => a.name.localeCompare(b.name));
+  // Sort: built-in first (by category then name), then user templates
+  const sorted = [...cachedTemplates].sort((a, b) => {
+    if (a.is_builtin !== b.is_builtin) return a.is_builtin ? -1 : 1;
+    const catCompare = (a.category || '').localeCompare(b.category || '');
+    if (catCompare !== 0) return catCompare;
+    return a.name.localeCompare(b.name);
+  });
 
-  templateList.innerHTML = sorted.map(template => `
-    <div class="template-item" data-id="${template.id}">
-      <div class="template-item-info">
-        <div class="template-item-name">${escapeHtml(template.name)}</div>
-        <div class="template-item-preview">${escapeHtml(template.instruction.substring(0, 60))}${template.instruction.length > 60 ? '...' : ''}</div>
-      </div>
-      <div class="template-item-actions">
-        <button class="template-delete-btn" data-id="${template.id}" title="Delete template">
+  templateList.innerHTML = sorted.map(template => {
+    const isBuiltin = template.is_builtin;
+    const badgeHtml = isBuiltin
+      ? `<span class="template-builtin-badge" title="Built-in template">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+          Built-in
+        </span>`
+      : '';
+    const categoryHtml = template.category
+      ? `<span class="template-category-badge">${escapeHtml(template.category)}</span>`
+      : '';
+    const actionsHtml = isBuiltin
+      ? '' // No delete button for built-in templates
+      : `<button class="template-delete-btn" data-id="${template.id}" title="Delete template">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6"></polyline>
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
           </svg>
-        </button>
-      </div>
-    </div>
-  `).join('');
+        </button>`;
 
-  // Add delete handlers
+    return `
+    <div class="template-item${isBuiltin ? ' template-item-builtin' : ''}" data-id="${template.id}">
+      <div class="template-item-info">
+        <div class="template-item-name">
+          ${escapeHtml(template.name)}
+          ${badgeHtml}
+          ${categoryHtml}
+        </div>
+        <div class="template-item-preview">${escapeHtml(template.instruction.substring(0, 60))}${template.instruction.length > 60 ? '...' : ''}</div>
+      </div>
+      <div class="template-item-actions">
+        ${actionsHtml}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Add delete handlers for non-built-in templates
   templateList.querySelectorAll('.template-delete-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -683,6 +736,23 @@ async function deleteTemplate(id) {
   } catch (error) {
     console.error('Failed to delete template:', error);
     showToast(error, 'error');
+  }
+}
+
+// Restore default (built-in) templates
+async function restoreDefaultTemplates() {
+  try {
+    const restored = await invoke('restore_default_templates');
+    // Reload templates from backend to get the full updated list
+    await loadTemplates();
+    if (restored > 0) {
+      showToast(`Restored ${restored} default template${restored === 1 ? '' : 's'}`, 'success');
+    } else {
+      showToast('All default templates are already present', 'info');
+    }
+  } catch (error) {
+    console.error('Failed to restore default templates:', error);
+    showToast('Failed to restore templates: ' + error, 'error');
   }
 }
 
@@ -889,6 +959,12 @@ function setupEventListeners() {
       saveTemplateDialog.classList.add('hidden');
     }
   });
+
+  // Restore default templates button
+  const restoreTemplatesBtn = document.getElementById('restore-templates-btn');
+  if (restoreTemplatesBtn) {
+    restoreTemplatesBtn.addEventListener('click', restoreDefaultTemplates);
+  }
 
   // Close button
   closeBtn.addEventListener('click', async () => {
