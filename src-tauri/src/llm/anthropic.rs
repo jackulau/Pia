@@ -350,6 +350,10 @@ impl LlmProvider for AnthropicProvider {
         Ok(models)
     }
 
+    fn supports_tools(&self) -> bool {
+        true
+    }
+
     fn name(&self) -> &str {
         "anthropic"
     }
