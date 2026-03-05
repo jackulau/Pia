@@ -30,9 +30,10 @@
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
-        "visible": true,
+        "visible": false,
         "center": true,
-        "skipTaskbar": true
+        "skipTaskbar": true,
+        "backgroundColor": "#00000000"
       },
       {
         "title": "Pia Overlay",
@@ -47,7 +48,8 @@
         "visible": false,
         "focus": false,
         "width": 1920,
-        "height": 1080
+        "height": 1080,
+        "backgroundColor": "#00000000"
       },
       {
         "title": "Cursor Overlay",
@@ -61,7 +63,8 @@
         "resizable": false,
         "visible": false,
         "width": 800,
-        "height": 600
+        "height": 600,
+        "backgroundColor": "#00000000"
       }
     ],
     "security": {
