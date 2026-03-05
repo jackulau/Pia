@@ -685,8 +685,9 @@ async fn detect_ollama() -> Option<DetectedCredential> {
     hosts.push("http://localhost:11434".to_string());
     hosts.push("http://127.0.0.1:11434".to_string());
 
-    // Deduplicate (in case OLLAMA_HOST matches a default)
-    hosts.dedup();
+    // Deduplicate hosts (handles non-consecutive duplicates unlike .dedup())
+    let mut seen = std::collections::HashSet::new();
+    hosts.retain(|h| seen.insert(h.clone()));
 
     for host in &hosts {
         if let Some((found_host, all_models)) = try_ollama_host(&client, host).await {
@@ -1705,5 +1706,79 @@ mod tests {
         assert_eq!(vision.len(), 2);
         assert!(vision.contains(&"llava:latest".to_string()));
         assert!(vision.contains(&"moondream:latest".to_string()));
+    }
+
+    /// Helper that replicates the host-list building logic from detect_ollama()
+    /// so we can unit-test the deduplication without network calls.
+    fn build_ollama_hosts(custom_host: Option<&str>) -> Vec<String> {
+        let mut hosts = Vec::new();
+        if let Some(h) = custom_host {
+            let trimmed = h.trim().trim_end_matches('/').to_string();
+            if !trimmed.is_empty() {
+                hosts.push(trimmed);
+            }
+        }
+        hosts.push("http://localhost:11434".to_string());
+        hosts.push("http://127.0.0.1:11434".to_string());
+
+        let mut seen = std::collections::HashSet::new();
+        hosts.retain(|h| seen.insert(h.clone()));
+        hosts
+    }
+
+    #[test]
+    fn test_ollama_host_dedup_no_custom() {
+        let hosts = build_ollama_hosts(None);
+        assert_eq!(hosts, vec![
+            "http://localhost:11434",
+            "http://127.0.0.1:11434",
+        ]);
+    }
+
+    #[test]
+    fn test_ollama_host_dedup_custom_matches_localhost() {
+        let hosts = build_ollama_hosts(Some("http://localhost:11434"));
+        assert_eq!(hosts, vec![
+            "http://localhost:11434",
+            "http://127.0.0.1:11434",
+        ]);
+    }
+
+    #[test]
+    fn test_ollama_host_dedup_custom_matches_127() {
+        // This was the bug: 127.0.0.1 appeared first AND last, non-consecutive
+        let hosts = build_ollama_hosts(Some("http://127.0.0.1:11434"));
+        assert_eq!(hosts, vec![
+            "http://127.0.0.1:11434",
+            "http://localhost:11434",
+        ]);
+    }
+
+    #[test]
+    fn test_ollama_host_dedup_custom_unique() {
+        let hosts = build_ollama_hosts(Some("http://myserver:11434"));
+        assert_eq!(hosts, vec![
+            "http://myserver:11434",
+            "http://localhost:11434",
+            "http://127.0.0.1:11434",
+        ]);
+    }
+
+    #[test]
+    fn test_ollama_host_dedup_trailing_slash_stripped() {
+        let hosts = build_ollama_hosts(Some("http://localhost:11434/"));
+        assert_eq!(hosts, vec![
+            "http://localhost:11434",
+            "http://127.0.0.1:11434",
+        ]);
+    }
+
+    #[test]
+    fn test_ollama_host_dedup_whitespace_stripped() {
+        let hosts = build_ollama_hosts(Some("  http://127.0.0.1:11434/  "));
+        assert_eq!(hosts, vec![
+            "http://127.0.0.1:11434",
+            "http://localhost:11434",
+        ]);
     }
 }
