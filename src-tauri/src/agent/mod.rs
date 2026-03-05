@@ -8,6 +8,7 @@ pub mod recovery;
 pub mod retry;
 pub mod state;
 
+pub use action::DangerLevel;
 pub use delay::*;
 pub use history::*;
 pub use loop_runner::*;

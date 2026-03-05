@@ -1,4 +1,4 @@
-use super::action::{execute_action, execute_action_with_delay, execute_action_with_retry, parse_llm_response, Action, ActionError, ActionResult};
+use super::action::{execute_action, execute_action_with_delay, execute_action_with_retry, parse_llm_response, Action, ActionError, ActionResult, DangerLevel};
 use super::conversation::ConversationHistory;
 use super::delay::DelayController;
 use super::history::{ActionEntry, ActionHistory, ActionRecord};
@@ -458,6 +458,19 @@ impl AgentLoop {
             // Brief pause to let user see the indicator
             sleep(Duration::from_millis(300)).await;
 
+            // Classify danger level and emit warnings
+            let danger = action.danger_level();
+            let danger_warning = action.danger_warning();
+            self.state.set_danger_level(danger, danger_warning.clone()).await;
+
+            if matches!(danger, DangerLevel::Medium | DangerLevel::High | DangerLevel::Critical) {
+                let _ = self.app_handle.emit("danger-warning", serde_json::json!({
+                    "level": danger.to_string(),
+                    "action": action_str,
+                    "warning": danger_warning.unwrap_or_default(),
+                }));
+            }
+
             // Prepare action details for history logging (reuse serialized value)
             let action_type = Self::get_action_type(&action);
 
@@ -483,6 +496,9 @@ impl AgentLoop {
 
                     // Reset consecutive errors on successful action
                     self.state.reset_consecutive_errors();
+
+                    // Clear danger level after successful execution
+                    self.state.clear_danger_level().await;
 
                     // Hide cursor indicator after action
                     self.hide_cursor_indicator().await;
@@ -555,20 +571,56 @@ impl AgentLoop {
                     // Emit confirmation request to frontend
                     let _ = self.app_handle.emit("confirmation-required", msg);
 
-                    // Wait for user response with 30 second timeout
-                    let confirmation_timeout = Duration::from_secs(30);
-                    let response = timeout(confirmation_timeout, self.state.await_confirmation()).await;
+                    // Wait for user response with periodic kill switch checks.
+                    // Instead of a single 30s timeout, we poll in 500ms intervals
+                    // so the kill switch remains responsive during confirmation.
+                    let confirmation_deadline = Instant::now() + Duration::from_secs(30);
+                    let mut confirmation_result = None;
+
+                    loop {
+                        // Check kill switch during confirmation wait
+                        if self.state.should_stop() {
+                            self.state.set_pending_action(None).await;
+                            self.state.clear_danger_level().await;
+                            self.state.set_status(AgentStatus::Idle).await;
+                            self.emit_state_update_immediate().await;
+                            return Err(LoopError::Stopped);
+                        }
+
+                        // Check timeout
+                        if Instant::now() >= confirmation_deadline {
+                            break;
+                        }
+
+                        // Poll for confirmation with short timeout
+                        let poll_duration = Duration::from_millis(500);
+                        match timeout(poll_duration, self.state.await_confirmation()).await {
+                            Ok(Some(response)) => {
+                                confirmation_result = Some(response);
+                                break;
+                            }
+                            Ok(None) => {
+                                // Channel closed
+                                break;
+                            }
+                            Err(_) => {
+                                // Timeout on poll, continue loop to check kill switch
+                                continue;
+                            }
+                        }
+                    }
 
                     // Clear pending action
                     self.state.set_pending_action(None).await;
+                    self.state.clear_danger_level().await;
 
-                    match response {
-                        Ok(Some(ConfirmationResponse::Confirmed)) => {
+                    match confirmation_result {
+                        Some(ConfirmationResponse::Confirmed) => {
                             // User confirmed, continue execution
                             self.state.set_status(AgentStatus::Running).await;
                             self.emit_state_update_immediate().await;
                         }
-                        Ok(Some(ConfirmationResponse::Denied)) | Ok(None) | Err(_) => {
+                        _ => {
                             // User denied, no response, or timeout - abort
                             self.state.set_status(AgentStatus::Idle).await;
                             self.state.set_error("Action denied or timed out".to_string()).await;
@@ -606,6 +658,9 @@ impl AgentLoop {
 
                     // Increment consecutive errors
                     self.state.increment_consecutive_errors();
+
+                    // Clear danger level on error
+                    self.state.clear_danger_level().await;
 
                     // Hide cursor indicator on error
                     self.hide_cursor_indicator().await;

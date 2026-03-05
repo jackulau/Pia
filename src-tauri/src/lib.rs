@@ -54,6 +54,8 @@ struct AgentStatePayload {
     recorded_actions_count: usize,
     can_undo: bool,
     last_undoable_action: Option<String>,
+    danger_level: String,
+    danger_warning: Option<String>,
 }
 
 #[tauri::command]
@@ -160,6 +162,8 @@ async fn get_agent_state(state: State<'_, AppState>) -> Result<AgentStatePayload
         recorded_actions_count: s.recorded_actions.len(),
         can_undo: s.can_undo,
         last_undoable_action: s.last_undoable_action,
+        danger_level: s.danger_level.to_string(),
+        danger_warning: s.danger_warning,
     })
 }
 

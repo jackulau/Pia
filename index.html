@@ -1260,6 +1260,108 @@
       border-color: rgba(255, 69, 58, 0.4);
     }
 
+    /* Danger level styling for confirmation dialog */
+    .confirmation-dialog.danger-high .confirmation-content {
+      border-color: rgba(255, 159, 10, 0.5);
+      box-shadow: 0 0 20px rgba(255, 159, 10, 0.15);
+    }
+    .confirmation-dialog.danger-high .confirmation-content h3 {
+      color: #ff9f0a;
+    }
+    .confirmation-dialog.danger-critical .confirmation-content {
+      border-color: rgba(255, 69, 58, 0.6);
+      box-shadow: 0 0 24px rgba(255, 69, 58, 0.2);
+      animation: danger-pulse 1.5s ease-in-out infinite;
+    }
+    .confirmation-dialog.danger-critical .confirmation-content h3 {
+      color: #ff453a;
+    }
+    @keyframes danger-pulse {
+      0%, 100% { box-shadow: 0 0 24px rgba(255, 69, 58, 0.2); }
+      50% { box-shadow: 0 0 32px rgba(255, 69, 58, 0.35); }
+    }
+
+    /* Danger level styling for action content display */
+    .action-content.danger-medium {
+      border-left: 2px solid rgba(255, 159, 10, 0.6);
+      padding-left: 8px;
+    }
+    .action-content.danger-high {
+      border-left: 2px solid rgba(255, 159, 10, 0.8);
+      padding-left: 8px;
+      color: rgba(255, 159, 10, 0.9) !important;
+    }
+    .action-content.danger-critical {
+      border-left: 2px solid rgba(255, 69, 58, 0.8);
+      padding-left: 8px;
+      color: rgba(255, 69, 58, 0.9) !important;
+      animation: danger-text-flash 1s ease-in-out 2;
+    }
+    @keyframes danger-text-flash {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    /* Danger indicator banner */
+    .danger-indicator {
+      position: fixed;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      z-index: 250;
+      animation: danger-banner-in 0.3s ease-out;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    .danger-indicator.danger-medium {
+      background: rgba(255, 159, 10, 0.15);
+      border: 1px solid rgba(255, 159, 10, 0.3);
+      color: #ff9f0a;
+    }
+    .danger-indicator.danger-high {
+      background: rgba(255, 159, 10, 0.2);
+      border: 1px solid rgba(255, 159, 10, 0.5);
+      color: #ffb84d;
+    }
+    .danger-indicator.danger-critical {
+      background: rgba(255, 69, 58, 0.2);
+      border: 1px solid rgba(255, 69, 58, 0.5);
+      color: #ff6961;
+      animation: danger-banner-in 0.3s ease-out, danger-banner-pulse 1.5s ease-in-out infinite 0.3s;
+    }
+    .danger-icon {
+      font-size: 14px;
+      font-weight: 900;
+    }
+    .danger-text {
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .danger-indicator.danger-hiding {
+      animation: danger-banner-out 0.25s ease-in forwards;
+    }
+    @keyframes danger-banner-in {
+      from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+    @keyframes danger-banner-out {
+      from { opacity: 1; transform: translateX(-50%) translateY(0); }
+      to { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+    }
+    @keyframes danger-banner-pulse {
+      0%, 100% { box-shadow: 0 0 12px rgba(255, 69, 58, 0.2); }
+      50% { box-shadow: 0 0 20px rgba(255, 69, 58, 0.35); }
+    }
+
     * {
       scrollbar-width: thin;
       scrollbar-color: rgba(255, 255, 255, 0.15) transparent;

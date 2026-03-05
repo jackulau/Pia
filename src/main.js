@@ -842,6 +842,7 @@ function setupEventListeners() {
   // Confirmation dialog
   cancelActionBtn.addEventListener('click', async () => {
     confirmationDialog.classList.add('hidden');
+    confirmationDialog.classList.remove('danger-high', 'danger-critical');
     try {
       await invoke('deny_action');
     } catch (error) {
@@ -852,6 +853,7 @@ function setupEventListeners() {
 
   confirmActionBtn.addEventListener('click', async () => {
     confirmationDialog.classList.add('hidden');
+    confirmationDialog.classList.remove('danger-high', 'danger-critical');
     try {
       await invoke('confirm_action');
     } catch (error) {
@@ -1043,8 +1045,28 @@ async function setupTauriListeners() {
     previousFocusElement = document.activeElement;
     confirmationMessage.textContent = event.payload;
     confirmationDialog.classList.remove('hidden');
+    // Add danger styling based on current danger level
+    confirmationDialog.classList.remove('danger-high', 'danger-critical');
+    // Check if the message indicates critical or high danger
+    if (event.payload.toLowerCase().includes('dangerous') || event.payload.toLowerCase().includes('critical')) {
+      confirmationDialog.classList.add('danger-critical');
+    } else {
+      confirmationDialog.classList.add('danger-high');
+    }
     // Focus cancel button (safer default)
     cancelActionBtn.focus();
+  }));
+
+  // Danger warning for medium+ risk actions (visual indicator only, no blocking)
+  tauriUnlisteners.push(await listen('danger-warning', (event) => {
+    const { level, warning } = event.payload;
+    if (level === 'critical') {
+      showDangerIndicator(warning || 'Critical action detected', 'critical');
+    } else if (level === 'high') {
+      showDangerIndicator(warning || 'High-risk action detected', 'high');
+    } else if (level === 'medium') {
+      showDangerIndicator(warning || 'Caution: action may modify state', 'medium');
+    }
   }));
 
   // Retry info notification
@@ -1486,9 +1508,12 @@ function updateAgentState(state) {
     }
   }
 
-  // Update action display with preview mode awareness
+  // Update action display with preview mode awareness and danger level
   if (actionContent) {
-    actionContent.classList.remove('preview-action');
+    actionContent.classList.remove('preview-action', 'danger-safe', 'danger-low', 'danger-medium', 'danger-high', 'danger-critical');
+    if (state.danger_level && state.danger_level !== 'safe') {
+      actionContent.classList.add(`danger-${state.danger_level}`);
+    }
     if (state.last_error) {
       actionContent.textContent = `Error: ${state.last_error}`;
       actionContent.style.color = 'var(--error)';
@@ -2110,6 +2135,27 @@ function updateErrorLogUI() {
     </div>`
   ).join('');
   content.scrollTop = content.scrollHeight;
+}
+
+// Show danger indicator banner for risky actions
+function showDangerIndicator(message, level = 'medium') {
+  // Remove any existing danger indicator
+  const existing = document.querySelector('.danger-indicator');
+  if (existing) existing.remove();
+
+  const indicator = document.createElement('div');
+  indicator.className = `danger-indicator danger-${level}`;
+
+  const icon = level === 'critical' ? '!!' : level === 'high' ? '!' : '~';
+  indicator.innerHTML = `<span class="danger-icon">${icon}</span><span class="danger-text">${escapeHtml(message)}</span>`;
+  document.body.appendChild(indicator);
+
+  // Auto-remove after display period (longer for critical)
+  const displayTime = level === 'critical' ? 5000 : level === 'high' ? 4000 : 3000;
+  setTimeout(() => {
+    indicator.classList.add('danger-hiding');
+    indicator.addEventListener('animationend', () => indicator.remove(), { once: true });
+  }, displayTime);
 }
 
 // Show toast notification with animation
