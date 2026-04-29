@@ -514,3 +514,169 @@ impl AgentStateManager {
         state.last_undoable_action = last_undoable;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_state_is_idle() {
+        let mgr = AgentStateManager::new();
+        assert!(!mgr.should_stop());
+        assert!(!mgr.should_pause());
+        assert!(!mgr.is_kill_switch_triggered());
+    }
+
+    #[tokio::test]
+    async fn test_start_sets_running() {
+        let mgr = AgentStateManager::new();
+        mgr.start("test".into(), 10).await;
+        assert_eq!(mgr.get_status().await, AgentStatus::Running);
+    }
+
+    #[tokio::test]
+    async fn test_start_recording_sets_recording() {
+        let mgr = AgentStateManager::new();
+        mgr.start_recording("test".into(), 10).await;
+        assert_eq!(mgr.get_status().await, AgentStatus::Recording);
+    }
+
+    #[tokio::test]
+    async fn test_request_stop_sets_should_stop() {
+        let mgr = AgentStateManager::new();
+        mgr.start("test".into(), 10).await;
+        mgr.request_stop();
+        assert!(mgr.should_stop());
+    }
+
+    #[tokio::test]
+    async fn test_pause_and_resume() {
+        let mgr = AgentStateManager::new();
+        mgr.start("test".into(), 10).await;
+        mgr.request_pause();
+        assert!(mgr.should_pause());
+        mgr.resume();
+        assert!(!mgr.should_pause());
+    }
+
+    #[tokio::test]
+    async fn test_kill_switch_triggers_stop() {
+        let mgr = AgentStateManager::new();
+        mgr.start("test".into(), 10).await;
+        mgr.trigger_kill_switch();
+        assert!(mgr.is_kill_switch_triggered());
+        assert!(mgr.should_stop());
+    }
+
+    #[tokio::test]
+    async fn test_start_after_kill_clears_kill_flag() {
+        let mgr = AgentStateManager::new();
+        mgr.trigger_kill_switch();
+        assert!(mgr.is_kill_switch_triggered());
+        mgr.start("test".into(), 10).await;
+        assert!(!mgr.is_kill_switch_triggered());
+        assert!(!mgr.should_stop());
+    }
+
+    #[tokio::test]
+    async fn test_kill_switch_after_pause() {
+        let mgr = AgentStateManager::new();
+        mgr.start("test".into(), 10).await;
+        mgr.request_pause();
+        mgr.trigger_kill_switch();
+        assert!(mgr.should_stop());
+        assert!(mgr.is_kill_switch_triggered());
+    }
+
+    #[tokio::test]
+    async fn test_increment_iteration() {
+        let mgr = AgentStateManager::new();
+        mgr.start("test".into(), 10).await;
+        assert_eq!(mgr.increment_iteration(), 1);
+        assert_eq!(mgr.increment_iteration(), 2);
+        assert_eq!(mgr.increment_iteration(), 3);
+        assert_eq!(mgr.get_iteration(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_update_metrics() {
+        let mgr = AgentStateManager::new();
+        mgr.update_metrics(10.5, 100, 50);
+        mgr.update_metrics(12.0, 200, 100);
+        let (tps, input, output) = mgr.get_token_metrics();
+        assert_eq!(tps, 12.0);
+        assert_eq!(input, 300);
+        assert_eq!(output, 150);
+    }
+
+    #[tokio::test]
+    async fn test_set_error_status() {
+        let mgr = AgentStateManager::new();
+        mgr.start("test".into(), 10).await;
+        mgr.set_error("something broke".into()).await;
+        assert_eq!(mgr.get_status().await, AgentStatus::Error);
+        let state = mgr.get_state().await;
+        assert_eq!(state.last_error, Some("something broke".into()));
+    }
+
+    #[tokio::test]
+    async fn test_preview_mode_toggle() {
+        let mgr = AgentStateManager::new();
+        assert!(!mgr.is_preview_mode().await);
+        mgr.set_preview_mode(true).await;
+        assert!(mgr.is_preview_mode().await);
+        mgr.set_preview_mode(false).await;
+        assert!(!mgr.is_preview_mode().await);
+    }
+
+    #[tokio::test]
+    async fn test_complete_sets_completed() {
+        let mgr = AgentStateManager::new();
+        mgr.start("test".into(), 10).await;
+        mgr.complete(Some("done".into())).await;
+        assert_eq!(mgr.get_status().await, AgentStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn test_consecutive_errors() {
+        let mgr = AgentStateManager::new();
+        assert_eq!(mgr.get_consecutive_errors(), 0);
+        assert_eq!(mgr.increment_consecutive_errors(), 1);
+        assert_eq!(mgr.increment_consecutive_errors(), 2);
+        mgr.reset_consecutive_errors();
+        assert_eq!(mgr.get_consecutive_errors(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_reset_clears_everything() {
+        let mgr = AgentStateManager::new();
+        mgr.start("test".into(), 10).await;
+        mgr.increment_iteration();
+        mgr.update_metrics(5.0, 100, 50);
+        mgr.trigger_kill_switch();
+        mgr.reset().await;
+        assert_eq!(mgr.get_status().await, AgentStatus::Idle);
+        assert_eq!(mgr.get_iteration(), 0);
+        assert!(!mgr.should_stop());
+        assert!(!mgr.is_kill_switch_triggered());
+        let (tps, input, output) = mgr.get_token_metrics();
+        assert_eq!(tps, 0.0);
+        assert_eq!(input, 0);
+        assert_eq!(output, 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_state_merges_atomics() {
+        let mgr = AgentStateManager::new();
+        mgr.start("test".into(), 20).await;
+        mgr.increment_iteration();
+        mgr.increment_iteration();
+        mgr.update_metrics(7.5, 500, 200);
+        let state = mgr.get_state().await;
+        assert_eq!(state.iteration, 2);
+        assert_eq!(state.max_iterations, 20);
+        assert_eq!(state.tokens_per_second, 7.5);
+        assert_eq!(state.total_input_tokens, 500);
+        assert_eq!(state.total_output_tokens, 200);
+    }
+}

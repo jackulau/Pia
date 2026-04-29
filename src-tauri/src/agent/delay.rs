@@ -78,3 +78,92 @@ pub fn validate_speed_multiplier(multiplier: f32) -> Result<f32, String> {
         Ok(multiplier)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_identity_multiplier() {
+        let dc = DelayController::new(1.0);
+        assert_eq!(dc.calculate_delay(500), Duration::from_millis(500));
+    }
+
+    #[test]
+    fn test_double_speed_halves_delay() {
+        let dc = DelayController::new(2.0);
+        assert_eq!(dc.calculate_delay(200), Duration::from_millis(100));
+    }
+
+    #[test]
+    fn test_half_speed_doubles_delay() {
+        let dc = DelayController::new(0.5);
+        assert_eq!(dc.calculate_delay(100), Duration::from_millis(200));
+    }
+
+    #[test]
+    fn test_min_clamp() {
+        let dc = DelayController::new(0.1);
+        assert_eq!(dc.speed_multiplier(), MIN_MULTIPLIER);
+    }
+
+    #[test]
+    fn test_max_clamp() {
+        let dc = DelayController::new(10.0);
+        assert_eq!(dc.speed_multiplier(), MAX_MULTIPLIER);
+    }
+
+    #[test]
+    fn test_negative_clamps_to_min() {
+        let dc = DelayController::new(-1.0);
+        assert_eq!(dc.speed_multiplier(), MIN_MULTIPLIER);
+    }
+
+    #[test]
+    fn test_zero_clamps_to_min() {
+        let dc = DelayController::new(0.0);
+        assert_eq!(dc.speed_multiplier(), MIN_MULTIPLIER);
+    }
+
+    #[test]
+    fn test_delay_minimum_1ms() {
+        let dc = DelayController::new(MAX_MULTIPLIER);
+        let delay = dc.calculate_delay(1);
+        assert!(delay.as_millis() >= 1);
+    }
+
+    #[test]
+    fn test_iteration_delay_default() {
+        let dc = DelayController::default();
+        assert_eq!(dc.iteration_delay(), Duration::from_millis(500));
+    }
+
+    #[test]
+    fn test_set_speed_multiplier() {
+        let mut dc = DelayController::new(1.0);
+        dc.set_speed_multiplier(2.0);
+        assert_eq!(dc.speed_multiplier(), 2.0);
+    }
+
+    #[test]
+    fn test_set_speed_multiplier_clamps() {
+        let mut dc = DelayController::new(1.0);
+        dc.set_speed_multiplier(100.0);
+        assert_eq!(dc.speed_multiplier(), MAX_MULTIPLIER);
+    }
+
+    #[test]
+    fn test_validate_speed_valid() {
+        assert!(validate_speed_multiplier(1.0).is_ok());
+    }
+
+    #[test]
+    fn test_validate_speed_too_low() {
+        assert!(validate_speed_multiplier(0.1).is_err());
+    }
+
+    #[test]
+    fn test_validate_speed_too_high() {
+        assert!(validate_speed_multiplier(5.0).is_err());
+    }
+}

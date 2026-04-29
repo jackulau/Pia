@@ -280,3 +280,121 @@ pub fn is_dangerous_key_combination(key: &str, modifiers: &[Modifier]) -> bool {
 
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cmd_w_dangerous() {
+        assert!(is_dangerous_key_combination("w", &[Modifier::Meta]));
+    }
+
+    #[test]
+    fn test_cmd_q_dangerous() {
+        assert!(is_dangerous_key_combination("q", &[Modifier::Meta]));
+    }
+
+    #[test]
+    fn test_alt_f4_dangerous() {
+        assert!(is_dangerous_key_combination("f4", &[Modifier::Alt]));
+    }
+
+    #[test]
+    fn test_ctrl_alt_del_dangerous() {
+        assert!(is_dangerous_key_combination(
+            "delete",
+            &[Modifier::Ctrl, Modifier::Alt]
+        ));
+    }
+
+    #[test]
+    fn test_cmd_shift_q_dangerous() {
+        assert!(is_dangerous_key_combination(
+            "q",
+            &[Modifier::Meta, Modifier::Shift]
+        ));
+    }
+
+    #[test]
+    fn test_cmd_option_escape_dangerous() {
+        assert!(is_dangerous_key_combination(
+            "escape",
+            &[Modifier::Meta, Modifier::Alt]
+        ));
+    }
+
+    #[test]
+    fn test_meta_delete_dangerous() {
+        assert!(is_dangerous_key_combination("delete", &[Modifier::Meta]));
+    }
+
+    #[test]
+    fn test_uppercase_key_dangerous() {
+        assert!(is_dangerous_key_combination("W", &[Modifier::Meta]));
+    }
+
+    #[test]
+    fn test_regular_key_safe() {
+        assert!(!is_dangerous_key_combination("a", &[]));
+    }
+
+    #[test]
+    fn test_enter_safe() {
+        assert!(!is_dangerous_key_combination("enter", &[]));
+    }
+
+    #[test]
+    fn test_ctrl_a_safe() {
+        assert!(!is_dangerous_key_combination("a", &[Modifier::Ctrl]));
+    }
+
+    #[test]
+    fn test_ctrl_c_safe() {
+        assert!(!is_dangerous_key_combination("c", &[Modifier::Ctrl]));
+    }
+
+    #[test]
+    fn test_empty_key_safe() {
+        assert!(!is_dangerous_key_combination("", &[]));
+    }
+
+    #[test]
+    fn test_parse_key_letter() {
+        assert!(parse_key("a").is_ok());
+        assert!(parse_key("A").is_ok());
+    }
+
+    #[test]
+    fn test_parse_key_special() {
+        assert!(parse_key("enter").is_ok());
+        assert!(parse_key("return").is_ok());
+        assert!(parse_key("tab").is_ok());
+        assert!(parse_key("escape").is_ok());
+        assert!(parse_key("esc").is_ok());
+    }
+
+    #[test]
+    fn test_parse_key_unknown() {
+        assert!(parse_key("nonexistent").is_err());
+    }
+
+    #[test]
+    fn test_parse_modifier_ctrl() {
+        assert_eq!(parse_modifier("ctrl"), Some(Modifier::Ctrl));
+        assert_eq!(parse_modifier("control"), Some(Modifier::Ctrl));
+    }
+
+    #[test]
+    fn test_parse_modifier_meta() {
+        assert_eq!(parse_modifier("cmd"), Some(Modifier::Meta));
+        assert_eq!(parse_modifier("command"), Some(Modifier::Meta));
+        assert_eq!(parse_modifier("meta"), Some(Modifier::Meta));
+        assert_eq!(parse_modifier("win"), Some(Modifier::Meta));
+    }
+
+    #[test]
+    fn test_parse_modifier_unknown() {
+        assert_eq!(parse_modifier("foobar"), None);
+    }
+}

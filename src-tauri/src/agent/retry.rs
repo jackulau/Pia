@@ -113,4 +113,89 @@ mod tests {
         assert_eq!(ctx.attempt, 0);
         assert!(ctx.should_retry());
     }
+
+    #[test]
+    fn test_zero_max_retries_cannot_retry() {
+        let ctx = RetryContext::new(0, 100, true);
+        assert!(!ctx.should_retry());
+    }
+
+    #[test]
+    fn test_increment_past_max_no_panic() {
+        let mut ctx = RetryContext::new(2, 100, true);
+        for _ in 0..10 {
+            ctx.increment();
+        }
+        assert_eq!(ctx.attempt, 10);
+        assert!(!ctx.should_retry());
+    }
+
+    #[test]
+    fn test_reset_restores_can_retry() {
+        let mut ctx = RetryContext::new(2, 100, true);
+        ctx.increment();
+        ctx.increment();
+        assert!(!ctx.should_retry());
+        ctx.reset();
+        assert!(ctx.should_retry());
+    }
+
+    #[test]
+    fn test_retry_delay_stored() {
+        let ctx = RetryContext::new(3, 500, true);
+        assert_eq!(ctx.retry_delay, Duration::from_millis(500));
+    }
+
+    #[test]
+    fn test_screenshots_differ_same() {
+        use std::sync::Arc;
+        let s = Screenshot {
+            width: 100,
+            height: 100,
+            physical_width: 100,
+            physical_height: 100,
+            base64: Arc::new("abc123".into()),
+        };
+        assert!(!screenshots_differ(&s, &s));
+    }
+
+    #[test]
+    fn test_screenshots_differ_different_size() {
+        use std::sync::Arc;
+        let a = Screenshot {
+            width: 100,
+            height: 100,
+            physical_width: 100,
+            physical_height: 100,
+            base64: Arc::new("same".into()),
+        };
+        let b = Screenshot {
+            width: 200,
+            height: 100,
+            physical_width: 200,
+            physical_height: 100,
+            base64: Arc::new("same".into()),
+        };
+        assert!(screenshots_differ(&a, &b));
+    }
+
+    #[test]
+    fn test_screenshots_differ_different_content() {
+        use std::sync::Arc;
+        let a = Screenshot {
+            width: 100,
+            height: 100,
+            physical_width: 100,
+            physical_height: 100,
+            base64: Arc::new("data1".into()),
+        };
+        let b = Screenshot {
+            width: 100,
+            height: 100,
+            physical_width: 100,
+            physical_height: 100,
+            base64: Arc::new("data2".into()),
+        };
+        assert!(screenshots_differ(&a, &b));
+    }
 }
