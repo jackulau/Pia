@@ -251,4 +251,95 @@ mod tests {
         assert_eq!(policy.max_retries, 3);
         assert_eq!(policy.backoff_multiplier, 2.0);
     }
+
+    #[test]
+    fn test_classify_parse_error_retryable() {
+        let err = LlmError::ParseError("bad json".into());
+        assert_eq!(classify_llm_error(&err), ErrorClassification::Retryable);
+    }
+
+    #[test]
+    fn test_classify_stream_error_retryable() {
+        let err = LlmError::StreamError("connection reset".into());
+        assert_eq!(classify_llm_error(&err), ErrorClassification::Retryable);
+    }
+
+    #[test]
+    fn test_classify_not_configured_fatal() {
+        assert_eq!(classify_llm_error(&LlmError::NotConfigured), ErrorClassification::Fatal);
+    }
+
+    #[test]
+    fn test_classify_api_rate_limit() {
+        let err = LlmError::ApiError("rate limit exceeded".into());
+        assert!(matches!(classify_llm_error(&err), ErrorClassification::RateLimited { .. }));
+    }
+
+    #[test]
+    fn test_classify_api_too_many_requests() {
+        let err = LlmError::ApiError("too many requests".into());
+        assert!(matches!(classify_llm_error(&err), ErrorClassification::RateLimited { .. }));
+    }
+
+    #[test]
+    fn test_classify_api_overloaded() {
+        let err = LlmError::ApiError("server overloaded".into());
+        assert!(matches!(classify_llm_error(&err), ErrorClassification::RateLimited { .. }));
+    }
+
+    #[test]
+    fn test_classify_api_capacity() {
+        let err = LlmError::ApiError("at capacity".into());
+        assert!(matches!(classify_llm_error(&err), ErrorClassification::RateLimited { .. }));
+    }
+
+    #[test]
+    fn test_classify_api_timeout_retryable() {
+        let err = LlmError::ApiError("request timeout".into());
+        assert_eq!(classify_llm_error(&err), ErrorClassification::Retryable);
+    }
+
+    #[test]
+    fn test_classify_api_temporarily_retryable() {
+        let err = LlmError::ApiError("temporarily unavailable".into());
+        assert_eq!(classify_llm_error(&err), ErrorClassification::Retryable);
+    }
+
+    #[test]
+    fn test_classify_api_unknown_fatal() {
+        let err = LlmError::ApiError("something unexpected".into());
+        assert_eq!(classify_llm_error(&err), ErrorClassification::Fatal);
+    }
+
+    #[test]
+    fn test_classify_api_empty_string_fatal() {
+        let err = LlmError::ApiError("".into());
+        assert_eq!(classify_llm_error(&err), ErrorClassification::Fatal);
+    }
+
+    #[test]
+    fn test_classify_api_rate_limit_case_insensitive() {
+        let err = LlmError::ApiError("RATE LIMIT exceeded".into());
+        assert!(matches!(classify_llm_error(&err), ErrorClassification::RateLimited { .. }));
+    }
+
+    #[test]
+    fn test_classify_capture_no_monitors_fatal() {
+        use crate::capture::CaptureError;
+        assert_eq!(classify_capture_error(&CaptureError::NoMonitors), ErrorClassification::Fatal);
+    }
+
+    #[test]
+    fn test_classify_capture_error_retryable() {
+        use crate::capture::CaptureError;
+        let err = CaptureError::CaptureError("transient".into());
+        assert_eq!(classify_capture_error(&err), ErrorClassification::Retryable);
+    }
+
+    #[test]
+    fn test_classify_capture_wayland_fatal() {
+        use crate::capture::CaptureError;
+        let err = CaptureError::WaylandError("portal not available".into());
+        assert_eq!(classify_capture_error(&err), ErrorClassification::Fatal);
+    }
 }

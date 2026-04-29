@@ -1311,14 +1311,14 @@ mod tests {
     fn test_lookup_var_from_file_sources() {
         let mut sources = HashMap::new();
         sources.insert(
-            "ANTHROPIC_API_KEY".to_string(),
+            "_TEST_FILE_ONLY_KEY".to_string(),
             FileSourceEntry {
                 value: "sk-file-test".to_string(),
                 source: "file:~/.env".to_string(),
             },
         );
 
-        let result = lookup_var(&["NONEXISTENT_VAR", "ANTHROPIC_API_KEY"], &sources);
+        let result = lookup_var(&["_TEST_NONEXISTENT_VAR", "_TEST_FILE_ONLY_KEY"], &sources);
         assert!(result.is_some());
         let (val, src) = result.unwrap();
         assert_eq!(val, "sk-file-test");
